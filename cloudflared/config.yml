@@ -1,0 +1,20 @@
+tunnel: 5c80b1cc-3e08-425f-931e-0dc4ede64ec0
+credentials-file: /etc/cloudflared/creds.json
+
+ingress:
+  # Employee Portal
+  - hostname: aavishield-employee.aavishailab.com
+    service: http://employee-portal:1003
+  # Company Dashboard
+  - hostname: aavishield-app.aavishailab.com
+    service: http://company-dashboard:1002
+  # Superadmin
+  - hostname: aavishield-admin.aavishailab.com
+    service: http://superadmin:1001
+  # Backend (admin-api)
+  - hostname: aavishield-api.aavishailab.com
+    service: http://admin-api:6000
+  # AI assistant
+  - hostname: aavishield-ai.aavishailab.com
+    service: http://ai-service:6002
+  - service: http_status:404

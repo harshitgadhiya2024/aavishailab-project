@@ -1,0 +1,244 @@
+{
+  "_comment": "Reference catalog for the SSL Inspection bypass workflow. Big platforms answer on dozens of hostnames, but only a handful actually break under TLS interception (certificate pinning, mutual TLS, device attestation) or carry data a company deliberately refuses to decrypt (sign-in, secrets, banking). Each entry says which is which so an admin bypasses 4-5 domains instead of the whole platform. 'recommended' marks the ones normally bypassed.",
+  "platforms": [
+    {
+      "name": "Amazon Web Services (AWS)",
+      "aliases": ["aws", "amazon web services", "amazonaws", "amazon"],
+      "groups": [
+        {
+          "group": "Identity & sign-in",
+          "description": "Certificate-pinned or MFA-bound endpoints — interception breaks console login and SSO.",
+          "domains": [
+            { "domain": "signin.aws.amazon.com", "note": "Console sign-in", "tags": ["auth", "pinned"], "recommended": true },
+            { "domain": "sts.amazonaws.com", "note": "Security Token Service (temporary credentials)", "tags": ["auth"], "recommended": true },
+            { "domain": "awsapps.com", "note": "IAM Identity Center / SSO portals (*.awsapps.com)", "tags": ["auth"], "recommended": true },
+            { "domain": "cognito-idp.amazonaws.com", "note": "Cognito user pools", "tags": ["auth"], "recommended": false }
+          ]
+        },
+        {
+          "group": "Secrets & keys",
+          "description": "Carry credentials and key material — usually excluded from decryption on policy grounds.",
+          "domains": [
+            { "domain": "secretsmanager.amazonaws.com", "note": "Secrets Manager", "tags": ["secrets"], "recommended": true },
+            { "domain": "kms.amazonaws.com", "note": "Key Management Service", "tags": ["secrets"], "recommended": true }
+          ]
+        },
+        {
+          "group": "APIs & tooling",
+          "description": "CLI and SDK traffic uses mutual TLS / SigV4; inspection commonly breaks automation.",
+          "domains": [
+            { "domain": "amazonaws.com", "note": "All AWS service APIs (*.amazonaws.com) — broad, bypass only if CLI/SDK breaks", "tags": ["api"], "recommended": false },
+            { "domain": "ec2.amazonaws.com", "note": "EC2 API", "tags": ["api"], "recommended": false },
+            { "domain": "s3.amazonaws.com", "note": "S3 storage API", "tags": ["storage"], "recommended": false },
+            { "domain": "console.aws.amazon.com", "note": "Management console (post-login)", "tags": ["console"], "recommended": false },
+            { "domain": "cloudfront.net", "note": "CloudFront CDN assets", "tags": ["cdn"], "recommended": false }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Microsoft Azure",
+      "aliases": ["azure", "microsoft azure", "entra", "azure ad", "entra id"],
+      "groups": [
+        {
+          "group": "Identity & sign-in",
+          "description": "Entra ID endpoints use device-bound certificates; interception breaks SSO and Conditional Access.",
+          "domains": [
+            { "domain": "login.microsoftonline.com", "note": "Entra ID / Azure AD sign-in", "tags": ["auth", "pinned"], "recommended": true },
+            { "domain": "login.live.com", "note": "Microsoft account sign-in", "tags": ["auth", "pinned"], "recommended": true },
+            { "domain": "sts.windows.net", "note": "Token issuance", "tags": ["auth"], "recommended": true },
+            { "domain": "autologon.microsoftazuread-sso.com", "note": "Seamless SSO (Kerberos)", "tags": ["auth", "pinned"], "recommended": true },
+            { "domain": "device.login.microsoftonline.com", "note": "Device registration / Windows Hello", "tags": ["auth", "pinned"], "recommended": true }
+          ]
+        },
+        {
+          "group": "Secrets & management",
+          "domains": [
+            { "domain": "vault.azure.net", "note": "Key Vault (*.vault.azure.net)", "tags": ["secrets"], "recommended": true },
+            { "domain": "management.azure.com", "note": "Azure Resource Manager API", "tags": ["api"], "recommended": false }
+          ]
+        },
+        {
+          "group": "Storage & data",
+          "domains": [
+            { "domain": "blob.core.windows.net", "note": "Blob storage (*.blob.core.windows.net)", "tags": ["storage"], "recommended": false },
+            { "domain": "file.core.windows.net", "note": "Azure Files", "tags": ["storage"], "recommended": false },
+            { "domain": "database.windows.net", "note": "Azure SQL", "tags": ["database"], "recommended": false }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Microsoft 365",
+      "aliases": ["microsoft 365", "m365", "office 365", "office", "outlook", "teams", "sharepoint", "onedrive"],
+      "groups": [
+        {
+          "group": "Identity & sign-in",
+          "domains": [
+            { "domain": "login.microsoftonline.com", "note": "Microsoft 365 sign-in", "tags": ["auth", "pinned"], "recommended": true },
+            { "domain": "login.windows.net", "note": "Legacy token endpoint", "tags": ["auth"], "recommended": true }
+          ]
+        },
+        {
+          "group": "Client apps that pin certificates",
+          "description": "Desktop Outlook/Teams clients validate the server certificate themselves and fail closed when intercepted.",
+          "domains": [
+            { "domain": "outlook.office365.com", "note": "Outlook / Exchange Online client protocol", "tags": ["pinned", "mail"], "recommended": true },
+            { "domain": "teams.microsoft.com", "note": "Teams client + real-time media", "tags": ["pinned", "chat"], "recommended": false },
+            { "domain": "teams.events.data.microsoft.com", "note": "Teams telemetry", "tags": ["telemetry"], "recommended": false }
+          ]
+        },
+        {
+          "group": "Content & collaboration",
+          "description": "Where company files actually move — usually left inspected so DLP can see uploads.",
+          "domains": [
+            { "domain": "sharepoint.com", "note": "SharePoint Online (*.sharepoint.com)", "tags": ["storage"], "recommended": false },
+            { "domain": "onedrive.live.com", "note": "OneDrive personal", "tags": ["storage"], "recommended": false },
+            { "domain": "graph.microsoft.com", "note": "Microsoft Graph API", "tags": ["api"], "recommended": false },
+            { "domain": "outlook.office.com", "note": "Outlook on the web", "tags": ["mail"], "recommended": false }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Google Workspace & Google Cloud",
+      "aliases": ["google", "gcp", "google cloud", "google workspace", "gmail", "gsuite", "g suite"],
+      "groups": [
+        {
+          "group": "Identity & sign-in",
+          "domains": [
+            { "domain": "accounts.google.com", "note": "Google sign-in", "tags": ["auth", "pinned"], "recommended": true },
+            { "domain": "oauth2.googleapis.com", "note": "OAuth token endpoint", "tags": ["auth"], "recommended": true },
+            { "domain": "admin.google.com", "note": "Workspace admin console", "tags": ["admin"], "recommended": false }
+          ]
+        },
+        {
+          "group": "Client & OS services",
+          "description": "Chrome and Android services pin certificates for update and safe-browsing traffic.",
+          "domains": [
+            { "domain": "clients2.google.com", "note": "Chrome component updates", "tags": ["pinned", "os"], "recommended": true },
+            { "domain": "update.googleapis.com", "note": "Chrome / extension updates", "tags": ["pinned", "os"], "recommended": true },
+            { "domain": "safebrowsing.googleapis.com", "note": "Safe Browsing", "tags": ["pinned"], "recommended": false }
+          ]
+        },
+        {
+          "group": "Content & APIs",
+          "domains": [
+            { "domain": "drive.google.com", "note": "Google Drive", "tags": ["storage"], "recommended": false },
+            { "domain": "mail.google.com", "note": "Gmail web", "tags": ["mail"], "recommended": false },
+            { "domain": "storage.googleapis.com", "note": "Cloud Storage buckets", "tags": ["storage"], "recommended": false },
+            { "domain": "googleapis.com", "note": "All Google APIs (*.googleapis.com) — broad", "tags": ["api"], "recommended": false }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Apple",
+      "aliases": ["apple", "icloud", "macos", "ios"],
+      "groups": [
+        {
+          "group": "OS & update services",
+          "description": "Apple pins these; intercepting them breaks activation, updates and App Store.",
+          "domains": [
+            { "domain": "gs.apple.com", "note": "Device activation", "tags": ["pinned", "os"], "recommended": true },
+            { "domain": "gdmf.apple.com", "note": "Software update catalog", "tags": ["pinned", "os"], "recommended": true },
+            { "domain": "appleid.apple.com", "note": "Apple ID sign-in", "tags": ["auth", "pinned"], "recommended": true },
+            { "domain": "mesu.apple.com", "note": "Update manifests", "tags": ["pinned", "os"], "recommended": true },
+            { "domain": "ocsp.apple.com", "note": "Certificate revocation checks", "tags": ["pinned"], "recommended": true },
+            { "domain": "icloud.com", "note": "iCloud services", "tags": ["storage"], "recommended": false }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Okta",
+      "aliases": ["okta", "sso", "identity provider", "idp"],
+      "groups": [
+        {
+          "group": "Identity",
+          "domains": [
+            { "domain": "okta.com", "note": "Okta tenant + sign-in (*.okta.com)", "tags": ["auth", "pinned"], "recommended": true },
+            { "domain": "oktapreview.com", "note": "Okta preview tenants", "tags": ["auth"], "recommended": false },
+            { "domain": "okta-emea.com", "note": "Okta EMEA tenants", "tags": ["auth"], "recommended": false }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Salesforce",
+      "aliases": ["salesforce", "sfdc", "crm"],
+      "groups": [
+        {
+          "group": "Identity & org endpoints",
+          "domains": [
+            { "domain": "login.salesforce.com", "note": "Salesforce sign-in", "tags": ["auth", "pinned"], "recommended": true },
+            { "domain": "my.salesforce.com", "note": "Org instance (*.my.salesforce.com)", "tags": ["app"], "recommended": false },
+            { "domain": "lightning.force.com", "note": "Lightning UI", "tags": ["app"], "recommended": false },
+            { "domain": "force.com", "note": "Communities / custom apps (*.force.com)", "tags": ["app"], "recommended": false }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Slack",
+      "aliases": ["slack"],
+      "groups": [
+        {
+          "group": "Client & realtime",
+          "description": "The desktop client pins certificates for its websocket; web upload paths are usually left inspected for DLP.",
+          "domains": [
+            { "domain": "wss-primary.slack.com", "note": "Realtime websocket", "tags": ["pinned", "realtime"], "recommended": true },
+            { "domain": "slack.com", "note": "Slack web + API (*.slack.com)", "tags": ["app"], "recommended": false },
+            { "domain": "files.slack.com", "note": "File uploads / downloads", "tags": ["storage"], "recommended": false }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Zoom",
+      "aliases": ["zoom"],
+      "groups": [
+        {
+          "group": "Client & media",
+          "domains": [
+            { "domain": "zoom.us", "note": "Zoom app + API (*.zoom.us)", "tags": ["app"], "recommended": true },
+            { "domain": "zoomgov.com", "note": "Zoom for Government", "tags": ["app"], "recommended": false }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "GitHub",
+      "aliases": ["github", "git"],
+      "groups": [
+        {
+          "group": "Developer tooling",
+          "description": "git and package managers verify certificates themselves; inspection breaks clones and CI.",
+          "domains": [
+            { "domain": "github.com", "note": "Git over HTTPS + web", "tags": ["dev"], "recommended": true },
+            { "domain": "api.github.com", "note": "GitHub API", "tags": ["api", "dev"], "recommended": true },
+            { "domain": "codeload.github.com", "note": "Archive downloads", "tags": ["dev"], "recommended": false },
+            { "domain": "githubusercontent.com", "note": "Raw content / release assets", "tags": ["dev"], "recommended": false }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Banking & payments",
+      "aliases": ["bank", "banking", "payment", "finance", "payroll"],
+      "groups": [
+        {
+          "group": "Financial services",
+          "description": "Commonly excluded from decryption for privacy and compliance reasons rather than breakage.",
+          "domains": [
+            { "domain": "stripe.com", "note": "Stripe dashboard + API", "tags": ["payments"], "recommended": true },
+            { "domain": "paypal.com", "note": "PayPal", "tags": ["payments"], "recommended": true },
+            { "domain": "razorpay.com", "note": "Razorpay", "tags": ["payments"], "recommended": false },
+            { "domain": "hdfcbank.com", "note": "HDFC Bank", "tags": ["banking"], "recommended": false },
+            { "domain": "icicibank.com", "note": "ICICI Bank", "tags": ["banking"], "recommended": false }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,181 @@
+#!/usr/bin/env bash
+#
+# Builds a macOS .pkg installer for the Aavishield agent.
+#
+#   ./packaging/macos/build.sh [version]
+#
+# Signing and notarization are opt-in via environment variables. Without them
+# the build still produces a working (unsigned) .pkg for internal testing —
+# unsigned packages will be blocked by Gatekeeper on employee machines, so
+# release builds must set these:
+#
+#   DEVELOPER_ID_APP="Developer ID Application: Acme Inc (TEAMID)"
+#   DEVELOPER_ID_INSTALLER="Developer ID Installer: Acme Inc (TEAMID)"
+#   NOTARY_PROFILE="aavishield"     # from: xcrun notarytool store-credentials
+#
+set -euo pipefail
+
+VERSION="${1:-1.1.0}"
+IDENTIFIER="com.aavishield.agent"
+CATRUST_IDENTIFIER="com.aavishield.catrust"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+BUILD_DIR="$REPO_ROOT/build/macos"
+ROOT_DIR="$BUILD_DIR/root"
+OUT_DIR="$REPO_ROOT/dist"
+
+INSTALL_PREFIX="/usr/local/aavishield"
+
+# Which deployment this build belongs to. Baked into the binary because the
+# package is generic — with no employee-specific token to carry an admin URL,
+# the agent has to already know where to enrol and which portal to open.
+ADMIN_URL="${AAVISHIELD_ADMIN_URL:-https://aavishield-api.aavishailab.com}"
+PORTAL_URL="${AAVISHIELD_PORTAL_URL:-https://aavishield-employee.aavishailab.com}"
+
+echo "==> Building Aavishield agent $VERSION for macOS ($(uname -m))"
+echo "    admin:  $ADMIN_URL"
+echo "    portal: $PORTAL_URL"
+
+rm -rf "$BUILD_DIR"
+mkdir -p "$ROOT_DIR$INSTALL_PREFIX" "$ROOT_DIR/Library/LaunchAgents" \
+         "$ROOT_DIR/Library/LaunchDaemons" "$OUT_DIR"
+
+# ─── 1. Freeze the agent ──────────────────────────────────────────────────────
+# The deployment URLs are stamped into a scratch copy rather than the tracked
+# source, so a build never leaves the working tree modified.
+echo "==> Freezing agent with PyInstaller"
+cd "$REPO_ROOT"
+STAMPED_SRC="$BUILD_DIR/src"
+mkdir -p "$STAMPED_SRC"
+cp scripts/agent/aavishield-agent.py "$STAMPED_SRC/aavishield-agent.py"
+python3 - "$STAMPED_SRC/aavishield-agent.py" "$ADMIN_URL" "$PORTAL_URL" <<'STAMP'
+import re, sys
+path, admin, portal = sys.argv[1], sys.argv[2], sys.argv[3]
+src = open(path).read()
+for name, value in (("DEFAULT_ADMIN_URL", admin), ("DEFAULT_PORTAL_URL", portal)):
+    src, n = re.subn(rf'^{name}\s*=\s*".*"\r?$', f'{name}  = "{value}"',
+                     src, count=1, flags=re.M)
+    if n != 1:
+        sys.exit(f"could not stamp {name} — the agent's constants moved")
+open(path, "w").write(src)
+STAMP
+
+AAVISHIELD_AGENT_SRC="$STAMPED_SRC/aavishield-agent.py" \
+python3 -m PyInstaller --clean --noconfirm --distpath "$BUILD_DIR/dist" \
+    --workpath "$BUILD_DIR/work" packaging/aavishield-agent.spec
+
+cp "$BUILD_DIR/dist/aavishield-agent" "$ROOT_DIR$INSTALL_PREFIX/aavishield-agent"
+chmod 755 "$ROOT_DIR$INSTALL_PREFIX/aavishield-agent"
+
+# ─── 2. Sign the binary ───────────────────────────────────────────────────────
+# Hardened runtime is required for notarization.
+if [[ -n "${DEVELOPER_ID_APP:-}" ]]; then
+    echo "==> Signing binary as: $DEVELOPER_ID_APP"
+    codesign --force --options runtime --timestamp \
+        --sign "$DEVELOPER_ID_APP" "$ROOT_DIR$INSTALL_PREFIX/aavishield-agent"
+else
+    echo "==> DEVELOPER_ID_APP unset — building UNSIGNED (testing only)"
+fi
+
+# ─── 3. LaunchAgent ───────────────────────────────────────────────────────────
+# A LaunchAgent (per-user) rather than a LaunchDaemon (root): the agent edits
+# the logged-in user's proxy settings and needs their session. KeepAlive is what
+# makes the auto-updater's exec-and-exit restart work.
+cat > "$ROOT_DIR/Library/LaunchAgents/$IDENTIFIER.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>$IDENTIFIER</string>
+    <key>ProgramArguments</key>
+    <array><string>$INSTALL_PREFIX/aavishield-agent</string></array>
+    <key>RunAtLoad</key><true/>
+    <key>KeepAlive</key><true/>
+    <key>ProcessType</key><string>Background</string>
+    <key>StandardOutPath</key><string>/tmp/aavishield-agent.out</string>
+    <key>StandardErrorPath</key><string>/tmp/aavishield-agent.err</string>
+</dict>
+</plist>
+PLIST
+
+# ─── 3b. CA-trust LaunchDaemon ────────────────────────────────────────────────
+# Root, unlike the agent: installing the org CA writes to the System keychain.
+# It cannot do its job at install time — nobody has enrolled yet, so there are
+# no credentials to fetch the CA with — so it polls until one appears and then
+# exits. KeepAlive is deliberately absent; StartInterval restarts it, and a
+# run that finds the marker already there returns immediately.
+cat > "$ROOT_DIR/Library/LaunchDaemons/$CATRUST_IDENTIFIER.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>$CATRUST_IDENTIFIER</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$INSTALL_PREFIX/aavishield-agent</string>
+        <string>--ca-trust-daemon</string>
+    </array>
+    <key>RunAtLoad</key><true/>
+    <key>StartInterval</key><integer>300</integer>
+    <key>ProcessType</key><string>Background</string>
+    <key>StandardOutPath</key><string>/var/log/aavishield-catrust.log</string>
+    <key>StandardErrorPath</key><string>/var/log/aavishield-catrust.log</string>
+</dict>
+</plist>
+PLIST
+
+# ─── 4. postinstall ───────────────────────────────────────────────────────────
+mkdir -p "$BUILD_DIR/scripts"
+cat > "$BUILD_DIR/scripts/postinstall" <<'POST'
+#!/bin/bash
+# Loads the LaunchAgent into the console user's session. Installers run as
+# root, so bootstrapping into the user's GUI domain needs an explicit uid.
+set -e
+CONSOLE_USER=$(stat -f%Su /dev/console)
+CONSOLE_UID=$(id -u "$CONSOLE_USER")
+PLIST="/Library/LaunchAgents/com.aavishield.agent.plist"
+CATRUST_PLIST="/Library/LaunchDaemons/com.aavishield.catrust.plist"
+
+launchctl bootout   "gui/$CONSOLE_UID/com.aavishield.agent" 2>/dev/null || true
+launchctl bootstrap "gui/$CONSOLE_UID" "$PLIST" 2>/dev/null || true
+launchctl enable    "gui/$CONSOLE_UID/com.aavishield.agent" 2>/dev/null || true
+
+# The CA-trust helper runs in the system domain, not the user's. Reinstalling
+# over a version whose CA is already trusted is fine: the helper sees its own
+# marker and exits without touching the keychain again.
+mkdir -p /etc/aavishield
+launchctl bootout   system "$CATRUST_PLIST" 2>/dev/null || true
+launchctl bootstrap system "$CATRUST_PLIST" 2>/dev/null || true
+exit 0
+POST
+chmod +x "$BUILD_DIR/scripts/postinstall"
+
+# ─── 5. Build the package ─────────────────────────────────────────────────────
+PKG_RAW="$BUILD_DIR/$IDENTIFIER-raw.pkg"
+PKG_OUT="$OUT_DIR/aavishield-agent-$VERSION.pkg"
+
+echo "==> pkgbuild"
+pkgbuild --root "$ROOT_DIR" --scripts "$BUILD_DIR/scripts" \
+    --identifier "$IDENTIFIER" --version "$VERSION" \
+    --install-location / "$PKG_RAW"
+
+echo "==> productbuild"
+if [[ -n "${DEVELOPER_ID_INSTALLER:-}" ]]; then
+    productbuild --package "$PKG_RAW" --sign "$DEVELOPER_ID_INSTALLER" "$PKG_OUT"
+else
+    productbuild --package "$PKG_RAW" "$PKG_OUT"
+fi
+
+# ─── 6. Notarize ──────────────────────────────────────────────────────────────
+# Without notarization macOS shows "cannot be opened because Apple cannot check
+# it for malicious software" — this step is what makes the installer just work.
+if [[ -n "${NOTARY_PROFILE:-}" ]]; then
+    echo "==> Notarizing (this takes a few minutes)"
+    xcrun notarytool submit "$PKG_OUT" --keychain-profile "$NOTARY_PROFILE" --wait
+    xcrun stapler staple "$PKG_OUT"
+else
+    echo "==> NOTARY_PROFILE unset — skipping notarization"
+fi
+
+echo ""
+echo "Built: $PKG_OUT"
+shasum -a 256 "$PKG_OUT"

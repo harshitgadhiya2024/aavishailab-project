@@ -1,0 +1,201 @@
+{
+  "_comment": "Seeds internal/models.URLCategory (find-or-create by slug — matches existing dev-seed slugs like social_media/gambling/gaming so this doesn't create duplicates) plus a member-domain list per category in the new category_domains table. Runs unconditionally on every boot (idempotent), independent of APP_ENV, since category-based policy blocking needs this data in production too.",
+  "categories": [
+    {
+      "slug": "social_media",
+      "name": "Social Media",
+      "description": "Social networking, messaging, and short-form content platforms",
+      "risk_level": 2,
+      "color": "#f97316",
+      "domains": [
+        "facebook.com", "instagram.com", "twitter.com", "x.com", "tiktok.com",
+        "snapchat.com", "linkedin.com", "reddit.com", "pinterest.com", "threads.net",
+        "tumblr.com", "quora.com", "mastodon.social", "weibo.com", "vk.com"
+      ]
+    },
+    {
+      "slug": "gambling",
+      "name": "Gambling",
+      "description": "Online casinos, sports betting, poker, and lottery sites",
+      "risk_level": 3,
+      "color": "#ef4444",
+      "domains": [
+        "bet365.com", "pokerstars.com", "888casino.com", "draftkings.com", "fanduel.com",
+        "bovada.lv", "betway.com", "williamhill.com", "ladbrokes.com", "paddypower.com",
+        "unibet.com", "betfair.com", "888poker.com", "partypoker.com", "royalvegascasino.com"
+      ]
+    },
+    {
+      "slug": "ai_tools",
+      "name": "AI Tools",
+      "description": "Public AI chatbots, image generators, and general-purpose LLM products — often the biggest DLP exposure risk since employees can paste sensitive data directly into a prompt",
+      "risk_level": 2,
+      "color": "#a855f7",
+      "domains": [
+        "chatgpt.com", "chat.openai.com", "claude.ai", "gemini.google.com", "bard.google.com",
+        "perplexity.ai", "poe.com", "character.ai", "midjourney.com", "huggingface.co",
+        "copilot.microsoft.com", "you.com", "grok.com", "deepseek.com", "meta.ai"
+      ]
+    },
+    {
+      "slug": "adult_content",
+      "name": "Adult Content",
+      "description": "Adult/explicit content sites",
+      "risk_level": 4,
+      "color": "#dc2626",
+      "domains": [
+        "pornhub.com", "xvideos.com", "xhamster.com", "xnxx.com", "redtube.com",
+        "youporn.com", "onlyfans.com", "chaturbate.com", "brazzers.com", "spankbang.com"
+      ]
+    },
+    {
+      "slug": "streaming",
+      "name": "Streaming",
+      "description": "Video/music streaming and on-demand entertainment — typically a bandwidth/productivity concern rather than a security one",
+      "risk_level": 1,
+      "color": "#8b5cf6",
+      "domains": [
+        "youtube.com", "netflix.com", "hulu.com", "disneyplus.com", "primevideo.com",
+        "hbomax.com", "twitch.tv", "spotify.com", "soundcloud.com", "vimeo.com",
+        "dailymotion.com", "crunchyroll.com", "peacocktv.com", "paramountplus.com"
+      ]
+    },
+    {
+      "slug": "gaming",
+      "name": "Gaming",
+      "description": "Online gaming platforms, storefronts, and game-streaming services",
+      "risk_level": 1,
+      "color": "#f59e0b",
+      "domains": [
+        "steampowered.com", "epicgames.com", "roblox.com", "ea.com", "battle.net",
+        "minecraft.net", "riotgames.com", "discord.com", "ign.com", "gog.com",
+        "playstation.com", "xbox.com", "nintendo.com"
+      ]
+    },
+    {
+      "slug": "news_media",
+      "name": "News & Media",
+      "description": "General news and media outlets",
+      "risk_level": 0,
+      "color": "#22c55e",
+      "domains": [
+        "cnn.com", "bbc.com", "nytimes.com", "foxnews.com", "reuters.com",
+        "theguardian.com", "washingtonpost.com", "aljazeera.com", "ndtv.com", "timesofindia.com",
+        "hindustantimes.com", "bloomberg.com"
+      ]
+    },
+    {
+      "slug": "shopping",
+      "name": "Shopping",
+      "description": "E-commerce and retail marketplaces",
+      "risk_level": 0,
+      "color": "#84cc16",
+      "domains": [
+        "amazon.com", "ebay.com", "flipkart.com", "aliexpress.com", "etsy.com",
+        "walmart.com", "target.com", "myntra.com", "shopify.com", "alibaba.com",
+        "meesho.com", "snapdeal.com"
+      ]
+    },
+    {
+      "slug": "torrent",
+      "name": "Torrent",
+      "description": "Torrent trackers and piracy-adjacent file-sharing/streaming sites — high risk for both legal exposure and malware",
+      "risk_level": 3,
+      "color": "#f43f5e",
+      "domains": [
+        "thepiratebay.org", "1337x.to", "rarbg.to", "yts.mx", "torrentz2.eu",
+        "limetorrents.info", "kickasstorrents.to", "zooqle.com", "fmovies.to", "putlocker.vip"
+      ]
+    },
+    {
+      "slug": "vpn_proxy",
+      "name": "VPN & Proxy",
+      "description": "Public VPN and web-proxy services — blocking these reduces the risk of employees bypassing the gateway's own filtering",
+      "risk_level": 3,
+      "color": "#e11d48",
+      "domains": [
+        "nordvpn.com", "expressvpn.com", "surfshark.com", "protonvpn.com", "hidemyass.com",
+        "tunnelbear.com", "windscribe.com", "hotspotshield.com", "cyberghostvpn.com", "hola.org"
+      ]
+    },
+    {
+      "slug": "webmail_personal_email",
+      "name": "Webmail / Personal Email",
+      "description": "Personal webmail providers — the primary DLP concern is an employee exfiltrating company data through a personal, unmonitored mailbox",
+      "risk_level": 2,
+      "color": "#14b8a6",
+      "domains": [
+        "mail.google.com", "outlook.live.com", "yahoo.com", "mail.yahoo.com", "protonmail.com",
+        "gmx.com", "aol.com", "zoho.com", "icloud.com", "rediffmail.com"
+      ]
+    },
+    {
+      "slug": "cloud_storage",
+      "name": "Cloud Storage",
+      "description": "Personal cloud storage/file-sync services — another common exfiltration path for company files",
+      "risk_level": 2,
+      "color": "#8B5CF6",
+      "domains": [
+        "dropbox.com", "drive.google.com", "onedrive.live.com", "box.com", "mega.nz",
+        "mediafire.com", "wetransfer.com", "icedrive.net", "pcloud.com"
+      ]
+    },
+    {
+      "slug": "banking_finance_sensitive",
+      "name": "Banking & Finance (Sensitive)",
+      "description": "Financial institutions and payment portals that should normally be excluded from SSL inspection because of privacy and certificate-pinning risk",
+      "risk_level": 0,
+      "color": "#0f766e",
+      "domains": [
+        "chase.com", "bankofamerica.com", "wellsfargo.com", "citibank.com", "capitalone.com",
+        "americanexpress.com", "discover.com", "paypal.com", "stripe.com", "razorpay.com",
+        "hdfcbank.com", "icicibank.com", "axisbank.com", "onlinesbi.sbi", "kotak.com",
+        "yesbank.in", "paytm.com", "phonepe.com"
+      ]
+    },
+    {
+      "slug": "government_sensitive",
+      "name": "Government (Sensitive)",
+      "description": "Government, tax, and identity portals that should normally be excluded from SSL inspection",
+      "risk_level": 0,
+      "color": "#2563eb",
+      "domains": [
+        "gov.in", "india.gov.in", "uidai.gov.in", "incometax.gov.in", "gst.gov.in",
+        "passportindia.gov.in", "digilocker.gov.in", "irs.gov", "usa.gov", "gov.uk"
+      ]
+    },
+    {
+      "slug": "healthcare_sensitive",
+      "name": "Healthcare (Sensitive)",
+      "description": "Healthcare and insurance portals that should normally be excluded from SSL inspection",
+      "risk_level": 0,
+      "color": "#0891b2",
+      "domains": [
+        "mychart.com", "epic.com", "uhc.com", "aetna.com", "cigna.com",
+        "healthcare.gov", "practo.com", "apollo247.com", "1mg.com"
+      ]
+    },
+    {
+      "slug": "job_search",
+      "name": "Job Search",
+      "description": "Job boards and recruiting sites",
+      "risk_level": 0,
+      "color": "#f97316",
+      "domains": [
+        "indeed.com", "naukri.com", "glassdoor.com", "monster.com",
+        "ziprecruiter.com", "shine.com", "foundit.in", "simplyhired.com"
+      ]
+    },
+    {
+      "slug": "dating",
+      "name": "Dating",
+      "description": "Online dating and matchmaking platforms",
+      "risk_level": 2,
+      "color": "#f43f5e",
+      "domains": [
+        "tinder.com", "bumble.com", "hinge.co", "match.com", "okcupid.com",
+        "eharmony.com", "plentyoffish.com", "happn.com"
+      ]
+    }
+  ]
+}

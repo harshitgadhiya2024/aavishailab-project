@@ -1,0 +1,168 @@
+name: Agent packages
+
+# Native installers have to be built on their own OS — PyInstaller freezes the
+# host's interpreter, and codesign/signtool only exist on macOS/Windows. Hence
+# one job per platform rather than a cross-compile.
+
+on:
+  push:
+    tags: ["agent-v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Agent version (e.g. 1.1.0)"
+        required: true
+        default: "1.1.0"
+
+jobs:
+  macos:
+    runs-on: macos-14 # Apple Silicon
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install pyinstaller pystray Pillow certifi
+
+      # Signing secrets are optional: without them the job still produces an
+      # unsigned .pkg so the pipeline is testable before certs exist.
+      - name: Import signing certificate
+        if: env.MACOS_CERT_P12 != ''
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          echo "$MACOS_CERT_P12" | base64 --decode > /tmp/cert.p12
+          security create-keychain -p actions build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p actions build.keychain
+          security import /tmp/cert.p12 -k build.keychain -P "$MACOS_CERT_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/productbuild
+          security set-key-partition-list -S apple-tool:,apple: -s -k actions build.keychain
+          rm /tmp/cert.p12
+
+      - name: Build .pkg
+        env:
+          DEVELOPER_ID_APP: ${{ secrets.DEVELOPER_ID_APP }}
+          DEVELOPER_ID_INSTALLER: ${{ secrets.DEVELOPER_ID_INSTALLER }}
+          NOTARY_PROFILE: ${{ secrets.NOTARY_PROFILE }}
+          # Baked into the binary: the package carries no employee-specific
+          # token, so the agent has to already know where to enrol.
+          AAVISHIELD_ADMIN_URL: ${{ vars.AAVISHIELD_ADMIN_URL }}
+          AAVISHIELD_PORTAL_URL: ${{ vars.AAVISHIELD_PORTAL_URL }}
+        run: bash packaging/macos/build.sh "${{ inputs.version || '1.1.0' }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-pkg
+          path: dist/*.pkg
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install pyinstaller pystray Pillow certifi
+      - run: choco install wixtoolset --no-progress -y
+      - run: echo "C:\Program Files (x86)\WiX Toolset v3.14\bin" >> $env:GITHUB_PATH
+
+      - name: Build .msi
+        env:
+          SIGNING_CERT_PFX: ${{ secrets.SIGNING_CERT_PFX_PATH }}
+          SIGNING_CERT_PASSWORD: ${{ secrets.SIGNING_CERT_PASSWORD }}
+          SIGNING_CERT_THUMBPRINT: ${{ secrets.SIGNING_CERT_THUMBPRINT }}
+          AAVISHIELD_ADMIN_URL: ${{ vars.AAVISHIELD_ADMIN_URL }}
+          AAVISHIELD_PORTAL_URL: ${{ vars.AAVISHIELD_PORTAL_URL }}
+        run: powershell -ExecutionPolicy Bypass -File packaging\windows\build.ps1 -Version "${{ inputs.version || '1.1.0' }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-msi
+          path: dist/*.msi
+
+  linux:
+    runs-on: ubuntu-22.04 # oldest supported glibc — binaries built here run on newer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install pyinstaller pystray Pillow certifi
+      - name: Build .deb
+        env:
+          AAVISHIELD_ADMIN_URL: ${{ vars.AAVISHIELD_ADMIN_URL }}
+          AAVISHIELD_PORTAL_URL: ${{ vars.AAVISHIELD_PORTAL_URL }}
+        run: bash packaging/linux/build.sh "${{ inputs.version || '1.1.0' }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-deb
+          path: |
+            dist/*.deb
+            dist/*.tar.gz
+
+  manifest:
+    needs: [macos, windows, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: dist, merge-multiple: true }
+
+      # Filenames only. admin-api computes every checksum from the bytes it
+      # actually serves, so a hash written here could only ever go stale.
+      - name: Write manifest.json
+        run: |
+          VERSION="${{ inputs.version || '1.1.0' }}"
+          python3 - "$VERSION" <<'PY'
+          import json, os, sys
+          version = sys.argv[1]
+          artifacts = {}
+          for f in sorted(os.listdir("dist")):
+              if f.endswith(".pkg"):
+                  artifacts["macos"] = f
+              elif f.endswith(".msi"):
+                  artifacts["windows"] = f
+              elif f.endswith(".deb"):
+                  artifacts["linux"] = f
+          json.dump({"version": version, "artifacts": artifacts},
+                    open("dist/manifest.json", "w"), indent=2)
+          print(json.dumps({"version": version, "artifacts": artifacts}, indent=2))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent-packages
+          path: dist/
+
+      # Pushes each built package to the running admin-api over its own
+      # upload token (not portal/agent auth — this runner has neither
+      # identity). Skipped entirely if the secret isn't set yet, so this
+      # workflow stays usable for local testing before production is wired up.
+      - name: Publish to production
+        if: env.AAVISHIELD_ADMIN_URL != ''
+        env:
+          AAVISHIELD_ADMIN_URL: ${{ secrets.AAVISHIELD_ADMIN_URL }}
+          AGENT_PACKAGE_UPLOAD_TOKEN: ${{ secrets.AGENT_PACKAGE_UPLOAD_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ inputs.version || '1.1.0' }}"
+          for f in dist/*.pkg dist/*.msi dist/*.deb; do
+            [ -e "$f" ] || continue
+            case "$f" in
+              *.pkg) platform=macos ;;
+              *.msi) platform=windows ;;
+              *.deb) platform=linux ;;
+            esac
+            echo "==> Publishing $f as $platform"
+            curl -fsSL -X POST "$AAVISHIELD_ADMIN_URL/internal/admin/agent-packages" \
+              -H "Authorization: Bearer $AGENT_PACKAGE_UPLOAD_TOKEN" \
+              -F "platform=$platform" \
+              -F "version=$VERSION" \
+              -F "file=@$f"
+            echo
+          done

@@ -1,0 +1,88 @@
+# PyInstaller spec — bundles the CPython runtime with the agent so a target
+# machine no longer needs Python preinstalled. Build with:
+#
+#   pyinstaller --clean --noconfirm packaging/aavishield-agent.spec
+#
+# Produces dist/aavishield-agent (a single self-contained executable).
+
+import os
+
+block_cipher = None
+
+# pystray/Pillow drive the tray UI. They are optional at runtime — the agent
+# degrades to headless when they are absent — so a build box without them still
+# produces a working (tray-less) binary rather than failing.
+# certifi is NOT optional. A frozen build carries its own OpenSSL, whose
+# compiled-in CA paths point at the build machine's layout (e.g. Homebrew's
+# /opt/homebrew/etc/openssl@3) — absent on an employee's Mac, and unreachable
+# from launchd's bare environment. Without a bundled bundle every HTTPS call
+# fails CERTIFICATE_VERIFY_FAILED, so the agent cannot enrol or heartbeat and
+# the device never shows up in the dashboard.
+required_hiddenimports = ["certifi"]
+
+optional_hiddenimports = []
+for mod in (
+    "pystray", "PIL.Image", "PIL.ImageDraw", "PIL.ImageFilter", "PIL.ImageGrab",
+    "mss", "mss.darwin", "mss.windows", "mss.linux",
+    "pynput", "pynput.keyboard", "pynput.mouse",
+    "pynput.keyboard._darwin", "pynput.mouse._darwin",
+    "pynput.keyboard._win32", "pynput.mouse._win32",
+    "pynput.keyboard._xorg", "pynput.mouse._xorg",
+):
+    try:
+        __import__(mod)
+        optional_hiddenimports.append(mod)
+    except Exception:
+        # Broad on purpose: pystray/pynput's X11 backend raises
+        # Xlib.error.DisplayNameError (not ImportError) when built on a
+        # headless box with no DISPLAY — the normal case for a CI/build
+        # server — and that must degrade the same as a missing package.
+        pass
+
+# The platform build scripts stamp the deployment's admin/portal URLs into a
+# scratch copy of the agent and point this at it, so a build never has to edit
+# — and risk leaving edits in — the tracked source.
+agent_source = os.environ.get("AAVISHIELD_AGENT_SRC") or "../scripts/agent/aavishield-agent.py"
+
+a = Analysis(
+    [agent_source],
+    pathex=[],
+    binaries=[],
+    datas=[],
+    hiddenimports=required_hiddenimports + optional_hiddenimports,
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    # Trim the heavyweight stdlib GUI/test packages the agent never touches;
+    # keeps the binary small enough to ship as an auto-update payload.
+    excludes=["tkinter", "unittest", "pydoc_data", "test", "distutils"],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
+    noarchive=False,
+)
+
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    [],
+    name="aavishield-agent",
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,  # UPX-packed binaries trip AV heuristics; not worth the size win
+    runtime_tmpdir=None,
+    # The agent is a background daemon. A console window would flash on every
+    # Windows login; macOS/Linux ignore this flag.
+    console=False,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=os.environ.get("AAVISHIELD_TARGET_ARCH") or None,
+    codesign_identity=None,  # signing happens in the platform build scripts
+    entitlements_file=None,
+)

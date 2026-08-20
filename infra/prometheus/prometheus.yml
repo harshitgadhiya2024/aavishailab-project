@@ -1,0 +1,22 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+alerting:
+  alertmanagers: []
+
+scrape_configs:
+  - job_name: "admin-api"
+    static_configs:
+      - targets: ["admin-api:6000"]
+    metrics_path: /metrics
+
+  - job_name: "swg-engine"
+    static_configs:
+      - targets: ["swg-engine:6001"]
+    metrics_path: /metrics
+
+  - job_name: "ai-service"
+    static_configs:
+      - targets: ["ai-service:6002"]
+    metrics_path: /metrics

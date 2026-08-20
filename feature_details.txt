@@ -1,0 +1,25 @@
+#Device & network check
+Take input from employee device (every time)
+Device MAC address
+Device IP
+Device location
+
+#Delphic Secure Client connector
+
+#web browsing
+rules define needed
+
+#malware detection
+not required rules in here generating risk score => >80 then block, 50-80=>alert
+
+#ssl/https inspection almost required in every website (Only you can bypass in banking or any sensitive goverment website)
+
+#Download protection
+
+#upload protection - DLP (sensitive data score>80 then block otherwise and 50-80 then alerts)
+
+#Threat Intelligence - define risk score
+
+#Shadow IT discovery
+
+#CASB intgegration

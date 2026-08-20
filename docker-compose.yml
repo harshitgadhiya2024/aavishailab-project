@@ -1,0 +1,539 @@
+services:
+  # ─── Infrastructure ────────────────────────────────────────────────────────
+
+  postgres:
+    build:
+      context: ./infra/postgres
+      dockerfile: Dockerfile
+    container_name: aavishield-postgres
+    restart: unless-stopped
+    command: ["postgres", "-p", "6432"]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-aavishield}
+      POSTGRES_USER: ${POSTGRES_USER:-aavishield}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aavishield_dev_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:7432:6432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aavishield} -p 6432"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aavishield-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: aavishield-redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD:-aavishield_redis_dev} --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "127.0.0.1:7379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-aavishield_redis_dev}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aavishield-net
+
+  # ─── Backend Services ───────────────────────────────────────────────────────
+
+  admin-api:
+    build:
+      context: ./services/admin-api
+      dockerfile: Dockerfile
+    container_name: aavishield-admin-api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-aavishield}:${POSTGRES_PASSWORD:-aavishield_dev_password}@postgres:6432/${POSTGRES_DB:-aavishield}?sslmode=disable
+      REDIS_URL: redis://:${REDIS_PASSWORD:-aavishield_redis_dev}@redis:6379/0
+      ADMIN_API_PORT: "6000"
+      ADMIN_API_PUBLIC_URL: ${ADMIN_API_PUBLIC_URL:-http://localhost:6000}
+      SWG_PUBLIC_HOST: ${SWG_PUBLIC_HOST:-localhost}
+      SWG_PUBLIC_PORT: ${SWG_PUBLIC_PORT:-6080}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:1001,http://localhost:1002,http://localhost:1003,http://localhost:5001,http://localhost:5002,http://localhost:5003,https://aavishield-admin.aavishailab.com,https://aavishield-app.aavishailab.com,https://aavishield-employee.aavishailab.com}
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: "3310"
+      CA_KEY_ENCRYPTION_KEY: ${CA_KEY_ENCRYPTION_KEY:-change-this-to-a-long-random-string-in-production}
+      # DLP microservice: when set, /internal/agent/scan-dlp proxies content to
+      # dlp-service for weighted scoring; unset -> in-process fallback scanner.
+      DLP_SERVICE_URL: http://dlp-service:6200
+      DLP_SERVICE_SECRET: ${DLP_SERVICE_SECRET:-change-this-dlp-shared-secret-in-production}
+      # Malware microservice: when set, /internal/agent/scan-file proxies
+      # downloads to malware-service for 0-100 risk scoring; unset -> in-process
+      # ClamAV fallback.
+      # Screenshot storage: set SCREENSHOT_R2_* to use Cloudflare R2, otherwise
+      # images land on the local volume mounted below.
+      SCREENSHOT_R2_ENDPOINT: ${SCREENSHOT_R2_ENDPOINT:-}
+      SCREENSHOT_R2_BUCKET: ${SCREENSHOT_R2_BUCKET:-}
+      SCREENSHOT_R2_ACCESS_KEY: ${SCREENSHOT_R2_ACCESS_KEY:-}
+      SCREENSHOT_R2_SECRET_KEY: ${SCREENSHOT_R2_SECRET_KEY:-}
+      SCREENSHOT_R2_REGION: ${SCREENSHOT_R2_REGION:-auto}
+      SCREENSHOT_LOCAL_DIR: /data/screenshots
+      MEDIA_SIGNING_SECRET: ${MEDIA_SIGNING_SECRET:-change-this-media-signing-secret-in-production}
+      PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:7100}
+      MALWARE_SERVICE_URL: http://malware-service:6210
+      MALWARE_SERVICE_SECRET: ${MALWARE_SERVICE_SECRET:-change-this-malware-shared-secret-in-production}
+      # Threat-intel microservice: domain / IP / file-hash reputation + scoring.
+      THREATINTEL_SERVICE_URL: http://threatintel-service:6220
+      THREATINTEL_SERVICE_SECRET: ${THREATINTEL_SERVICE_SECRET:-change-this-threatintel-shared-secret-in-production}
+      # Posture + GeoIP microservice.
+      POSTURE_SERVICE_URL: http://posture-service:6230
+      POSTURE_SERVICE_SECRET: ${POSTURE_SERVICE_SECRET:-change-this-posture-shared-secret-in-production}
+      # Shadow-IT discovery service (cloud-app classification).
+      SHADOWIT_SERVICE_URL: http://shadowit-service:6240
+      SHADOWIT_SERVICE_SECRET: ${SHADOWIT_SERVICE_SECRET:-change-this-shadowit-shared-secret-in-production}
+      # CASB service (inline app-control + out-of-band cloud share analysis).
+      CASB_SERVICE_URL: http://casb-service:6250
+      CASB_SERVICE_SECRET: ${CASB_SERVICE_SECRET:-change-this-casb-shared-secret-in-production}
+      # Native agent installers (.pkg/.msi/.deb) + manifest.json, published by
+      # the agent-packages CI workflow. Served to installers and consumed by the
+      # agent auto-updater. Empty is fine — the portal falls back to the script
+      # installer and the updater no-ops.
+      AGENT_PACKAGE_DIR: /app/agent-packages
+      # Bearer token the CI workflow presents to POST /internal/admin/agent-packages.
+      # Unset disables the upload endpoint entirely (404) — packages can still be
+      # dropped into the volume by hand.
+      AGENT_PACKAGE_UPLOAD_TOKEN: ${AGENT_PACKAGE_UPLOAD_TOKEN:-}
+    volumes:
+      - agent_packages:/app/agent-packages
+      - screenshot_data:/data/screenshots
+    ports:
+      - "127.0.0.1:7100:6000"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:6000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      # clamav stays on service_started: freshclam pulls signature DBs on first
+      # boot, so waiting for healthy would block the API for minutes. File
+      # scanning fails open until ClamAV is up.
+      clamav:
+        condition: service_started
+      dlp-service:
+        condition: service_healthy
+      malware-service:
+        condition: service_healthy
+      threatintel-service:
+        condition: service_healthy
+      posture-service:
+        condition: service_healthy
+      shadowit-service:
+        condition: service_healthy
+      casb-service:
+        condition: service_healthy
+    networks:
+      - aavishield-net
+
+  # Stateless DLP content-scanning service: weighted sensitivity scoring +
+  # >=80 block / 50-79 alert bands. Holds no data; scale replicas freely.
+  # These are the automatic-DLP defaults; admin-api's built-in ruleset sends
+  # the same 80/50 per-scan, so a company gets protection with zero setup.
+  dlp-service:
+    build:
+      context: ./services/dlp-service
+      dockerfile: Dockerfile
+    container_name: aavishield-dlp-service
+    restart: unless-stopped
+    environment:
+      DLP_SERVICE_SECRET: ${DLP_SERVICE_SECRET:-change-this-dlp-shared-secret-in-production}
+      DLP_REQUIRE_AUTH: "true"
+      DLP_BLOCK_THRESHOLD: ${DLP_BLOCK_THRESHOLD:-80}
+      DLP_ALERT_THRESHOLD: ${DLP_ALERT_THRESHOLD:-50}
+    ports:
+      - "127.0.0.1:7200:6200"
+    networks:
+      - aavishield-net
+
+  # Stateless malware file-scoring service: hash reputation + ClamAV + static
+  # heuristics + sandbox hook -> 0-100 risk score with >80 block / 50-80 alert.
+  malware-service:
+    build:
+      context: ./services/malware-service
+      dockerfile: Dockerfile
+    container_name: aavishield-malware-service
+    restart: unless-stopped
+    environment:
+      MALWARE_SERVICE_SECRET: ${MALWARE_SERVICE_SECRET:-change-this-malware-shared-secret-in-production}
+      MALWARE_REQUIRE_AUTH: "true"
+      MALWARE_BLOCK_THRESHOLD: ${MALWARE_BLOCK_THRESHOLD:-80}
+      MALWARE_ALERT_THRESHOLD: ${MALWARE_ALERT_THRESHOLD:-50}
+      # Reuse the existing ClamAV container for signature scanning.
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: "3310"
+    ports:
+      - "127.0.0.1:7210:6210"
+    depends_on:
+      clamav:
+        condition: service_started
+    networks:
+      - aavishield-net
+
+  # Stateless threat-intel service: syncs free feeds (URLhaus, OpenPhish, Feodo,
+  # MalwareBazaar) into memory and scores domain / IP / file-hash reputation.
+  threatintel-service:
+    build:
+      context: ./services/threatintel-service
+      dockerfile: Dockerfile
+    container_name: aavishield-threatintel-service
+    restart: unless-stopped
+    environment:
+      THREATINTEL_SERVICE_SECRET: ${THREATINTEL_SERVICE_SECRET:-change-this-threatintel-shared-secret-in-production}
+      THREATINTEL_REQUIRE_AUTH: "true"
+      THREATINTEL_ENABLE_FEEDS: "true"
+      THREATINTEL_BLOCK_THRESHOLD: ${THREATINTEL_BLOCK_THRESHOLD:-80}
+      THREATINTEL_ALERT_THRESHOLD: ${THREATINTEL_ALERT_THRESHOLD:-50}
+    ports:
+      - "127.0.0.1:7220:6220"
+    healthcheck:
+      test: ["CMD", "/threatintel", "healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - aavishield-net
+
+  # Stateless device-posture scoring + GeoIP resolution service. Mount a free
+  # country CSV at POSTURE_GEOIP_CSV for full IP->country resolution.
+  posture-service:
+    build:
+      context: ./services/posture-service
+      dockerfile: Dockerfile
+    container_name: aavishield-posture-service
+    restart: unless-stopped
+    environment:
+      POSTURE_SERVICE_SECRET: ${POSTURE_SERVICE_SECRET:-change-this-posture-shared-secret-in-production}
+      POSTURE_REQUIRE_AUTH: "true"
+      POSTURE_PASS_THRESHOLD: ${POSTURE_PASS_THRESHOLD:-80}
+      POSTURE_WARN_THRESHOLD: ${POSTURE_WARN_THRESHOLD:-50}
+      # POSTURE_GEOIP_CSV: /data/geoip-country.csv  # mount a free country CSV to enable
+    healthcheck:
+      test: ["CMD", "/posture", "healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - aavishield-net
+
+  # Stateless shadow-IT service: classifies domains against a cloud-app catalog
+  # (app name, category, risk). admin-api rolls up activity + applies sanctions.
+  shadowit-service:
+    build:
+      context: ./services/shadowit-service
+      dockerfile: Dockerfile
+    container_name: aavishield-shadowit-service
+    restart: unless-stopped
+    environment:
+      SHADOWIT_SERVICE_SECRET: ${SHADOWIT_SERVICE_SECRET:-change-this-shadowit-shared-secret-in-production}
+      SHADOWIT_REQUIRE_AUTH: "true"
+      # SHADOWIT_CATALOG_FILE: /data/cloud-apps.json  # mount to extend the catalog
+    healthcheck:
+      test: ["CMD", "/shadowit", "healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - aavishield-net
+
+  # Stateless CASB service: inline SaaS app-control decisions + out-of-band
+  # cloud file-share risk analysis (provider-agnostic; OAuth adapters pluggable).
+  casb-service:
+    build:
+      context: ./services/casb-service
+      dockerfile: Dockerfile
+    container_name: aavishield-casb-service
+    restart: unless-stopped
+    environment:
+      CASB_SERVICE_SECRET: ${CASB_SERVICE_SECRET:-change-this-casb-shared-secret-in-production}
+      CASB_REQUIRE_AUTH: "true"
+    networks:
+      - aavishield-net
+
+  swg-engine:
+    build:
+      context: ./services/swg-engine
+      dockerfile: Dockerfile
+    container_name: aavishield-swg-engine
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-aavishield}:${POSTGRES_PASSWORD:-aavishield_dev_password}@postgres:6432/${POSTGRES_DB:-aavishield}?sslmode=disable
+      REDIS_URL: redis://:${REDIS_PASSWORD:-aavishield_redis_dev}@redis:6379/0
+      SWG_ENGINE_PORT: "6001"
+      ADMIN_API_URL: http://admin-api:6000
+    ports:
+      - "127.0.0.1:7001:6001"
+      - "6080:6080"
+      - "6053:6053/udp"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:6001/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    depends_on:
+      admin-api:
+        condition: service_healthy
+    networks:
+      - aavishield-net
+
+  ai-service:
+    build:
+      context: ./services/ai-service
+      dockerfile: Dockerfile
+    container_name: aavishield-ai-service
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      AI_SERVICE_PORT: "6002"
+      ADMIN_API_URL: http://admin-api:6000
+      REDIS_URL: redis://:${REDIS_PASSWORD:-aavishield_redis_dev}@redis:6379/0
+    ports:
+      - "127.0.0.1:7002:6002"
+    # python:3.12-slim ships no wget/curl — probe with the interpreter instead.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:6002/health', timeout=3).status == 200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - aavishield-net
+
+  # Open-source antivirus engine (ClamAV) used to scan plain-HTTP file
+  # downloads for real malware signatures — no paid API involved. HTTPS
+  # downloads aren't covered (that needs full TLS interception, a much
+  # bigger separate project).
+  clamav:
+    image: clamav/clamav:latest
+    container_name: aavishield-clamav
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:7310:3310"
+    volumes:
+      - clamav_data:/var/lib/clamav
+      # Raises the stock 25MB stream / 100MB file caps — see the file for why.
+      - ./deploy/clamav/clamd.conf:/etc/clamav/clamd.conf:ro
+    networks:
+      - aavishield-net
+
+  # ─── Frontend ───────────────────────────────────────────────────────────────
+
+  superadmin:
+    build:
+      context: ./frontend/superadmin
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:6000}
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:6000}
+        NEXT_PUBLIC_AI_URL: ${NEXT_PUBLIC_AI_URL:-http://localhost:6002}
+    container_name: aavishield-superadmin
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: "1001"
+      NEXTAUTH_URL: ${NEXTAUTH_URL_SUPERADMIN:-http://localhost:1001}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-aavishield-nextauth-secret}
+      NEXTAUTH_API_URL: http://admin-api:6000
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:6000}
+      NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:6000}
+      NEXT_PUBLIC_AI_URL: ${NEXT_PUBLIC_AI_URL:-http://localhost:6002}
+      NEXT_PUBLIC_PANEL: superadmin
+    ports:
+      - "127.0.0.1:5001:1001"
+    # Next standalone binds to $HOSTNAME (the container's own IP), not 127.0.0.1,
+    # so the probe has to go through the hostname.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://$$HOSTNAME:1001/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      admin-api:
+        condition: service_healthy
+    networks:
+      - aavishield-net
+
+  company-dashboard:
+    build:
+      context: ./frontend/company-dashboard
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:6000}
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:6000}
+        NEXT_PUBLIC_AI_URL: ${NEXT_PUBLIC_AI_URL:-http://localhost:6002}
+    container_name: aavishield-company-dashboard
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: "1002"
+      NEXTAUTH_URL: ${NEXTAUTH_URL_COMPANY:-http://localhost:1002}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-aavishield-nextauth-secret}
+      NEXTAUTH_API_URL: http://admin-api:6000
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:6000}
+      NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:6000}
+      NEXT_PUBLIC_AI_URL: ${NEXT_PUBLIC_AI_URL:-http://localhost:6002}
+      NEXT_PUBLIC_PANEL: company
+    ports:
+      - "127.0.0.1:5002:1002"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://$$HOSTNAME:1002/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      admin-api:
+        condition: service_healthy
+    networks:
+      - aavishield-net
+
+  employee-portal:
+    build:
+      context: ./frontend/employee-portal
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:6000}
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:6000}
+        NEXT_PUBLIC_AI_URL: ${NEXT_PUBLIC_AI_URL:-http://localhost:6002}
+    container_name: aavishield-employee-portal
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: "1003"
+      NEXTAUTH_URL: ${NEXTAUTH_URL_EMPLOYEE:-http://localhost:1003}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-aavishield-nextauth-secret}
+      NEXTAUTH_API_URL: http://admin-api:6000
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:6000}
+      NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:6000}
+      NEXT_PUBLIC_AI_URL: ${NEXT_PUBLIC_AI_URL:-http://localhost:6002}
+      NEXT_PUBLIC_PANEL: employee
+    ports:
+      - "127.0.0.1:5003:1003"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://$$HOSTNAME:1003/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      admin-api:
+        condition: service_healthy
+    networks:
+      - aavishield-net
+
+  # ─── Observability ──────────────────────────────────────────────────────────
+
+  prometheus:
+    build:
+      context: ./infra/prometheus
+      dockerfile: Dockerfile
+    container_name: aavishield-prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.listen-address=:6090"
+    volumes:
+      - prometheus_data:/prometheus
+    ports:
+      - "127.0.0.1:7090:6090"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:6090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - aavishield-net
+
+  grafana:
+    build:
+      context: ./infra/grafana
+      dockerfile: Dockerfile
+    container_name: aavishield-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SERVER_HTTP_PORT: "6300"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:7300:6300"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:6300/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    networks:
+      - aavishield-net
+
+  # ─── Cloudflare Tunnel (public HTTPS URLs) ──────────────────────────────────
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: aavishield-cloudflared
+    # --metrics pins the metrics/readiness listener to a known port so the
+    # healthcheck below can call /ready (the image is distroless — no wget/curl,
+    # `cloudflared tunnel ready` is the only probe available).
+    command: tunnel --no-autoupdate --metrics 0.0.0.0:2000 --config /etc/cloudflared/config.yml run
+    restart: unless-stopped
+    volumes:
+      - ./cloudflared/config.yml:/etc/cloudflared/config.yml:ro
+      - ./cloudflared/aavishield-creds.json:/etc/cloudflared/creds.json:ro
+    healthcheck:
+      test: ["CMD", "cloudflared", "tunnel", "--metrics", "127.0.0.1:2000", "ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    depends_on:
+      superadmin:
+        condition: service_healthy
+      company-dashboard:
+        condition: service_healthy
+      employee-portal:
+        condition: service_healthy
+      admin-api:
+        condition: service_healthy
+      ai-service:
+        condition: service_healthy
+    networks:
+      - aavishield-net
+
+volumes:
+  agent_packages:
+  screenshot_data:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+  clamav_data:
+
+networks:
+  aavishield-net:
+    driver: bridge

@@ -1,0 +1,17 @@
+# Force LF for text sources regardless of the checkout platform's git config.
+# GitHub's windows-latest runners default to core.autocrlf=true, which turns
+# these files' LF into CRLF on checkout — silently breaking any tool that
+# does exact-line regex matching against them (e.g. packaging/*/build.sh's
+# "stamp the deployment URL" step, which anchors on end-of-line with `$`).
+* text=auto eol=lf
+
+# Build artifacts — never text-normalize binaries.
+*.pkg -text
+*.msi -text
+*.deb -text
+*.tar.gz -text
+*.zip -text
+*.pyz -text
+*.docx -text
+*.pdf -text
+build/** -text

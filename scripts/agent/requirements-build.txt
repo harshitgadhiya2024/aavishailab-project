@@ -1,0 +1,5 @@
+pyinstaller==6.11.1
+pystray==0.19.5
+Pillow==11.0.0
+mss==9.0.2
+pynput==1.7.7
