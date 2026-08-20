@@ -523,11 +523,20 @@ func (h *AgentHandler) GetRules(c *gin.Context) {
 	// every one of the ~6 polls/minute every device makes.
 	if h.rdb != nil {
 		if body, err := h.rdb.Get(ctx, cacheKey).Result(); err == nil {
-			// Sliding expiration: a device polling every 10s inside a 15s TTL
-			// should stay cached indefinitely, not fall out every ~1.5 polls.
-			// Only a device that stops polling for a full rulesCacheTTL forces
-			// the next request back to a real recompute.
-			h.rdb.Expire(ctx, cacheKey, rulesCacheTTL)
+			// Deliberately NOT sliding this TTL on hit. An earlier version of
+			// this cache refreshed the TTL on every hit so a continuously-
+			// polling device would stay cached indefinitely — which sounds
+			// efficient but is a real correctness bug: since a device polls
+			// every 10s (< rulesCacheTTL), its own repeat polls would refresh
+			// the TTL before it ever lapsed, so the cache would NEVER expire
+			// naturally and an admin's policy change would never reach that
+			// device at all, not "within one missed poll" as documented.
+			// Caught live: seeded a domain_rules row against a running agent
+			// and it never appeared in /internal/agent/rules — the sliding
+			// TTL was holding the pre-change empty result forever. Each
+			// cache entry now expires unconditionally rulesCacheTTL after it
+			// was computed, regardless of hits in between, which is what
+			// actually bounds staleness to "one missed poll at worst".
 			etag := rulesETag(body)
 			c.Header("ETag", etag)
 			if c.GetHeader("If-None-Match") == etag {

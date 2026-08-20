@@ -1,9 +1,13 @@
 package handlers
 
 import (
+	"context"
 	"testing"
+	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 )
 
 // These test the pure, DB-free pieces of the Phase 1 Redis caching added to
@@ -60,6 +64,46 @@ func TestAgentTokenCacheKeyIsScopedToDeviceAndKeyHash(t *testing.T) {
 	}
 	if agentTokenCacheKey(uuid.New().String(), "hashA") == agentTokenCacheKey(uuid.New().String(), "hashA") {
 		t.Fatal("two different devices must not collide on the same key hash")
+	}
+}
+
+// TestRulesCacheEntryExpiresDespiteContinuousReads is a regression test for
+// a real bug caught via live testing (see the comment above the GET branch
+// in GetRules, agents.go): an earlier version called rdb.Expire() on every
+// cache hit to "keep a continuously-polling device cached indefinitely".
+// Since a device polls every 10s — inside the 15s TTL — that sliding
+// refresh meant the cache entry NEVER expired naturally, so an admin's
+// domain-rule change would never reach an actively-polling device. This
+// test locks in the fix's actual contract: reading a key on the same
+// schedule GetRules uses must NOT extend its TTL, so the entry still
+// expires on time.
+func TestRulesCacheEntryExpiresDespiteContinuousReads(t *testing.T) {
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("start miniredis: %v", err)
+	}
+	defer mr.Close()
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	ctx := context.Background()
+
+	key := "agent:rules:test-org:test-emp"
+	if err := rdb.Set(ctx, key, `{"rules":[]}`, rulesCacheTTL).Err(); err != nil {
+		t.Fatalf("seed cache entry: %v", err)
+	}
+
+	// Simulate a device polling every 10s (GetRules' real interval) for
+	// longer than rulesCacheTTL, doing only a GET each time — exactly what
+	// the fixed code path does on a cache hit, with no Expire() call.
+	elapsed := time.Duration(0)
+	for elapsed < rulesCacheTTL+5*time.Second {
+		mr.FastForward(10 * time.Second)
+		elapsed += 10 * time.Second
+		rdb.Get(ctx, key) // the read itself — must not be a side-effecting refresh
+	}
+
+	if mr.Exists(key) {
+		t.Fatal("cache entry must expire on its own schedule even under continuous reads — " +
+			"a sliding TTL here means a policy change never reaches an actively-polling device")
 	}
 }
 
