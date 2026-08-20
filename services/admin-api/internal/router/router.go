@@ -60,7 +60,7 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	actH := handlers.NewActivityHandler(db, wsHub)
 	orgH := handlers.NewOrgHandler(db)
 	swgH := handlers.NewSWGHandler(db)
-	agentH := handlers.NewAgentHandler(db, wsHub)
+	agentH := handlers.NewAgentHandler(db, wsHub, rdb)
 	portalH := handlers.NewPortalHandler(db, wsHub)
 	arH := handlers.NewAccessRequestHandler(db)
 	shadowH := handlers.NewShadowITHandler(db)

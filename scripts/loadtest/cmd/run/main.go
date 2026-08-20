@@ -52,7 +52,18 @@ func main() {
 	}
 	fmt.Printf("loaded %d devices from %s\n", len(tokens), *tokensFile)
 
-	client := &http.Client{Timeout: 15 * time.Second}
+	// Default http.Transport caps idle connections per host at 2, which
+	// causes severe connection churn (and spurious client-side failures) once
+	// goroutine count is in the thousands — a load-test client artifact, not
+	// server behavior. Raise the ceiling so measured latency reflects the
+	// server, not this tool.
+	transport := &http.Transport{
+		MaxIdleConns:        len(tokens) * 2,
+		MaxIdleConnsPerHost: len(tokens) * 2,
+		MaxConnsPerHost:     0,
+		IdleConnTimeout:     90 * time.Second,
+	}
+	client := &http.Client{Timeout: 15 * time.Second, Transport: transport}
 	samples := make(chan sample, 100000)
 	var reqCount, errCount int64
 

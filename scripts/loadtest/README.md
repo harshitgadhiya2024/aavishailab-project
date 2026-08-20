@@ -46,3 +46,28 @@ DELETE FROM devices WHERE org_id = (SELECT id FROM organizations WHERE slug = 'l
 DELETE FROM employees WHERE org_id = (SELECT id FROM organizations WHERE slug = 'loadtest-org');
 DELETE FROM organizations WHERE slug = 'loadtest-org';
 ```
+
+## Phase 1.2 results (Redis caching for authAgent + GetRules)
+
+Same 1,000-device seed, same poll cadence, before/after the Redis caching
+change in `agents.go` (authAgent token cache + debounced `last_used_at`,
+GetRules result cache with sliding TTL + ETag):
+
+```
+                    p50(ms)   p95(ms)   p99(ms)
+GetRules  before      939      1812      2148
+GetRules  after       127      1024      1407     (-86% p50)
+```
+
+Heartbeat and ReportActivity are essentially unchanged (~700-800ms and
+~450ms p50 respectively) — Phase 1.2 deliberately targeted only
+authAgent + GetRules; Heartbeat's own DB writes and the two synchronous
+posture-service HTTP calls it makes, and ReportActivity's INSERT, are
+untouched by this change and remain candidates for later work (indexing
+covers part of this — see Phase 1.3).
+
+A single cache-hit GetRules call observed directly in admin-api's logs
+during testing: `200 | 6.217201ms | GET /internal/agent/rules` — the
+~127ms aggregate p50 reflects load-test-scale concurrency contention on
+the shared Postgres pool from the *other* (uncached) endpoints running
+in parallel, not the cache path itself.
