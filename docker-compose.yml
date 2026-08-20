@@ -193,6 +193,10 @@ services:
         limits:
           memory: 512m
     restart: unless-stopped
+    # A single scan can legitimately run for minutes (CLAMAV_TIMEOUT
+    # defaults to 120s) — the default 10s SIGTERM->SIGKILL grace period
+    # would kill an in-flight multi-gigabyte scan on every redeploy.
+    stop_grace_period: 130s
     environment:
       MALWARE_SERVICE_SECRET: ${MALWARE_SERVICE_SECRET:-change-this-malware-shared-secret-in-production}
       MALWARE_REQUIRE_AUTH: "true"

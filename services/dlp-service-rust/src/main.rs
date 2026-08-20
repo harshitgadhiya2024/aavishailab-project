@@ -23,7 +23,29 @@ async fn main() {
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:6200").await.unwrap();
     println!("dlp-service listening on 0.0.0.0:6200");
-    axum::serve(listener, app).await.unwrap();
+    axum::serve(listener, app).with_graceful_shutdown(shutdown_signal()).await.unwrap();
+}
+
+/// Without this, `docker compose stop`/a rolling redeploy sends SIGTERM,
+/// axum::serve ignores it, and Docker SIGKILLs the process after its
+/// default 10s grace period — killing any request still in flight (a scan
+/// mid-window) rather than letting it finish. Waits for either signal so
+/// this also behaves under a plain `cargo run` + Ctrl-C locally.
+async fn shutdown_signal() {
+    let ctrl_c = async { tokio::signal::ctrl_c().await.expect("failed to install Ctrl+C handler") };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).expect("failed to install SIGTERM handler").recv().await;
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {}
+        _ = terminate => {}
+    }
+    println!("shutdown signal received, draining in-flight requests");
 }
 
 /// A raw-socket GET /healthz — deliberately not pulling in a full HTTP
