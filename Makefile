@@ -110,12 +110,6 @@ dev-api:
 		export $$(cat ../../.env | grep -v '^#' | xargs) && \
 		go run ./cmd/server/main.go
 
-dev-swg:
-	@cp -n .env.example .env 2>/dev/null || true
-	cd services/swg-engine && \
-		export $$(cat ../../.env | grep -v '^#' | xargs) && \
-		go run ./cmd/server/main.go
-
 dev-ai:
 	cd services/ai-service && \
 		pip install -r requirements.txt -q && \
@@ -156,7 +150,7 @@ redis-cli:
 # Go tests run on the host toolchain: the service images are alpine/distroless
 # runtime layers holding only the compiled binary, so `compose run … go test`
 # has no compiler to invoke.
-GO_SERVICES := services/admin-api services/swg-engine services/posture-service \
+GO_SERVICES := services/admin-api services/posture-service \
                services/shadowit-service services/threatintel-service
 
 test:
