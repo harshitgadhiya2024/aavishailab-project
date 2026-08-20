@@ -456,14 +456,21 @@ const (
 )
 
 type ActivityEvent struct {
-	ID           uuid.UUID   `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()" json:"id"`
-	OrgID        uuid.UUID   `gorm:"type:uuid;not null;index" json:"org_id"`
-	EmployeeID   *uuid.UUID  `gorm:"type:uuid;index" json:"employee_id"`
-	DeviceID     *uuid.UUID  `gorm:"type:uuid;index" json:"device_id"`
-	EventType    EventType   `gorm:"type:event_type;not null;index" json:"event_type"`
-	Action       EventAction `gorm:"type:event_action;default:'logged';index" json:"action"`
-	Target       string      `json:"target"`
-	TargetDomain string      `json:"target_domain"`
+	ID         uuid.UUID  `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()" json:"id"`
+	OrgID      uuid.UUID  `gorm:"type:uuid;not null;index;index:idx_activity_org_domain,priority:1" json:"org_id"`
+	EmployeeID *uuid.UUID `gorm:"type:uuid;index" json:"employee_id"`
+	DeviceID   *uuid.UUID `gorm:"type:uuid;index" json:"device_id"`
+	EventType  EventType  `gorm:"type:event_type;not null;index" json:"event_type"`
+	Action     EventAction `gorm:"type:event_action;default:'logged';index" json:"action"`
+	Target     string      `json:"target"`
+	// TargetDomain was unindexed despite being the GROUP BY key in shadow-IT
+	// rollup (shadowit.go), SWG stats, report topDomains, and the risk-engine
+	// worker's every-15s scan — all four now hit an index instead of a full
+	// table scan. Two composite indexes, not one: (org_id, target_domain)
+	// serves the org-scoped rollups; (timestamp, target_domain) serves the
+	// risk-engine worker's global "recent activity, not yet assessed" scan,
+	// which filters on timestamp with no org_id at all.
+	TargetDomain string `gorm:"index:idx_activity_org_domain,priority:2;index:idx_activity_timestamp_domain,priority:2" json:"target_domain"`
 	// TargetApp is resolved at read time from TargetDomain via the shadow-IT
 	// catalog ("Microsoft Teams" for teams.microsoft.com) so the UI can name the
 	// platform instead of showing a raw telemetry hostname. Not persisted: the
@@ -484,7 +491,7 @@ type ActivityEvent struct {
 	GeoCountry    string         `json:"geo_country"`
 	GeoCity       string         `json:"geo_city"`
 	Metadata      map[string]any `gorm:"type:jsonb;serializer:json" json:"metadata"`
-	Timestamp     time.Time      `gorm:"index" json:"timestamp"`
+	Timestamp     time.Time      `gorm:"index;index:idx_activity_timestamp_domain,priority:1" json:"timestamp"`
 	CreatedAt     time.Time      `json:"created_at"`
 
 	// references:ID — see the note on Employee.Devices above.

@@ -171,35 +171,6 @@ func (h *SWGHandler) DeleteDomainRule(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Rule deleted"})
 }
 
-// GetEffectiveRules handles GET /swg/effective-rules (for SWG engine)
-func (h *SWGHandler) GetEffectiveRules(c *gin.Context) {
-	orgID := c.Query("org_id")
-
-	var rules []models.DomainRule
-	q := h.db.Where("enabled = true")
-	if orgID != "" {
-		q = q.Where("org_id = ? OR org_id IS NULL", orgID)
-	}
-	q.Find(&rules)
-
-	// Merge enabled policy domain/category blocks into effective rules for the
-	// SWG engine. No employee context exists at this org-wide granularity, so
-	// team/employee-scoped policies are correctly excluded here (nil, nil) —
-	// they only ever apply through the per-device path in agents.go's
-	// GetRules, which does have an employee to match against.
-	var policies []models.Policy
-	pq := h.db.Where("enabled = true")
-	if orgID != "" {
-		pq = pq.Where("org_id = ?", orgID)
-	}
-	pq.Order("priority ASC").Find(&policies)
-
-	orgUUID, _ := uuid.Parse(orgID)
-	rules = append(rules, expandPoliciesToDomainRules(h.db, orgUUID, policies, nil, nil)...)
-
-	c.JSON(http.StatusOK, rules)
-}
-
 // ─── URL Categories ────────────────────────────────────────────────────────────
 
 // ListCategories handles GET /swg/categories
@@ -254,62 +225,7 @@ func (h *SWGHandler) Stats(c *gin.Context) {
 	})
 }
 
-// ─── Policy Check (for SWG engine) ────────────────────────────────────────────
-
-// CheckURL handles POST /swg/check (called by SWG engine)
-func (h *SWGHandler) CheckURL(c *gin.Context) {
-	var req struct {
-		OrgID    string `json:"org_id" binding:"required"`
-		Domain   string `json:"domain" binding:"required"`
-		URL      string `json:"url"`
-		UserID   string `json:"user_id"`
-		Category string `json:"category"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	// Check domain rules (org-specific first, then global)
-	var rule models.DomainRule
-	err := h.db.Where("(org_id = ? OR org_id IS NULL) AND domain = ? AND enabled = true", req.OrgID, req.Domain).
-		Order("org_id DESC NULLS LAST"). // org-specific rules take priority
-		First(&rule).Error
-
-	if err == nil {
-		c.JSON(http.StatusOK, gin.H{
-			"action":   rule.Action,
-			"reason":   rule.Reason,
-			"category": rule.Category,
-			"rule_id":  rule.ID,
-		})
-		return
-	}
-
-	// Check policies
-	var policies []models.Policy
-	h.db.Where("org_id = ? AND enabled = true AND type = ?", req.OrgID, models.PolicyTypeURLCategory).
-		Order("priority ASC").
-		Find(&policies)
-
-	for _, p := range policies {
-		categories, _ := p.Rules["categories"].([]any)
-		for _, cat := range categories {
-			if cat == req.Category {
-				c.JSON(http.StatusOK, gin.H{
-					"action":      p.Action,
-					"policy_id":   p.ID,
-					"policy_name": p.Name,
-					"reason":      "Category blocked: " + req.Category,
-				})
-				return
-			}
-		}
-	}
-
-	// Default: allow
-	c.JSON(http.StatusOK, gin.H{"action": "allow", "reason": "no matching rule"})
-}
+// ─── Policy Check ──────────────────────────────────────────────────────────────
 
 // CheckURLDashboard handles POST /swg/check for the company dashboard.
 func (h *SWGHandler) CheckURLDashboard(c *gin.Context) {

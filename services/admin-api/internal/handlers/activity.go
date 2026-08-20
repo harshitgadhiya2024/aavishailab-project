@@ -256,11 +256,6 @@ func (h *ActivityHandler) Create(c *gin.Context) {
 	h.createEvent(c)
 }
 
-// CreateInternal handles POST /internal/activity (from SWG engine / agents)
-func (h *ActivityHandler) CreateInternal(c *gin.Context) {
-	h.createEvent(c)
-}
-
 func (h *ActivityHandler) createEvent(c *gin.Context) {
 	var event models.ActivityEvent
 	if err := c.ShouldBindJSON(&event); err != nil {

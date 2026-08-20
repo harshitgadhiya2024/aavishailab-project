@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/aavishield/admin-api/internal/auth"
+	"github.com/aavishield/admin-api/internal/middleware"
 	"github.com/aavishield/admin-api/internal/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -14,8 +15,12 @@ import (
 )
 
 var upgrader = websocket.Upgrader{
+	// Same allowlist as the HTTP CORS policy (middleware.AllowedOrigins) —
+	// this used to accept any Origin unconditionally, which let any
+	// arbitrary website open a WebSocket to this API and ride the visitor's
+	// browser session/cookies to read their org's live activity feed.
 	CheckOrigin: func(r *http.Request) bool {
-		return true // TODO: restrict in production
+		return middleware.OriginAllowed(r.Header.Get("Origin"))
 	},
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,

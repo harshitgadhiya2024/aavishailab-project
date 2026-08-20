@@ -3,7 +3,7 @@ package router
 import (
 	"net/http"
 	"os"
-	"strings"
+	"time"
 
 	"github.com/aavishield/admin-api/internal/handlers"
 	"github.com/aavishield/admin-api/internal/metrics"
@@ -26,25 +26,8 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	r.Use(metrics.Middleware())
 
 	// CORS — allow company/superadmin/employee frontends (local + tunnel hosts)
-	rawOrigins := strings.Split(os.Getenv("CORS_ORIGINS"), ",")
-	origins := make([]string, 0, len(rawOrigins))
-	for _, o := range rawOrigins {
-		if o = strings.TrimSpace(o); o != "" {
-			origins = append(origins, o)
-		}
-	}
-	if len(origins) == 0 {
-		origins = []string{
-			"http://localhost:1001",
-			"http://localhost:1002",
-			"http://localhost:1003",
-			"https://aavishield-admin.aavishailab.com",
-			"https://aavishield-app.aavishailab.com",
-			"https://aavishield-employee.aavishailab.com",
-		}
-	}
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     origins,
+		AllowOrigins:     middleware.AllowedOrigins(),
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "Accept", "x-org-id", "X-Org-Id"},
 		ExposeHeaders:    []string{"Content-Disposition", "Content-Length"},
@@ -115,25 +98,33 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	r.GET("/ws", wsHub.Serve)
 
 	// ─── Auth (public) ────────────────────────────────────────────────────────
+	// Rate-limited per IP: before this, login/register/OTP had no throttle at
+	// all, on a service whose whole job is guarding access. Limits are per
+	// minute; register/OTP endpoints that send email are stricter since each
+	// hit has a real-world cost (an email sent) beyond CPU.
+	loginLimit := middleware.RateLimit(rdb, "login", 20, time.Minute)
+	otpLimit := middleware.RateLimit(rdb, "otp", 10, time.Minute)
+	registerLimit := middleware.RateLimit(rdb, "register", 5, time.Minute)
+
 	auth := r.Group("/api/v1/auth")
 	{
-		auth.POST("/login", authH.Login)
-		auth.POST("/register", authH.Register)
+		auth.POST("/login", loginLimit, authH.Login)
+		auth.POST("/register", registerLimit, authH.Register)
 		auth.POST("/refresh", authH.Refresh)
-		auth.POST("/forgot-password", authH.ForgotPassword)
+		auth.POST("/forgot-password", registerLimit, authH.ForgotPassword)
 		auth.POST("/reset-password", authH.ResetPassword)
-		auth.POST("/social", authH.SocialLogin)
+		auth.POST("/social", loginLimit, authH.SocialLogin)
 		// Second step of signing in: public, but only usable with the
 		// short-lived challenge token the password step handed back.
-		auth.POST("/mfa/verify", mfaH.Verify)
+		auth.POST("/mfa/verify", otpLimit, mfaH.Verify)
 		// The emailed-code equivalent, for accounts without an authenticator.
-		auth.POST("/otp/verify", otpH.VerifyLogin)
-		auth.POST("/otp/resend", otpH.ResendLogin)
+		auth.POST("/otp/verify", otpLimit, otpH.VerifyLogin)
+		auth.POST("/otp/resend", otpLimit, otpH.ResendLogin)
 		// Registration is code-first: nothing is created until the address is
 		// proven, so these replace a direct POST /register.
-		auth.POST("/register/start", otpH.StartRegistration)
-		auth.POST("/register/resend", otpH.ResendRegistration)
-		auth.POST("/register/verify", otpH.VerifyRegistration)
+		auth.POST("/register/start", registerLimit, otpH.StartRegistration)
+		auth.POST("/register/resend", registerLimit, otpH.ResendRegistration)
+		auth.POST("/register/verify", otpLimit, otpH.VerifyRegistration)
 
 		authProtected := auth.Group("")
 		authProtected.Use(middleware.AuthRequired())
@@ -402,12 +393,12 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	// ─── Employee Portal (employee JWT) ───────────────────────────────────────
 	portal := r.Group("/api/v1/portal")
 	{
-		portal.POST("/login", portalH.Login)
-		portal.POST("/signup", portalH.Signup)
+		portal.POST("/login", loginLimit, portalH.Login)
+		portal.POST("/signup", registerLimit, portalH.Signup)
 		portal.POST("/refresh", portalH.Refresh)
-		portal.POST("/forgot-password", portalH.ForgotPassword)
+		portal.POST("/forgot-password", registerLimit, portalH.ForgotPassword)
 		portal.POST("/reset-password", portalH.ResetPassword)
-		portal.POST("/social", portalH.SocialLogin)
+		portal.POST("/social", loginLimit, portalH.SocialLogin)
 
 		portalProtected := portal.Group("")
 		portalProtected.Use(middleware.PortalRequired())
@@ -426,14 +417,9 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 		}
 	}
 
-	// ─── Internal endpoints (no JWT — internal network / agent only) ──────────
+	// ─── Internal endpoints (no JWT — device-level bearer auth inside each handler) ──
 	internal := r.Group("/internal")
 	{
-		// SWG engine calls these to fetch rules and report events
-		internal.GET("/swg/rules", swgH.GetEffectiveRules)
-		internal.POST("/swg/check", swgH.CheckURL)
-		internal.POST("/activity", actH.CreateInternal)
-
 		// Agent lifecycle (device-level bearer token auth inside handler)
 		agent := internal.Group("/agent")
 		{
