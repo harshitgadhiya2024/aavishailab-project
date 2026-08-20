@@ -6,6 +6,10 @@ services:
       context: ./infra/postgres
       dockerfile: Dockerfile
     container_name: aavishield-postgres
+    deploy:
+      resources:
+        limits:
+          memory: 2g
     restart: unless-stopped
     command: ["postgres", "-p", "6432"]
     environment:
@@ -27,6 +31,10 @@ services:
   redis:
     image: redis:7-alpine
     container_name: aavishield-redis
+    deploy:
+      resources:
+        limits:
+          memory: 512m
     restart: unless-stopped
     command: redis-server --requirepass ${REDIS_PASSWORD:-aavishield_redis_dev} --appendonly yes
     volumes:
@@ -48,6 +56,10 @@ services:
       context: ./services/admin-api
       dockerfile: Dockerfile
     container_name: aavishield-admin-api
+    deploy:
+      resources:
+        limits:
+          memory: 512m
     restart: unless-stopped
     env_file: .env
     environment:
@@ -150,6 +162,10 @@ services:
       context: ./services/dlp-service-rust
       dockerfile: Dockerfile
     container_name: aavishield-dlp-service
+    deploy:
+      resources:
+        limits:
+          memory: 256m
     restart: unless-stopped
     environment:
       DLP_SERVICE_SECRET: ${DLP_SERVICE_SECRET:-change-this-dlp-shared-secret-in-production}
@@ -172,6 +188,10 @@ services:
       context: ./services/malware-service-rust
       dockerfile: Dockerfile
     container_name: aavishield-malware-service
+    deploy:
+      resources:
+        limits:
+          memory: 512m
     restart: unless-stopped
     environment:
       MALWARE_SERVICE_SECRET: ${MALWARE_SERVICE_SECRET:-change-this-malware-shared-secret-in-production}
@@ -196,6 +216,10 @@ services:
       context: ./services/threatintel-service
       dockerfile: Dockerfile
     container_name: aavishield-threatintel-service
+    deploy:
+      resources:
+        limits:
+          memory: 128m
     restart: unless-stopped
     environment:
       THREATINTEL_SERVICE_SECRET: ${THREATINTEL_SERVICE_SECRET:-change-this-threatintel-shared-secret-in-production}
@@ -221,6 +245,10 @@ services:
       context: ./services/posture-service
       dockerfile: Dockerfile
     container_name: aavishield-posture-service
+    deploy:
+      resources:
+        limits:
+          memory: 128m
     restart: unless-stopped
     environment:
       POSTURE_SERVICE_SECRET: ${POSTURE_SERVICE_SECRET:-change-this-posture-shared-secret-in-production}
@@ -244,6 +272,10 @@ services:
       context: ./services/shadowit-service
       dockerfile: Dockerfile
     container_name: aavishield-shadowit-service
+    deploy:
+      resources:
+        limits:
+          memory: 128m
     restart: unless-stopped
     environment:
       SHADOWIT_SERVICE_SECRET: ${SHADOWIT_SERVICE_SECRET:-change-this-shadowit-shared-secret-in-production}
@@ -265,6 +297,10 @@ services:
       context: ./services/casb-service
       dockerfile: Dockerfile
     container_name: aavishield-casb-service
+    deploy:
+      resources:
+        limits:
+          memory: 256m
     restart: unless-stopped
     environment:
       CASB_SERVICE_SECRET: ${CASB_SERVICE_SECRET:-change-this-casb-shared-secret-in-production}
@@ -277,6 +313,10 @@ services:
       context: ./services/ai-service
       dockerfile: Dockerfile
     container_name: aavishield-ai-service
+    deploy:
+      resources:
+        limits:
+          memory: 512m
     restart: unless-stopped
     env_file: .env
     environment:
@@ -311,6 +351,10 @@ services:
       context: ./infra/clamav
       dockerfile: Dockerfile
     container_name: aavishield-clamav
+    deploy:
+      resources:
+        limits:
+          memory: 2g
     restart: unless-stopped
     ports:
       - "127.0.0.1:7310:3310"
@@ -332,6 +376,10 @@ services:
         NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:6000}
         NEXT_PUBLIC_AI_URL: ${NEXT_PUBLIC_AI_URL:-http://localhost:6002}
     container_name: aavishield-superadmin
+    deploy:
+      resources:
+        limits:
+          memory: 512m
     restart: unless-stopped
     env_file: .env
     environment:
@@ -368,6 +416,10 @@ services:
         NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:6000}
         NEXT_PUBLIC_AI_URL: ${NEXT_PUBLIC_AI_URL:-http://localhost:6002}
     container_name: aavishield-company-dashboard
+    deploy:
+      resources:
+        limits:
+          memory: 512m
     restart: unless-stopped
     env_file: .env
     environment:
@@ -402,6 +454,10 @@ services:
         NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:6000}
         NEXT_PUBLIC_AI_URL: ${NEXT_PUBLIC_AI_URL:-http://localhost:6002}
     container_name: aavishield-employee-portal
+    deploy:
+      resources:
+        limits:
+          memory: 512m
     restart: unless-stopped
     env_file: .env
     environment:
@@ -434,6 +490,10 @@ services:
       context: ./infra/prometheus
       dockerfile: Dockerfile
     container_name: aavishield-prometheus
+    deploy:
+      resources:
+        limits:
+          memory: 512m
     restart: unless-stopped
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
@@ -457,6 +517,10 @@ services:
       context: ./infra/grafana
       dockerfile: Dockerfile
     container_name: aavishield-grafana
+    deploy:
+      resources:
+        limits:
+          memory: 512m
     restart: unless-stopped
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
@@ -483,6 +547,10 @@ services:
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: aavishield-cloudflared
+    deploy:
+      resources:
+        limits:
+          memory: 128m
     # --metrics pins the metrics/readiness listener to a known port so the
     # healthcheck below can call /ready (the image is distroless — no wget/curl,
     # `cloudflared tunnel ready` is the only probe available).
