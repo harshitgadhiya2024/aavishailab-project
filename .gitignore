@@ -164,3 +164,6 @@ vectordb/
 
 # Cloudflare Tunnel credentials (private key material, never commit)
 cloudflared/*-creds.json
+
+# Load-test artifacts (synthetic device tokens, not real secrets, but no need to commit)
+scripts/loadtest/tokens*.json

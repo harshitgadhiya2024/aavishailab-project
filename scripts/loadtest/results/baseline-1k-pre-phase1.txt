@@ -1,0 +1,14 @@
+loaded 1000 devices from tokens-1000.json
+
+=== load-test result [baseline-1k-pre-phase1] — 1000 devices, 1m30s ===
+total requests: 26869, errors: 869 (3.23%)
+
+endpoint            count    p50(ms)    p95(ms)    p99(ms)    max(ms)
+GetRules             8574     938.96    1811.67    2148.45    2942.51
+Heartbeat            1000     639.58    1611.45    2093.14    2324.76
+ReportActivity      17295     610.34    1046.27    1209.22    2339.10
+
+status code breakdown:
+  GetRules         map[0:574 200:8000]
+  Heartbeat        map[200:1000]
+  ReportActivity   map[0:295 201:17000]
