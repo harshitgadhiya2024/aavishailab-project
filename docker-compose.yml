@@ -303,7 +303,13 @@ services:
   # downloads aren't covered (that needs full TLS interception, a much
   # bigger separate project).
   clamav:
-    image: clamav/clamav:latest
+    build:
+      # Native arm64 build (infra/clamav) — the upstream clamav/clamav
+      # Docker Hub image is amd64-only, which is why this used to run
+      # under qemu emulation (docker-compose.override.yml, now removed).
+      # See infra/clamav/Dockerfile for the verification.
+      context: ./infra/clamav
+      dockerfile: Dockerfile
     container_name: aavishield-clamav
     restart: unless-stopped
     ports:
