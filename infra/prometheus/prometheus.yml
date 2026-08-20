@@ -11,12 +11,37 @@ scrape_configs:
       - targets: ["admin-api:6000"]
     metrics_path: /metrics
 
-  - job_name: "swg-engine"
-    static_configs:
-      - targets: ["swg-engine:6001"]
-    metrics_path: /metrics
-
   - job_name: "ai-service"
     static_configs:
       - targets: ["ai-service:6002"]
+    metrics_path: /metrics
+
+  - job_name: "dlp-service"
+    static_configs:
+      - targets: ["dlp-service:6200"]
+    metrics_path: /metrics
+
+  - job_name: "malware-service"
+    static_configs:
+      - targets: ["malware-service:6210"]
+    metrics_path: /metrics
+
+  - job_name: "threatintel-service"
+    static_configs:
+      - targets: ["threatintel-service:6220"]
+    metrics_path: /metrics
+
+  - job_name: "posture-service"
+    static_configs:
+      - targets: ["posture-service:6230"]
+    metrics_path: /metrics
+
+  - job_name: "shadowit-service"
+    static_configs:
+      - targets: ["shadowit-service:6240"]
+    metrics_path: /metrics
+
+  - job_name: "casb-service"
+    static_configs:
+      - targets: ["casb-service:6250"]
     metrics_path: /metrics

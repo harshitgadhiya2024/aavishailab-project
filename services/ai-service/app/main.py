@@ -5,9 +5,11 @@ import logging
 import os
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Header
+import time
+
+from fastapi import FastAPI, HTTPException, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from pydantic import BaseModel
 
 from app.core.agent import AavishieldAgent
@@ -24,6 +26,27 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+_METRICS = {"requests_total": 0, "errors_total": 0, "chat_requests_total": 0}
+
+
+@app.middleware("http")
+async def _track_metrics(request: Request, call_next):
+    _METRICS["requests_total"] += 1
+    if request.url.path.startswith("/api/v1/chat"):
+        _METRICS["chat_requests_total"] += 1
+    start = time.monotonic()
+    response = await call_next(request)
+    if response.status_code >= 500:
+        _METRICS["errors_total"] += 1
+    response.headers["X-Response-Time-Ms"] = f"{(time.monotonic() - start) * 1000:.1f}"
+    return response
+
+
+@app.get("/metrics")
+async def metrics() -> PlainTextResponse:
+    lines = [f"ai_service_{k} {v}" for k, v in _METRICS.items()]
+    return PlainTextResponse("\n".join(lines) + "\n")
 
 ADMIN_API_URL = os.getenv("ADMIN_API_URL", "http://admin-api:6000")
 

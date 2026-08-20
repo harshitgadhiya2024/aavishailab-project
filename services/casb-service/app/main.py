@@ -13,7 +13,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from . import __version__, appcontrol, oob, providers
 from .auth import AuthError, verify_token
@@ -55,8 +55,8 @@ async def healthz() -> dict:
 
 
 @app.get("/metrics")
-async def metrics() -> JSONResponse:
-    return JSONResponse(content="\n".join(f"casb_{k} {v}" for k, v in _METRICS.items()), media_type="text/plain")
+async def metrics() -> PlainTextResponse:
+    return PlainTextResponse("\n".join(f"casb_{k} {v}" for k, v in _METRICS.items()) + "\n")
 
 
 @app.post("/v1/app-control", response_model=AppControlResponse)

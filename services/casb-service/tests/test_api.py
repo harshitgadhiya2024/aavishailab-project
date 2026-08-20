@@ -48,3 +48,13 @@ def test_oob_real_provider_400(client, token):
                     headers={"Authorization": f"Bearer {token(ORG_A)}"})
     assert r.status_code == 400
     assert "OAuth" in r.json()["detail"]
+
+
+def test_metrics_is_plain_text_not_json_encoded(client):
+    r = client.get("/metrics")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/plain")
+    body = r.text
+    assert not body.strip().startswith('"')
+    assert "\\n" not in body
+    assert "casb_app_control_total" in body

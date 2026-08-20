@@ -15,7 +15,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from . import __version__
 from . import detectors as d
@@ -50,9 +50,9 @@ async def healthz() -> dict:
 
 
 @app.get("/metrics")
-async def metrics() -> JSONResponse:
+async def metrics() -> PlainTextResponse:
     lines = [f"dlp_{k} {v}" for k, v in _METRICS.items()]
-    return JSONResponse(content="\n".join(lines), media_type="text/plain")
+    return PlainTextResponse("\n".join(lines) + "\n")
 
 
 def _policy_from_in(p) -> scoring.Policy:

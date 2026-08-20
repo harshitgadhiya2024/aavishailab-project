@@ -1,0 +1,93 @@
+{
+  "title": "AaviShield Platform Overview",
+  "uid": "aavishield-overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "15s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "admin-api request rate (per route)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum by (route) (rate(admin_api_http_requests_total[1m]))",
+          "legendFormat": "{{method}} {{route}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "admin-api p95 latency (per route)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (route, le) (rate(admin_api_http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{route}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "admin-api 5xx error rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum by (route) (rate(admin_api_http_request_errors_total[1m]))",
+          "legendFormat": "{{route}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Scanning tier — scans / blocks (dlp + malware)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        { "expr": "dlp_scans_total", "legendFormat": "dlp scans" },
+        { "expr": "dlp_blocked_total", "legendFormat": "dlp blocked" },
+        { "expr": "malware_scans_total", "legendFormat": "malware scans" },
+        { "expr": "malware_blocked_total", "legendFormat": "malware blocked" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Threat intel feed size",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 16 },
+      "targets": [
+        { "expr": "threatintel_domains", "legendFormat": "domains" },
+        { "expr": "threatintel_ips", "legendFormat": "ips" },
+        { "expr": "threatintel_hashes", "legendFormat": "hashes" }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Auth failures across scanning tier",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 16 },
+      "targets": [
+        { "expr": "dlp_auth_failures_total", "legendFormat": "dlp" },
+        { "expr": "malware_auth_failures_total", "legendFormat": "malware" },
+        { "expr": "casb_auth_failures_total", "legendFormat": "casb" },
+        { "expr": "threatintel_auth_failures_total", "legendFormat": "threatintel" }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "AI service requests",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 16 },
+      "targets": [
+        { "expr": "ai_service_requests_total", "legendFormat": "total" },
+        { "expr": "ai_service_chat_requests_total", "legendFormat": "chat" },
+        { "expr": "ai_service_errors_total", "legendFormat": "errors" }
+      ]
+    }
+  ]
+}

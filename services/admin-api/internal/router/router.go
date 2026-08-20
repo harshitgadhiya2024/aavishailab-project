@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/aavishield/admin-api/internal/handlers"
+	"github.com/aavishield/admin-api/internal/metrics"
 	"github.com/aavishield/admin-api/internal/middleware"
 	"github.com/aavishield/admin-api/internal/models"
 	"github.com/gin-contrib/cors"
@@ -22,6 +23,7 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Logger())
 	r.Use(gin.Recovery())
+	r.Use(metrics.Middleware())
 
 	// CORS — allow company/superadmin/employee frontends (local + tunnel hosts)
 	rawOrigins := strings.Split(os.Getenv("CORS_ORIGINS"), ",")
@@ -105,6 +107,9 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 			"redis":    redisOk,
 		})
 	})
+
+	// ─── Metrics ──────────────────────────────────────────────────────────────
+	r.GET("/metrics", metrics.Handler)
 
 	// ─── WebSocket ────────────────────────────────────────────────────────────
 	r.GET("/ws", wsHub.Serve)
