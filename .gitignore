@@ -159,6 +159,9 @@ __pycache__/
 *.pyc
 vectordb/
 
+# Rust build artifacts
+target/
+
 #macOS stuff
 .DS_Store
 

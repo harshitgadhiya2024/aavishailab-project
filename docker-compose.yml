@@ -143,7 +143,11 @@ services:
   # the same 80/50 per-scan, so a company gets protection with zero setup.
   dlp-service:
     build:
-      context: ./services/dlp-service
+      # Rust port (services/dlp-service-rust) — see its README for the
+      # differential-test + benchmark evidence behind this cutover. The
+      # Python original (services/dlp-service) stays in the repo as the
+      # instant-rollback path: swap this context back and rebuild.
+      context: ./services/dlp-service-rust
       dockerfile: Dockerfile
     container_name: aavishield-dlp-service
     restart: unless-stopped

@@ -1,0 +1,34 @@
+[package]
+name = "dlp-service"
+version = "1.0.0"
+edition = "2021"
+
+[lib]
+name = "dlp_service"
+path = "src/lib.rs"
+
+[[bin]]
+name = "dlp-service"
+path = "src/main.rs"
+
+[dependencies]
+axum = "0.7"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
+tower = "0.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+regex = "1"
+base64 = "0.22"
+hmac = "0.12"
+sha2 = "0.10"
+subtle = "2.6"
+
+[dev-dependencies]
+http-body-util = "0.1"
+tower = { version = "0.5", features = ["util"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
