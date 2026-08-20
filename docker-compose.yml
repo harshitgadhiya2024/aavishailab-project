@@ -165,7 +165,11 @@ services:
   # heuristics + sandbox hook -> 0-100 risk score with >80 block / 50-80 alert.
   malware-service:
     build:
-      context: ./services/malware-service
+      # Rust port (services/malware-service-rust) — see its README for the
+      # differential-test + benchmark evidence behind this cutover. The
+      # Python original (services/malware-service) stays in the repo as
+      # the instant-rollback path: swap this context back and rebuild.
+      context: ./services/malware-service-rust
       dockerfile: Dockerfile
     container_name: aavishield-malware-service
     restart: unless-stopped
