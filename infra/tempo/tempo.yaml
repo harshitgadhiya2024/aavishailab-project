@@ -1,0 +1,33 @@
+# Single-binary Tempo — the whole distributor/ingester/compactor/querier
+# pipeline in one process, local disk storage. Right-sized for this stack's
+# scale (one Docker Compose host); Tempo's own multi-process/object-storage
+# deployment mode is for a scale this repo isn't at yet.
+server:
+  http_listen_port: 6320
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        http:
+          endpoint: 0.0.0.0:6318
+        grpc:
+          endpoint: 0.0.0.0:6319
+
+ingester:
+  trace_idle_period: 10s
+  max_block_duration: 5m
+
+compactor:
+  compaction:
+    # A week is enough to debug "why was this slow yesterday" without the
+    # trace volume from every agent poll growing without bound.
+    block_retention: 168h
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/traces
+    wal:
+      path: /var/tempo/wal

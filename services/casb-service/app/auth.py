@@ -46,8 +46,18 @@ def verify_token(authorization_header: str | None, expected_org_id: str) -> None
         provided_sig = _b64url_decode(parts[2])
     except (ValueError, base64.binascii.Error):  # type: ignore[attr-defined]
         raise AuthError("undecodable token")
-    expected = hmac.new(settings.service_secret.encode(), payload_bytes, hashlib.sha256).digest()
-    if not hmac.compare_digest(provided_sig, expected):
+    # Tries the current secret, then — during a rotation window — the
+    # previous one, so a token minted moments before admin-api picked up a
+    # new secret doesn't fail every service that hasn't rotated yet. An
+    # unset previous secret is skipped rather than treated as valid.
+    candidates = [settings.service_secret]
+    if settings.service_secret_previous:
+        candidates.append(settings.service_secret_previous)
+
+    if not any(
+        hmac.compare_digest(provided_sig, hmac.new(secret.encode(), payload_bytes, hashlib.sha256).digest())
+        for secret in candidates
+    ):
         raise AuthError("bad signature")
     try:
         payload = json.loads(payload_bytes)

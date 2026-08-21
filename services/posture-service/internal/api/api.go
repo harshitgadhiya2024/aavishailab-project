@@ -10,6 +10,7 @@ import (
 	"github.com/aavishield/posture-service/internal/config"
 	"github.com/aavishield/posture-service/internal/geoip"
 	"github.com/aavishield/posture-service/internal/posture"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 type Server struct {
@@ -30,7 +31,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/metrics", s.metrics)
 	mux.HandleFunc("/v1/posture", s.posture)
 	mux.HandleFunc("/v1/geoip", s.geoip)
-	return mux
+	// otelhttp.NewHandler extracts the incoming traceparent header (set by
+	// admin-api's outbound client) and starts a child span, so this hop
+	// joins the caller's trace instead of starting a disconnected one.
+	return otelhttp.NewHandler(mux, "posture-service")
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -43,7 +47,7 @@ func (s *Server) authorize(r *http.Request, orgID string) bool {
 	if !s.cfg.RequireAuth {
 		return true
 	}
-	if err := auth.Verify(r.Header.Get("Authorization"), orgID, s.cfg.ServiceSecret); err != nil {
+	if err := auth.Verify(r.Header.Get("Authorization"), orgID, s.cfg.ServiceSecret, s.cfg.ServiceSecretPrevious); err != nil {
 		atomic.AddUint64(&s.authFail, 1)
 		return false
 	}

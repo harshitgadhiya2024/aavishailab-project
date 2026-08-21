@@ -52,11 +52,11 @@ func TestSyncLoadsAllKinds(t *testing.T) {
 
 func TestExtractDomain(t *testing.T) {
 	cases := map[string]string{
-		"http://a.com/x":   "a.com",
-		"https://b.co":     "b.co",
-		"bare-domain.org":  "bare-domain.org",
-		"c.com/path/here":  "c.com",
-		"not a domain":     "",
+		"http://a.com/x":  "a.com",
+		"https://b.co":    "b.co",
+		"bare-domain.org": "bare-domain.org",
+		"c.com/path/here": "c.com",
+		"not a domain":    "",
 	}
 	for in, want := range cases {
 		if got := extractDomain(in); got != want {

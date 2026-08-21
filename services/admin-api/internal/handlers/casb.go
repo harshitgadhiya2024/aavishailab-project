@@ -104,7 +104,7 @@ func (h *CASBHandler) proxy(c *gin.Context, path string, withRules bool) {
 		body["rules"] = casbRulePayload(orgCASBRules(h.db, orgID))
 	}
 
-	status, resp, err := casbclient.Post(orgID, path, body)
+	status, resp, err := casbclient.Post(c.Request.Context(), orgID, path, body)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "casb-service unavailable"})
 		return

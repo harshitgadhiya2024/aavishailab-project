@@ -5,6 +5,10 @@ import os
 
 os.environ.setdefault("DLP_SERVICE_SECRET", "test-secret-123")
 os.environ.setdefault("DLP_REQUIRE_AUTH", "true")
+# No Tempo collector in a bare pytest run — without this the OTel SDK's
+# background export thread spends the whole test run retrying against an
+# unreachable host and spamming noisy "Transient error" log lines.
+os.environ.setdefault("OTEL_SDK_DISABLED", "true")
 
 import pytest
 from fastapi.testclient import TestClient

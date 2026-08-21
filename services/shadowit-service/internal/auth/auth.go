@@ -29,7 +29,12 @@ func Mint(orgID, secret string, ttl time.Duration) string {
 	return "v1." + enc.EncodeToString(payload) + "." + enc.EncodeToString(mac.Sum(nil))
 }
 
-func Verify(authHeader, expectedOrg, secret string) error {
+// Verify accepts one or more candidate secrets — pass both the current and
+// a still-valid previous secret during a rotation window, so a token
+// minted moments before admin-api picked up the new secret doesn't fail
+// every service that hasn't rotated yet. An empty string (an unset
+// "previous" secret) is skipped rather than treated as a valid empty secret.
+func Verify(authHeader, expectedOrg string, secrets ...string) error {
 	if !strings.HasPrefix(authHeader, "Bearer ") {
 		return ErrMissing
 	}
@@ -46,9 +51,19 @@ func Verify(authHeader, expectedOrg, secret string) error {
 	if err != nil {
 		return ErrMalformed
 	}
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write(payload)
-	if !hmac.Equal(sig, mac.Sum(nil)) {
+	matched := false
+	for _, secret := range secrets {
+		if secret == "" {
+			continue
+		}
+		mac := hmac.New(sha256.New, []byte(secret))
+		mac.Write(payload)
+		if hmac.Equal(sig, mac.Sum(nil)) {
+			matched = true
+			break
+		}
+	}
+	if !matched {
 		return ErrSignature
 	}
 	var claims struct {

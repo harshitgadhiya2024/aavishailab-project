@@ -22,6 +22,13 @@ base64 = "0.22"
 hmac = "0.12"
 sha2 = "0.10"
 subtle = "2.6"
+opentelemetry = "0.32.0"
+tracing = "0.1.44"
+tracing-opentelemetry = "0.33.0"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+opentelemetry-http = "0.32.0"
+opentelemetry-otlp = { version = "0.32.0", default-features = false, features = ["http-proto", "reqwest-client"] }
+opentelemetry_sdk = { version = "0.32.1", features = ["rt-tokio", "experimental_trace_batch_span_processor_with_async_runtime"] }
 
 [dev-dependencies]
 http-body-util = "0.1"

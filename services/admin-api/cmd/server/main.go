@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -11,8 +12,10 @@ import (
 	"github.com/aavishield/admin-api/internal/handlers"
 	"github.com/aavishield/admin-api/internal/mailer"
 	"github.com/aavishield/admin-api/internal/notifier"
+	"github.com/aavishield/admin-api/internal/retention"
 	"github.com/aavishield/admin-api/internal/riskengine"
 	"github.com/aavishield/admin-api/internal/router"
+	"github.com/aavishield/admin-api/internal/tracing"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -33,6 +36,9 @@ func main() {
 		}
 	}
 
+	shutdownTracing := tracing.Init("admin-api")
+	defer shutdownTracing(context.Background())
+
 	db, rdb, err := connectStores()
 	if err != nil {
 		log.Fatal(err)
@@ -52,6 +58,11 @@ func main() {
 
 	// Enforce screenshot retention (settings promise "keep for N days").
 	handlers.StartScreenshotRetentionSweep(db, 6*time.Hour)
+
+	// Enforce the platform's data_retention setting for activity events and
+	// audit log rows — without this the setting would just be a UI that
+	// doesn't do anything.
+	retention.StartDataRetentionSweep(db, 24*time.Hour)
 
 	// ClamAV may still be downloading its virus DB on first boot — don't
 	// block startup on it, just retry a few times and log clearly either way

@@ -63,6 +63,40 @@ func SuperAdminOnly() gin.HandlerFunc {
 	}
 }
 
+// SuperAdminFullOnly gates destructive/mutating superadmin actions (org
+// delete, agent-package rollback, catalog edits, team management) on the
+// "full" level. A "support" superadmin passes SuperAdminOnly (they can sign
+// in and read everything under /superadmin) but is blocked here — read
+// access for support/debugging shouldn't imply the power to delete a
+// customer's organization.
+func SuperAdminFullOnly() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		role, _ := c.Get(ContextKeyRole)
+		r, ok := role.(models.UserRole)
+		if !ok {
+			if s, isStr := role.(string); isStr {
+				r = models.UserRole(s)
+			}
+		}
+		if r != models.RoleSuperAdmin {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Superadmin access required"})
+			return
+		}
+
+		claimsRaw, _ := c.Get(ContextKeyClaims)
+		claims, ok := claimsRaw.(*auth.Claims)
+		// A superadmin token minted before SuperAdminLevel existed, or one
+		// with the field simply unset, carries no level claim at all — treat
+		// that the same as "full" rather than locking out every session that
+		// hasn't logged in again since this shipped.
+		if ok && claims.SuperAdminLevel != "" && claims.SuperAdminLevel != models.SuperAdminLevelFull {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "This action requires full superadmin access — your account is support-level"})
+			return
+		}
+		c.Next()
+	}
+}
+
 // OrgAdminOrAbove allows org_admin and superadmin
 func OrgAdminOrAbove() gin.HandlerFunc {
 	return func(c *gin.Context) {

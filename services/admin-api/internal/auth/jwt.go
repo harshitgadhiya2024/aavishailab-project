@@ -18,12 +18,13 @@ var (
 )
 
 type Claims struct {
-	UserID     uuid.UUID       `json:"user_id"`
-	OrgID      *uuid.UUID      `json:"org_id"`
-	EmployeeID *uuid.UUID      `json:"employee_id,omitempty"` // non-nil for portal employee tokens
-	Email      string          `json:"email"`
-	Role       models.UserRole `json:"role"`
-	TokenID    string          `json:"jti"`
+	UserID          uuid.UUID             `json:"user_id"`
+	OrgID           *uuid.UUID            `json:"org_id"`
+	EmployeeID      *uuid.UUID            `json:"employee_id,omitempty"` // non-nil for portal employee tokens
+	Email           string                `json:"email"`
+	Role            models.UserRole       `json:"role"`
+	SuperAdminLevel models.SuperAdminLevel `json:"superadmin_level,omitempty"`
+	TokenID         string                `json:"jti"`
 	jwt.RegisteredClaims
 }
 
@@ -78,12 +79,20 @@ func refreshExpiry() time.Duration {
 // GenerateAccessToken creates a short-lived JWT access token
 func GenerateAccessToken(user *models.User) (string, *Claims, error) {
 	now := time.Now()
+	// SuperAdminLevel only means anything for a superadmin — every other
+	// role reads it as an empty claim rather than carrying the column's
+	// meaningless 'full' default around on every ordinary user's token.
+	var level models.SuperAdminLevel
+	if user.Role == models.RoleSuperAdmin {
+		level = user.SuperAdminLevel
+	}
 	claims := &Claims{
-		UserID:  user.ID,
-		OrgID:   user.OrgID,
-		Email:   user.Email,
-		Role:    user.Role,
-		TokenID: uuid.New().String(),
+		UserID:          user.ID,
+		OrgID:           user.OrgID,
+		Email:           user.Email,
+		Role:            user.Role,
+		SuperAdminLevel: level,
+		TokenID:         uuid.New().String(),
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   user.ID.String(),
 			IssuedAt:  jwt.NewNumericDate(now),

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -44,7 +45,7 @@ func TestAttachTargetApps(t *testing.T) {
 		{TargetDomain: "WWW.Browser.Events.Data.MSN.com"}, // normalised before lookup
 		{TargetDomain: ""},                                // device-posture events carry no domain
 	}
-	attachTargetApps("org-1", events)
+	attachTargetApps(context.Background(), "org-1", events)
 
 	if got := events[0].TargetApp; got != "Microsoft Teams" {
 		t.Errorf("events[0].TargetApp = %q, want %q", got, "Microsoft Teams")
@@ -63,7 +64,7 @@ func TestAttachTargetAppsFailsOpen(t *testing.T) {
 	t.Setenv("SHADOWIT_SERVICE_URL", "http://127.0.0.1:1") // nothing listening
 
 	events := []models.ActivityEvent{{TargetDomain: "teams.microsoft.com"}}
-	attachTargetApps("org-1", events)
+	attachTargetApps(context.Background(), "org-1", events)
 
 	if got := events[0].TargetApp; got != "" {
 		t.Errorf("TargetApp = %q, want empty when the service is unreachable", got)
@@ -74,7 +75,7 @@ func TestAttachTargetAppsDisabled(t *testing.T) {
 	t.Setenv("SHADOWIT_SERVICE_URL", "")
 
 	events := []models.ActivityEvent{{TargetDomain: "teams.microsoft.com"}}
-	attachTargetApps("org-1", events)
+	attachTargetApps(context.Background(), "org-1", events)
 
 	if got := events[0].TargetApp; got != "" {
 		t.Errorf("TargetApp = %q, want empty when shadowit is not configured", got)

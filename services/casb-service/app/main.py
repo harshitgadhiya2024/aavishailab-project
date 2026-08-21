@@ -24,6 +24,7 @@ from .schemas import (
     OOBRequest,
     OOBResponse,
 )
+from .tracing import setup_tracing
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("casb-service")
@@ -39,6 +40,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Aavishield CASB Service", version=__version__, lifespan=lifespan)
+setup_tracing(app, "casb-service")
 
 
 def _auth(authorization: str | None, org_id: str) -> None:

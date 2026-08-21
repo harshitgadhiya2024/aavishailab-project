@@ -5,6 +5,7 @@ package shadowitclient
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -14,6 +15,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 type AppResult struct {
@@ -28,7 +31,7 @@ type AppResult struct {
 	RiskScore   int    `json:"risk_score"`
 }
 
-var httpClient = &http.Client{Timeout: 10 * time.Second}
+var httpClient = &http.Client{Timeout: 10 * time.Second, Transport: otelhttp.NewTransport(http.DefaultTransport)}
 
 func serviceURL() string { return strings.TrimRight(os.Getenv("SHADOWIT_SERVICE_URL"), "/") }
 
@@ -53,9 +56,9 @@ func MintToken(orgID string, ttl time.Duration) string {
 
 // Classify returns the catalog match for each domain (order not guaranteed to
 // match input; use the Domain field to key results).
-func Classify(orgID string, domains []string) ([]AppResult, error) {
+func Classify(ctx context.Context, orgID string, domains []string) ([]AppResult, error) {
 	body, _ := json.Marshal(map[string]any{"org_id": orgID, "domains": domains})
-	req, err := http.NewRequest(http.MethodPost, serviceURL()+"/v1/classify", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, serviceURL()+"/v1/classify", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}

@@ -1,0 +1,13 @@
+apiVersion: 1
+
+datasources:
+  - name: Tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:6320
+    editable: true
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: ""
+      serviceMap:
+        datasourceUid: Prometheus

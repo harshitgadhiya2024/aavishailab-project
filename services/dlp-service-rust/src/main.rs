@@ -10,6 +10,8 @@ async fn main() {
         return healthcheck().await;
     }
 
+    dlp_service::tracing_init::init("dlp-service");
+
     let config = Config::from_env();
     if config.require_auth && config.using_default_secret() {
         eprintln!(

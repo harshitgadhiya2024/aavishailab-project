@@ -9,9 +9,11 @@ import (
 	"github.com/aavishield/admin-api/internal/metrics"
 	"github.com/aavishield/admin-api/internal/middleware"
 	"github.com/aavishield/admin-api/internal/models"
+	"github.com/aavishield/admin-api/internal/policysig"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"gorm.io/gorm"
 )
 
@@ -23,6 +25,7 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Logger())
 	r.Use(gin.Recovery())
+	r.Use(otelgin.Middleware("admin-api"))
 	r.Use(metrics.Middleware())
 
 	// CORS — allow company/superadmin/employee frontends (local + tunnel hosts)
@@ -43,7 +46,8 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	actH := handlers.NewActivityHandler(db, wsHub)
 	orgH := handlers.NewOrgHandler(db)
 	swgH := handlers.NewSWGHandler(db)
-	agentH := handlers.NewAgentHandler(db, wsHub, rdb)
+	policySigner := policysig.New()
+	agentH := handlers.NewAgentHandler(db, wsHub, rdb, policySigner)
 	portalH := handlers.NewPortalHandler(db, wsHub)
 	arH := handlers.NewAccessRequestHandler(db)
 	shadowH := handlers.NewShadowITHandler(db)
@@ -62,6 +66,19 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	agentPkgH := handlers.NewAgentPackageAdminHandler(db)
 	ciH := handlers.NewCITriggerHandler()
 	appCatalogH := handlers.NewAppCatalogAdminHandler(db)
+	auditH := handlers.NewAuditHandler(db)
+	saTeamH := handlers.NewSuperAdminTeamHandler(db)
+	settingsH := handlers.NewPlatformSettingsHandler(db)
+	healthH := handlers.NewPlatformHealthHandler()
+	seatAlertH := handlers.NewSeatAlertHandler(db)
+	billingH := handlers.NewBillingHandler(db)
+	impersonateH := handlers.NewImpersonationHandler(db)
+	blocklistH := handlers.NewGlobalBlocklistHandler(db)
+	announceH := handlers.NewAnnouncementHandler(db)
+	flagH := handlers.NewFeatureFlagHandler(db)
+	complianceH := handlers.NewComplianceHandler(db)
+	revenueH := handlers.NewRevenueAnalyticsHandler(db)
+	ticketH := handlers.NewTicketHandler(db)
 
 	// ─── Agent script + native packages (public — used by installers) ──────────
 	r.GET("/agent/aavishield-agent.py", handlers.ServeAgentScript)
@@ -76,6 +93,10 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	// workflow). Auth is its own bearer token, not portal/agent auth — see
 	// handlers.UploadAgentPackage.
 	r.POST("/internal/admin/agent-packages", handlers.UploadAgentPackage)
+
+	// Razorpay calls this directly — no session, gated entirely on the
+	// X-Razorpay-Signature header verified inside the handler.
+	r.POST("/webhooks/razorpay", billingH.Webhook)
 
 	// ─── Health ───────────────────────────────────────────────────────────────
 	r.GET("/health", func(c *gin.Context) {
@@ -117,6 +138,10 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 		auth.POST("/forgot-password", registerLimit, authH.ForgotPassword)
 		auth.POST("/reset-password", authH.ResetPassword)
 		auth.POST("/social", loginLimit, authH.SocialLogin)
+		// Consumed by company-dashboard's own NextAuth backend, not a
+		// browser — gated on X-Internal-Secret inside the handler, same as
+		// /social above.
+		auth.POST("/impersonate/consume", authH.ImpersonateConsume)
 		// Second step of signing in: public, but only usable with the
 		// short-lived challenge token the password step handed back.
 		auth.POST("/mfa/verify", otpLimit, mfaH.Verify)
@@ -149,38 +174,104 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	v1 := r.Group("/api/v1")
 	v1.Use(middleware.AuthRequired())
 
+	// Platform-wide, not org-scoped — every signed-in user (any role, any
+	// panel) should see an active incident/maintenance notice.
+	v1.GET("/announcements/active", announceH.Active)
+
 	// ─── Superadmin routes ────────────────────────────────────────────────────
 	superadmin := v1.Group("/superadmin")
 	superadmin.Use(middleware.SuperAdminOnly())
 	{
 		superadmin.GET("/stats", orgH.Stats)
+		superadmin.GET("/audit-log", auditH.List)
+		superadmin.GET("/system-health", healthH.Get)
+		superadmin.GET("/settings", settingsH.Get)
+		superadmin.PUT("/settings/:key", middleware.SuperAdminFullOnly(), settingsH.Update)
+		superadmin.GET("/seat-alerts", seatAlertH.List)
+		superadmin.GET("/revenue-analytics", revenueH.Get)
 
 		orgs := superadmin.Group("/organizations")
 		{
 			orgs.GET("", orgH.List)
-			orgs.POST("", orgH.Create)
+			orgs.POST("", middleware.SuperAdminFullOnly(), orgH.Create)
 			orgs.GET("/:id", orgH.Get)
-			orgs.PUT("/:id", orgH.Update)
-			orgs.DELETE("/:id", orgH.Delete)
+			orgs.PUT("/:id", middleware.SuperAdminFullOnly(), orgH.Update)
+			orgs.DELETE("/:id", middleware.SuperAdminFullOnly(), orgH.Delete)
+			orgs.GET("/:id/export", complianceH.Export)
+			orgs.POST("/:id/purge", middleware.SuperAdminFullOnly(), complianceH.Purge)
+			orgs.POST("/:id/impersonate", middleware.SuperAdminFullOnly(), impersonateH.Start)
+			orgs.GET("/:id/billing", billingH.ListForOrg)
+			orgs.POST("/:id/billing", middleware.SuperAdminFullOnly(), billingH.Create)
+		}
+
+		billing := superadmin.Group("/billing")
+		{
+			billing.GET("", billingH.List)
+			billing.POST("/:id/refresh", billingH.Refresh)
+			billing.DELETE("/:id", middleware.SuperAdminFullOnly(), billingH.Cancel)
+		}
+
+		blocklist := superadmin.Group("/blocklist")
+		{
+			blocklist.GET("", blocklistH.List)
+			blocklist.POST("", middleware.SuperAdminFullOnly(), blocklistH.Create)
+			blocklist.PATCH("/:id", middleware.SuperAdminFullOnly(), blocklistH.Toggle)
+			blocklist.DELETE("/:id", middleware.SuperAdminFullOnly(), blocklistH.Delete)
+		}
+		superadmin.GET("/threat-feeds", blocklistH.FeedStatus)
+
+		announcements := superadmin.Group("/announcements")
+		{
+			announcements.GET("", announceH.List)
+			announcements.POST("", middleware.SuperAdminFullOnly(), announceH.Create)
+			announcements.PATCH("/:id", middleware.SuperAdminFullOnly(), announceH.Update)
+			announcements.DELETE("/:id", middleware.SuperAdminFullOnly(), announceH.Delete)
+		}
+
+		flags := superadmin.Group("/feature-flags")
+		{
+			flags.GET("", flagH.List)
+			flags.POST("", middleware.SuperAdminFullOnly(), flagH.Create)
+			flags.PATCH("/:id", middleware.SuperAdminFullOnly(), flagH.Update)
+			flags.DELETE("/:id", middleware.SuperAdminFullOnly(), flagH.Delete)
+			flags.PUT("/:id/orgs/:org_id", middleware.SuperAdminFullOnly(), flagH.SetOrgOverride)
+			flags.DELETE("/:id/orgs/:org_id", middleware.SuperAdminFullOnly(), flagH.RemoveOrgOverride)
+		}
+
+		saTickets := superadmin.Group("/tickets")
+		{
+			saTickets.GET("", ticketH.List)
+			saTickets.POST("", ticketH.CreateInternal)
+			saTickets.GET("/:id", ticketH.GetAny)
+			saTickets.PATCH("/:id", ticketH.UpdateStatus)
+			saTickets.POST("/:id/messages", ticketH.AddMessageAny)
 		}
 
 		agentPkgs := superadmin.Group("/agent-packages")
 		{
 			agentPkgs.GET("", agentPkgH.Manifest)
 			agentPkgs.GET("/history", agentPkgH.History)
-			agentPkgs.POST("", agentPkgH.Upload)
-			agentPkgs.POST("/rollback", agentPkgH.Rollback)
-			agentPkgs.POST("/trigger-build", ciH.TriggerBuild)
+			agentPkgs.POST("", middleware.SuperAdminFullOnly(), agentPkgH.Upload)
+			agentPkgs.POST("/rollback", middleware.SuperAdminFullOnly(), agentPkgH.Rollback)
+			agentPkgs.POST("/trigger-build", middleware.SuperAdminFullOnly(), ciH.TriggerBuild)
 			agentPkgs.GET("/build-status", ciH.BuildStatus)
 		}
 
 		catalog := superadmin.Group("/applications")
 		{
 			catalog.GET("", appCatalogH.List)
-			catalog.POST("", appCatalogH.Create)
-			catalog.PATCH("/:id", appCatalogH.Update)
-			catalog.DELETE("/:id", appCatalogH.Delete)
-			catalog.POST("/:id/icon", appCatalogH.UploadIcon)
+			catalog.POST("", middleware.SuperAdminFullOnly(), appCatalogH.Create)
+			catalog.PATCH("/:id", middleware.SuperAdminFullOnly(), appCatalogH.Update)
+			catalog.DELETE("/:id", middleware.SuperAdminFullOnly(), appCatalogH.Delete)
+			catalog.POST("/:id/icon", middleware.SuperAdminFullOnly(), appCatalogH.UploadIcon)
+		}
+
+		saTeam := superadmin.Group("/team")
+		{
+			saTeam.GET("", saTeamH.List)
+			saTeam.POST("", middleware.SuperAdminFullOnly(), saTeamH.Create)
+			saTeam.PATCH("/:id", middleware.SuperAdminFullOnly(), saTeamH.Update)
+			saTeam.DELETE("/:id", middleware.SuperAdminFullOnly(), saTeamH.Delete)
 		}
 	}
 
@@ -412,6 +503,17 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 		accessRequests.POST("/:id/deny", middleware.RequirePermission(models.PermAccessReqWrite), arH.Deny)
 	}
 
+	// Support tickets — any signed-in org member may raise and follow one;
+	// no specific permission gates it, the same way every role can ask a
+	// human for help regardless of what they're otherwise allowed to change.
+	tickets := company.Group("/tickets")
+	{
+		tickets.GET("", ticketH.ListForOrg)
+		tickets.POST("", ticketH.Create)
+		tickets.GET("/:id", ticketH.Get)
+		tickets.POST("/:id/messages", ticketH.AddMessage)
+	}
+
 	// ─── Employee Portal (employee JWT) ───────────────────────────────────────
 	portal := r.Group("/api/v1/portal")
 	{
@@ -450,6 +552,7 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 			agent.GET("/version", agentH.AgentVersion)
 			agent.GET("/config", agentH.GetConfig)
 			agent.GET("/rules", agentH.GetRules)
+			agent.GET("/policy-public-key", agentH.PolicyPublicKey)
 			agent.POST("/activity", agentH.ReportActivity)
 			agent.POST("/scan-file", agentH.ScanFile)
 			// Application control: which processes to watch for, and the

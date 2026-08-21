@@ -162,6 +162,38 @@ const providers: NextAuthOptions["providers"] = [
       }
     },
   }),
+  // "View as Org" from the superadmin panel: exchanges the one-time code
+  // superadmin minted for a real session, via the same internal-secret-gated
+  // backend exchange the social-login signIn callback below uses. The
+  // backend deliberately returns no refresh token for this path, so the
+  // resulting session dies on its own in 15 minutes with nothing to revoke.
+  CredentialsProvider({
+    id: "impersonation",
+    name: "impersonation",
+    credentials: { code: { label: "Code", type: "text" } },
+    async authorize(credentials) {
+      if (!credentials?.code) return null;
+      try {
+        const res = await axios.post(
+          `${API_URL}/api/v1/auth/impersonate/consume`,
+          { code: credentials.code },
+          { headers: { "X-Internal-Secret": INTERNAL_API_SECRET } }
+        );
+        const data = res.data;
+        if (!data.access_token) return null;
+        return {
+          id: data.user.id,
+          email: data.user.email,
+          accessToken: data.access_token,
+          refreshToken: data.refresh_token,
+          accessTokenExpires: Date.now() + data.expires_in * 1000,
+          ...data.user,
+        };
+      } catch (err: any) {
+        throw new Error(err.response?.data?.error || "This impersonation link is invalid or has expired");
+      }
+    },
+  }),
 ];
 
 // Only registered when credentials are configured — buttons still render in

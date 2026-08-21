@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { orgApi } from "@/lib/api";
 import {
@@ -47,6 +48,7 @@ const DEFAULT_FORM: OrgFormData = {
 
 export default function OrganizationsPage() {
   const qc = useQueryClient();
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
@@ -228,8 +230,16 @@ export default function OrganizationsPage() {
                     <td className="px-5 py-4">
                       <div className="flex items-center justify-end gap-1">
                         <button
+                          onClick={() => router.push(`/dashboard/organizations/${org.id}`)}
+                          className="p-1.5 hover:bg-muted rounded text-muted-foreground hover:text-foreground"
+                          title="View details"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button
                           onClick={() => openEdit(org)}
                           className="p-1.5 hover:bg-muted rounded text-muted-foreground hover:text-foreground"
+                          title="Edit"
                         >
                           <Edit className="w-4 h-4" />
                         </button>

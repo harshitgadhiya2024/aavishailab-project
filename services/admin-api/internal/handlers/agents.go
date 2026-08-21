@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -23,6 +24,7 @@ import (
 	"github.com/aavishield/admin-api/internal/mitm"
 	"github.com/aavishield/admin-api/internal/models"
 	"github.com/aavishield/admin-api/internal/notifier"
+	"github.com/aavishield/admin-api/internal/policysig"
 	"github.com/aavishield/admin-api/internal/postureclient"
 	"github.com/aavishield/admin-api/internal/riskengine"
 	"github.com/aavishield/admin-api/internal/schedule"
@@ -52,13 +54,14 @@ func swgEndpoint() (string, int) {
 }
 
 type AgentHandler struct {
-	db  *gorm.DB
-	hub *WebSocketHub
-	rdb *redis.Client
+	db     *gorm.DB
+	hub    *WebSocketHub
+	rdb    *redis.Client
+	signer *policysig.Signer
 }
 
-func NewAgentHandler(db *gorm.DB, hub *WebSocketHub, rdb *redis.Client) *AgentHandler {
-	return &AgentHandler{db: db, hub: hub, rdb: rdb}
+func NewAgentHandler(db *gorm.DB, hub *WebSocketHub, rdb *redis.Client, signer *policysig.Signer) *AgentHandler {
+	return &AgentHandler{db: db, hub: hub, rdb: rdb, signer: signer}
 }
 
 // ─── Redis-backed hot-path caching ────────────────────────────────────────────
@@ -354,7 +357,7 @@ func (h *AgentHandler) Heartbeat(c *gin.Context) {
 	meta := map[string]any{}
 	if postureclient.Enabled() {
 		if req.IPAddress != "" {
-			if geo, err := postureclient.GeoIP(orgID.String(), req.IPAddress); err == nil {
+			if geo, err := postureclient.GeoIP(c.Request.Context(), orgID.String(), req.IPAddress); err == nil {
 				if geo.IsPrivate {
 					meta["geo_country"] = "private-network"
 				} else if geo.CountryCode != "" {
@@ -367,7 +370,7 @@ func (h *AgentHandler) Heartbeat(c *gin.Context) {
 			if req.OSType != "" && req.Posture.OSType == "" {
 				req.Posture.OSType = req.OSType
 			}
-			if pr, err := postureclient.Evaluate(orgID.String(), deviceID.String(), *req.Posture); err == nil {
+			if pr, err := postureclient.Evaluate(c.Request.Context(), orgID.String(), deviceID.String(), *req.Posture); err == nil {
 				postureResult = pr
 				updates["posture_score"] = pr.Score
 				meta["posture_status"] = pr.Status
@@ -537,14 +540,27 @@ func (h *AgentHandler) GetRules(c *gin.Context) {
 			// cache entry now expires unconditionally rulesCacheTTL after it
 			// was computed, regardless of hits in between, which is what
 			// actually bounds staleness to "one missed poll at worst".
-			etag := rulesETag(body)
-			c.Header("ETag", etag)
-			if c.GetHeader("If-None-Match") == etag {
-				c.Status(http.StatusNotModified)
+			//
+			// The signature is cached alongside the body it was computed
+			// over (same key+ttl) rather than re-signed on every hit — a
+			// signature is only meaningful over the exact bytes it was made
+			// for, so it has to travel with them, not get regenerated. If
+			// the sig key is missing (e.g. evicted independently under
+			// memory pressure) this falls through to recompute+resign
+			// rather than ever serving a body without one — an agent that
+			// treats "no signature" as "reject" must never see that from a
+			// cache-consistency accident.
+			if sig, sigErr := h.rdb.Get(ctx, cacheKey+":sig").Result(); sigErr == nil {
+				h.setPolicySignatureHeaders(c, sig)
+				etag := rulesETag(body)
+				c.Header("ETag", etag)
+				if c.GetHeader("If-None-Match") == etag {
+					c.Status(http.StatusNotModified)
+					return
+				}
+				c.Data(http.StatusOK, "application/json", []byte(body))
 				return
 			}
-			c.Data(http.StatusOK, "application/json", []byte(body))
-			return
 		}
 	}
 
@@ -580,9 +596,12 @@ func (h *AgentHandler) GetRules(c *gin.Context) {
 		return
 	}
 
+	sig := h.signer.Sign(body)
 	if h.rdb != nil {
 		h.rdb.Set(ctx, cacheKey, body, rulesCacheTTL)
+		h.rdb.Set(ctx, cacheKey+":sig", sig, rulesCacheTTL)
 	}
+	h.setPolicySignatureHeaders(c, sig)
 
 	etag := rulesETag(string(body))
 	c.Header("ETag", etag)
@@ -599,6 +618,29 @@ func (h *AgentHandler) GetRules(c *gin.Context) {
 func rulesETag(body string) string {
 	sum := sha256.Sum256([]byte(body))
 	return `"` + hex.EncodeToString(sum[:8]) + `"`
+}
+
+func (h *AgentHandler) setPolicySignatureHeaders(c *gin.Context, sig string) {
+	c.Header("X-Policy-Signature", sig)
+	c.Header("X-Policy-Key-Id", h.signer.KeyID())
+}
+
+// PolicyPublicKey handles GET /internal/agent/policy-public-key — the only
+// half of the signing keypair ever served. An agent fetches this once and
+// pins it locally (trust-on-first-use, the same posture the MITM CA-cert
+// fetch already uses): re-fetching on every restart would let whoever
+// controls the network path at that moment hand a fresh device a different
+// key, silently defeating the point of signing at all.
+func (h *AgentHandler) PolicyPublicKey(c *gin.Context) {
+	deviceID, _, _ := h.authAgent(c)
+	if deviceID == uuid.Nil {
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"key_id":     h.signer.KeyID(),
+		"public_key": h.signer.PublicKeyBase64(),
+		"algorithm":  "ed25519",
+	})
 }
 
 // ScanFile handles POST /internal/agent/scan-file
@@ -628,7 +670,7 @@ func (h *AgentHandler) ScanFile(c *gin.Context) {
 	contentType := c.Query("content_type")
 	destination := c.Query("destination")
 
-	v := scanFileStream(orgID.String(), filename, contentType, destination, spool, size)
+	v := scanFileStream(c.Request.Context(), orgID.String(), filename, contentType, destination, spool, size)
 
 	// Log block and alert outcomes (a clean/allow file isn't an incident).
 	if v.action == "block" || v.action == "alert" {
@@ -696,10 +738,10 @@ type fileVerdict struct {
 // scanFileStream is scanFileContent over an open spool file. Both the remote
 // service and the in-process fallback read it as a stream, so file size costs
 // scratch space and time — never memory.
-func scanFileStream(orgID, filename, contentType, destination string, spool *os.File, size int64) fileVerdict {
+func scanFileStream(ctx context.Context, orgID, filename, contentType, destination string, spool *os.File, size int64) fileVerdict {
 	if malwareclient.Enabled() {
 		if _, err := spool.Seek(0, io.SeekStart); err == nil {
-			if v, err := malwareclient.ScanStream(orgID, filename, contentType, destination, spool, size); err == nil {
+			if v, err := malwareclient.ScanStream(ctx, orgID, filename, contentType, destination, spool, size); err == nil {
 				return fileVerdict{
 					scanned:      v.Scanned,
 					infected:     v.Infected,
@@ -730,9 +772,9 @@ func scanFileStream(orgID, filename, contentType, destination string, spool *os.
 	return fv
 }
 
-func scanFileContent(orgID, filename, contentType, destination string, data []byte) fileVerdict {
+func scanFileContent(ctx context.Context, orgID, filename, contentType, destination string, data []byte) fileVerdict {
 	if malwareclient.Enabled() {
-		if v, err := malwareclient.ScanFile(orgID, filename, contentType, destination, data); err == nil {
+		if v, err := malwareclient.ScanFile(ctx, orgID, filename, contentType, destination, data); err == nil {
 			return fileVerdict{
 				scanned:      v.Scanned,
 				infected:     v.Infected,
@@ -813,7 +855,7 @@ func (h *AgentHandler) ScanDLP(c *gin.Context) {
 	}
 	policies = filterPoliciesByTarget(policies, empID, teamID)
 
-	v := scanDLPStream(orgID.String(), filename, contentType, destination, spool, size, policies)
+	v := scanDLPStream(c.Request.Context(), orgID.String(), filename, contentType, destination, spool, size, policies)
 
 	resp := gin.H{"scanned": true, "action": "allow", "score": v.score, "band": v.band}
 	if !v.matched {
@@ -887,7 +929,7 @@ type dlpVerdict struct {
 	reason     string
 }
 
-func scanDLPContent(orgID, filename, contentType, destination string, data []byte, policies []models.Policy) dlpVerdict {
+func scanDLPContent(ctx context.Context, orgID, filename, contentType, destination string, data []byte, policies []models.Policy) dlpVerdict {
 	// Automatic DLP: when an org hasn't authored an applicable custom DLP
 	// policy, every upload is still scanned against a built-in default ruleset
 	// (all detectors on, score >= 80 blocks, 50-79 alerts). Companies never have
@@ -899,7 +941,7 @@ func scanDLPContent(orgID, filename, contentType, destination string, data []byt
 
 	if dlpclient.Enabled() {
 		envelopes := buildDLPEnvelopes(policies)
-		if v, err := dlpclient.Scan(orgID, filename, contentType, destination, data, envelopes); err == nil {
+		if v, err := dlpclient.Scan(ctx, orgID, filename, contentType, destination, data, envelopes); err == nil {
 			return verdictFromService(v, policies)
 		} else {
 			log.Printf("dlp-service scan failed (%v) — falling back to in-process scanner", err)
@@ -1243,7 +1285,7 @@ func (h *AgentHandler) ThreatLookup(c *gin.Context) {
 	}
 
 	if threatintelclient.Enabled() {
-		if r, err := threatintelclient.Lookup(orgID.String(), "domain", domain); err == nil {
+		if r, err := threatintelclient.Lookup(c.Request.Context(), orgID.String(), "domain", domain); err == nil {
 			c.JSON(http.StatusOK, r)
 			return
 		}
@@ -1296,7 +1338,7 @@ func (h *AgentHandler) CASBAppControl(c *gin.Context) {
 	category := "unknown"
 	riskScore := 0
 	if shadowitclient.Enabled() {
-		if results, err := shadowitclient.Classify(orgID.String(), []string{domain}); err == nil && len(results) > 0 {
+		if results, err := shadowitclient.Classify(c.Request.Context(), orgID.String(), []string{domain}); err == nil && len(results) > 0 {
 			res := results[0]
 			if res.App != "" {
 				appName = res.App
@@ -1326,7 +1368,7 @@ func (h *AgentHandler) CASBAppControl(c *gin.Context) {
 
 	// The org's own app-control rules are evaluated ahead of casb-service's
 	// built-in defaults, so a company can loosen or tighten any of them.
-	status, resp, err := casbclient.Post(orgID.String(), "/v1/app-control", map[string]any{
+	status, resp, err := casbclient.Post(c.Request.Context(), orgID.String(), "/v1/app-control", map[string]any{
 		"app":        appName,
 		"category":   category,
 		"activity":   activity,

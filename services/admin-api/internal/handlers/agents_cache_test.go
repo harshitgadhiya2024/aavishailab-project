@@ -2,10 +2,13 @@ package handlers
 
 import (
 	"context"
+	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/aavishield/admin-api/internal/policysig"
 	"github.com/alicebob/miniredis/v2"
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 )
@@ -121,4 +124,62 @@ func TestRulesETagChangesWithContentAndIsStableOtherwise(t *testing.T) {
 	if len(a) < 3 || a[0] != '"' || a[len(a)-1] != '"' {
 		t.Fatalf("ETag must be a quoted opaque string per RFC 7232, got %q", a)
 	}
+}
+
+// setPolicySignatureHeaders is what both the cache-hit and cache-miss paths
+// in GetRules call to attach a signature to the response — verified in
+// isolation here since GetRules itself needs a real DB (see the package
+// comment above).
+func TestSetPolicySignatureHeadersSetsBothHeaders(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &AgentHandler{signer: testSigner(t)}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	h.setPolicySignatureHeaders(c, "fake-signature-value")
+
+	if got := w.Header().Get("X-Policy-Signature"); got != "fake-signature-value" {
+		t.Errorf("X-Policy-Signature = %q, want %q", got, "fake-signature-value")
+	}
+	if got := w.Header().Get("X-Policy-Key-Id"); got != h.signer.KeyID() {
+		t.Errorf("X-Policy-Key-Id = %q, want %q", got, h.signer.KeyID())
+	}
+}
+
+// The signature must be cached under its own key alongside the body — this
+// is the property that lets a cache HIT still serve a valid signature
+// without re-signing on every request (see the comment in GetRules).
+func TestRulesSignatureCacheKeyIsSiblingOfBodyKey(t *testing.T) {
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("start miniredis: %v", err)
+	}
+	defer mr.Close()
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	ctx := context.Background()
+
+	org := uuid.New()
+	key := rulesCacheKey(org, nil)
+	body := []byte(`{"rules":[]}`)
+	signer := testSigner(t)
+	sig := signer.Sign(body)
+
+	if err := rdb.Set(ctx, key, body, rulesCacheTTL).Err(); err != nil {
+		t.Fatal(err)
+	}
+	if err := rdb.Set(ctx, key+":sig", sig, rulesCacheTTL).Err(); err != nil {
+		t.Fatal(err)
+	}
+
+	gotSig, err := rdb.Get(ctx, key+":sig").Result()
+	if err != nil || gotSig != sig {
+		t.Fatalf("signature not retrievable from its sibling key: err=%v got=%q want=%q", err, gotSig, sig)
+	}
+}
+
+func testSigner(t *testing.T) *policysig.Signer {
+	t.Helper()
+	t.Setenv("POLICY_SIGNING_KEY", "")
+	t.Setenv("APP_ENV", "development")
+	return policysig.New()
 }

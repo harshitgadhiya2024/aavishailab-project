@@ -5,6 +5,7 @@ package casbclient
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -15,9 +16,14 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
-var httpClient = &http.Client{Timeout: 15 * time.Second}
+// otelhttp.NewTransport creates a child span per call and propagates the
+// traceparent header, so this hop joins whatever trace admin-api's own
+// incoming request started instead of being invisible in between.
+var httpClient = &http.Client{Timeout: 15 * time.Second, Transport: otelhttp.NewTransport(http.DefaultTransport)}
 
 func serviceURL() string { return strings.TrimRight(os.Getenv("CASB_SERVICE_URL"), "/") }
 
@@ -43,7 +49,8 @@ func MintToken(orgID string, ttl time.Duration) string {
 // Post forwards a JSON payload to a casb-service path and returns the decoded
 // response. Returns the upstream status code so the handler can surface a
 // 400 (e.g. an OAuth-required provider) distinctly from a 502.
-func Post(orgID, path string, payload map[string]any) (int, map[string]any, error) {
+// ctx should carry the inbound request's span so this hop joins that trace.
+func Post(ctx context.Context, orgID, path string, payload map[string]any) (int, map[string]any, error) {
 	// casb-service requires org_id in the body as well as in the bearer token.
 	// Setting it here rather than at each call site: a caller that forgot it
 	// got a 422 that the agent quietly read as "allow", so inline app-control
@@ -54,7 +61,7 @@ func Post(orgID, path string, payload map[string]any) (int, map[string]any, erro
 	payload["org_id"] = orgID
 
 	body, _ := json.Marshal(payload)
-	req, err := http.NewRequest(http.MethodPost, serviceURL()+path, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, serviceURL()+path, bytes.NewReader(body))
 	if err != nil {
 		return 0, nil, err
 	}

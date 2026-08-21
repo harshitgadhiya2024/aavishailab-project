@@ -23,6 +23,7 @@ pub mod heartbeat;
 pub mod http_client;
 pub mod mitm;
 pub mod policy_cache;
+pub mod policy_sig;
 pub mod proxy;
 pub mod rfc3339;
 pub mod rules;

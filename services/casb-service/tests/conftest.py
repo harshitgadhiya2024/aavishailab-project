@@ -2,6 +2,7 @@ import os
 
 os.environ.setdefault("CASB_SERVICE_SECRET", "test-casb-secret")
 os.environ.setdefault("CASB_REQUIRE_AUTH", "true")
+os.environ.setdefault("OTEL_SDK_DISABLED", "true")
 
 import pytest
 from fastapi.testclient import TestClient

@@ -19,11 +19,14 @@ pub mod config;
 pub mod detectors;
 pub mod scoring;
 pub mod schemas;
+pub mod trace_middleware;
+pub mod tracing_init;
 
 use axum::{
     body::Bytes,
     extract::{DefaultBodyLimit, State},
     http::{HeaderMap, StatusCode},
+    middleware,
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
@@ -67,6 +70,7 @@ pub fn build_router(state: SharedState) -> Router {
         // Disabling this keeps that single-source-of-truth behavior instead
         // of silently adding a second, smaller, undocumented limit.
         .layer(DefaultBodyLimit::disable())
+        .layer(middleware::from_fn(trace_middleware::trace_context))
 }
 
 async fn healthz() -> Json<serde_json::Value> {

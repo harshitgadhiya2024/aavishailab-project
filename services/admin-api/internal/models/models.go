@@ -92,6 +92,7 @@ type Organization struct {
 
 type UserRole string
 type UserStatus string
+type SuperAdminLevel string
 
 const (
 	RoleSuperAdmin UserRole = "superadmin"
@@ -100,6 +101,15 @@ const (
 	RoleManager  UserRole = "manager"
 	RoleAnalyst  UserRole = "analyst"
 	RoleReadOnly UserRole = "read_only"
+
+	// SuperAdminLevelFull can do anything a superadmin route allows,
+	// including destructive actions (org delete, agent rollback, catalog
+	// delete, team management). SuperAdminLevelSupport can sign in and see
+	// everything under /superadmin but is blocked from those — a support
+	// engineer who needs to look something up shouldn't also be able to
+	// delete a customer's organization.
+	SuperAdminLevelFull    SuperAdminLevel = "full"
+	SuperAdminLevelSupport SuperAdminLevel = "support"
 
 	StatusActive    UserStatus = "active"
 	StatusInactive  UserStatus = "inactive"
@@ -121,6 +131,11 @@ type User struct {
 	Department   string     `json:"department"`
 	JobTitle     string     `json:"job_title"`
 	LastLoginAt  *time.Time `json:"last_login_at"`
+	// SuperAdminLevel only means anything when Role is RoleSuperAdmin — see
+	// its doc comment above. Defaulted to "full" so every superadmin created
+	// before this field existed (and any created without setting it) keeps
+	// exactly the access it already had.
+	SuperAdminLevel SuperAdminLevel `gorm:"column:superadmin_level;type:varchar(20);default:'full'" json:"superadmin_level,omitempty"`
 	// ─── Multi-factor authentication ───
 	// MFASecret is the TOTP shared secret. It is stored plainly because it must
 	// be readable to verify a code (unlike a password, which is only ever
@@ -253,15 +268,15 @@ func (e *Employee) FullName() string {
 
 type Device struct {
 	Base
-	OrgID        uuid.UUID      `gorm:"type:uuid;not null;index" json:"org_id"`
-	EmployeeID   *uuid.UUID     `gorm:"type:uuid;index" json:"employee_id"`
-	Hostname     string         `gorm:"not null" json:"hostname"`
-	OSType       string         `json:"os_type"`
-	OSVersion    string         `json:"os_version"`
-	AgentVersion string         `json:"agent_version"`
-	MACAddress   string         `json:"mac_address"`
-	IPAddress    string         `json:"ip_address"`
-	Status       string         `gorm:"default:'offline'" json:"status"`
+	OrgID        uuid.UUID  `gorm:"type:uuid;not null;index" json:"org_id"`
+	EmployeeID   *uuid.UUID `gorm:"type:uuid;index" json:"employee_id"`
+	Hostname     string     `gorm:"not null" json:"hostname"`
+	OSType       string     `json:"os_type"`
+	OSVersion    string     `json:"os_version"`
+	AgentVersion string     `json:"agent_version"`
+	MACAddress   string     `json:"mac_address"`
+	IPAddress    string     `json:"ip_address"`
+	Status       string     `gorm:"default:'offline'" json:"status"`
 	// company | personal. Personal (BYOD) devices are the reason working-hours
 	// schedules exist; see models/enforcement.go.
 	Ownership    string         `gorm:"default:'company';index" json:"ownership"`
@@ -456,11 +471,11 @@ const (
 )
 
 type ActivityEvent struct {
-	ID         uuid.UUID  `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()" json:"id"`
-	OrgID      uuid.UUID  `gorm:"type:uuid;not null;index;index:idx_activity_org_domain,priority:1" json:"org_id"`
-	EmployeeID *uuid.UUID `gorm:"type:uuid;index" json:"employee_id"`
-	DeviceID   *uuid.UUID `gorm:"type:uuid;index" json:"device_id"`
-	EventType  EventType  `gorm:"type:event_type;not null;index" json:"event_type"`
+	ID         uuid.UUID   `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()" json:"id"`
+	OrgID      uuid.UUID   `gorm:"type:uuid;not null;index;index:idx_activity_org_domain,priority:1" json:"org_id"`
+	EmployeeID *uuid.UUID  `gorm:"type:uuid;index" json:"employee_id"`
+	DeviceID   *uuid.UUID  `gorm:"type:uuid;index" json:"device_id"`
+	EventType  EventType   `gorm:"type:event_type;not null;index" json:"event_type"`
 	Action     EventAction `gorm:"type:event_action;default:'logged';index" json:"action"`
 	Target     string      `json:"target"`
 	// TargetDomain was unindexed despite being the GROUP BY key in shadow-IT
@@ -614,4 +629,162 @@ type AuditLog struct {
 	IPAddress  string         `json:"ip_address"`
 	UserAgent  string         `json:"user_agent"`
 	CreatedAt  time.Time      `json:"created_at"`
+}
+
+// ─── Platform Settings ─────────────────────────────────────────────────────────
+
+// PlatformSetting is one named, superadmin-editable configuration block —
+// "general", "notifications", "security_policy", "data_retention". Stored as
+// a free-form JSON blob per key rather than dedicated columns because each
+// block's shape is a product decision that will keep changing; the row
+// itself is what makes a value durable and superadmin-editable at all.
+type PlatformSetting struct {
+	Base
+	Key       string         `gorm:"uniqueIndex;not null" json:"key"`
+	Value     map[string]any `gorm:"type:jsonb;serializer:json" json:"value"`
+	UpdatedBy *uuid.UUID     `gorm:"type:uuid" json:"updated_by"`
+}
+
+// ─── Billing ────────────────────────────────────────────────────────────────
+// One row per invoice/charge a superadmin has raised against an org via
+// Razorpay Payment Links — superadmin creates the link, sends it to the
+// org's finance contact, and this row tracks it from "created" through
+// "paid" (updated by the Razorpay webhook, or a manual refresh poll).
+
+type BillingStatus string
+
+const (
+	BillingStatusPending   BillingStatus = "pending"
+	BillingStatusPaid      BillingStatus = "paid"
+	BillingStatusCancelled BillingStatus = "cancelled"
+	BillingStatusExpired   BillingStatus = "expired"
+)
+
+type BillingRecord struct {
+	Base
+	OrgID uuid.UUID `gorm:"type:uuid;not null;index" json:"org_id"`
+	Plan  PlanType  `json:"plan"`
+	// AmountPaise is the smallest currency unit (paise for INR) — matching
+	// what Razorpay's own API takes and returns, so no lossy float money math
+	// happens anywhere in this path.
+	AmountPaise int64  `gorm:"not null" json:"amount_paise"`
+	Currency    string `gorm:"default:'INR'" json:"currency"`
+	// monthly | annual | one_time
+	BillingCycle string        `json:"billing_cycle"`
+	Status       BillingStatus `gorm:"type:varchar(20);default:'pending'" json:"status"`
+	Description  string        `json:"description"`
+
+	RazorpayPaymentLinkID string `json:"razorpay_payment_link_id"`
+	RazorpayPaymentID     string `json:"razorpay_payment_id"`
+	ShortURL              string `json:"short_url"`
+
+	PeriodStart *time.Time `json:"period_start"`
+	PeriodEnd   *time.Time `json:"period_end"`
+	PaidAt      *time.Time `json:"paid_at"`
+	CreatedBy   *uuid.UUID `gorm:"type:uuid" json:"created_by"`
+
+	Org *Organization `gorm:"foreignKey:OrgID" json:"org,omitempty"`
+}
+
+// ─── Impersonation ("View as Org") ─────────────────────────────────────────
+// A one-time, short-lived code minted by a full-level superadmin and
+// consumed by company-dashboard's NextAuth backend to exchange for a real
+// session — mirrors the existing social-login exchange (auth.go's
+// validInternalSecret path) rather than inventing a new trust mechanism.
+
+type ImpersonationToken struct {
+	ID             uuid.UUID  `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()" json:"id"`
+	Code           string     `gorm:"uniqueIndex;not null" json:"-"`
+	TargetUserID   uuid.UUID  `gorm:"type:uuid;not null" json:"target_user_id"`
+	ImpersonatorID uuid.UUID  `gorm:"type:uuid;not null" json:"impersonator_id"`
+	ExpiresAt      time.Time  `json:"expires_at"`
+	ConsumedAt     *time.Time `json:"consumed_at"`
+	CreatedAt      time.Time  `json:"created_at"`
+}
+
+// ─── Platform Announcements ─────────────────────────────────────────────────
+
+type AnnouncementSeverity string
+
+const (
+	AnnouncementInfo     AnnouncementSeverity = "info"
+	AnnouncementWarning  AnnouncementSeverity = "warning"
+	AnnouncementCritical AnnouncementSeverity = "critical"
+)
+
+type Announcement struct {
+	Base
+	Title    string               `gorm:"not null" json:"title"`
+	Body     string               `json:"body"`
+	Severity AnnouncementSeverity `gorm:"type:varchar(20);default:'info'" json:"severity"`
+	Active   bool                 `gorm:"default:true" json:"active"`
+	// A nil StartsAt/EndsAt means "no bound on that side" — active the
+	// moment it's created, or indefinitely once started.
+	StartsAt  *time.Time `json:"starts_at"`
+	EndsAt    *time.Time `json:"ends_at"`
+	CreatedBy *uuid.UUID `gorm:"type:uuid" json:"created_by"`
+}
+
+// ─── Feature Flags ──────────────────────────────────────────────────────────
+// Real, functional rollout infrastructure — not yet wired into any existing
+// feature's code path (that's a per-feature follow-up each time one adopts
+// it), but genuinely queryable and toggleable per-org today.
+
+type FeatureFlag struct {
+	Base
+	Key             string `gorm:"uniqueIndex;not null" json:"key"`
+	Description     string `json:"description"`
+	EnabledGlobally bool   `gorm:"default:false" json:"enabled_globally"`
+}
+
+// FeatureFlagOrg is an explicit per-org override — present means "enabled
+// for this org" regardless of EnabledGlobally, so a flag can be piloted on
+// specific customers before a global flip.
+type FeatureFlagOrg struct {
+	ID        uuid.UUID `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()" json:"id"`
+	FlagID    uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_flag_org" json:"flag_id"`
+	OrgID     uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_flag_org" json:"org_id"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// ─── Support Tickets ─────────────────────────────────────────────────────────
+
+type TicketStatus string
+type TicketPriority string
+
+const (
+	TicketStatusOpen       TicketStatus = "open"
+	TicketStatusInProgress TicketStatus = "in_progress"
+	TicketStatusResolved   TicketStatus = "resolved"
+	TicketStatusClosed     TicketStatus = "closed"
+
+	TicketPriorityLow    TicketPriority = "low"
+	TicketPriorityNormal TicketPriority = "normal"
+	TicketPriorityHigh   TicketPriority = "high"
+	TicketPriorityUrgent TicketPriority = "urgent"
+)
+
+type SupportTicket struct {
+	Base
+	// OrgID is nil for a ticket a superadmin opens directly (an internal /
+	// platform issue) rather than one raised by an org.
+	OrgID        *uuid.UUID     `gorm:"type:uuid;index" json:"org_id"`
+	Subject      string         `gorm:"not null" json:"subject"`
+	Status       TicketStatus   `gorm:"type:varchar(20);default:'open'" json:"status"`
+	Priority     TicketPriority `gorm:"type:varchar(20);default:'normal'" json:"priority"`
+	CreatedByID  uuid.UUID      `gorm:"type:uuid;not null" json:"created_by_id"`
+	AssignedToID *uuid.UUID     `gorm:"type:uuid" json:"assigned_to_id"`
+
+	Org *Organization `gorm:"foreignKey:OrgID" json:"org,omitempty"`
+}
+
+// SupportTicketMessage is one entry in a ticket's thread — the ticket's
+// original description is just its first message, so there's one shape for
+// "what was said" instead of a separate free-text field that duplicates it.
+type SupportTicketMessage struct {
+	ID        uuid.UUID `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()" json:"id"`
+	TicketID  uuid.UUID `gorm:"type:uuid;not null;index" json:"ticket_id"`
+	AuthorID  uuid.UUID `gorm:"type:uuid;not null" json:"author_id"`
+	Body      string    `gorm:"not null" json:"body"`
+	CreatedAt time.Time `json:"created_at"`
 }

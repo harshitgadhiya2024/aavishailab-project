@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
@@ -95,7 +96,7 @@ func (h *ActivityHandler) List(c *gin.Context) {
 	// GORM's foreign-key auto-detection for this association and makes it
 	// silently query the wrong column.
 	attachEmployees(h.db, events)
-	attachTargetApps(orgID, events)
+	attachTargetApps(c.Request.Context(), orgID, events)
 	fillOperations(events)
 
 	c.JSON(http.StatusOK, gin.H{
@@ -360,7 +361,7 @@ func attachEmployees(db *gorm.DB, events []models.ActivityEvent) {
 //
 // Fails open: if shadowit-service is unset or unreachable the events keep their
 // raw domain and target_app stays empty, which the UI falls back to.
-func attachTargetApps(orgID string, events []models.ActivityEvent) {
+func attachTargetApps(ctx context.Context, orgID string, events []models.ActivityEvent) {
 	if !shadowitclient.Enabled() || len(events) == 0 {
 		return
 	}
@@ -379,7 +380,7 @@ func attachTargetApps(orgID string, events []models.ActivityEvent) {
 		return
 	}
 
-	results, err := shadowitclient.Classify(orgID, domains)
+	results, err := shadowitclient.Classify(ctx, orgID, domains)
 	if err != nil {
 		return
 	}

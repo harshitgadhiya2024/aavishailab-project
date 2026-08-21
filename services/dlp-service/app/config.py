@@ -23,6 +23,11 @@ class Settings:
     # Both services must be given the SAME value.
     service_secret: str = os.getenv("DLP_SERVICE_SECRET", "dev-insecure-dlp-secret-change-me")
 
+    # Optional, only set during a secret rotation window — tokens signed with
+    # either secret verify while this is set, so admin-api and this service
+    # can be restarted independently without a window where every request 401s.
+    service_secret_previous: str = os.getenv("DLP_SERVICE_SECRET_PREVIOUS", "")
+
     # Reject requests whose (org-bound, short-TTL) token is missing/invalid.
     # Only ever turn off in isolated unit tests.
     require_auth: bool = os.getenv("DLP_REQUIRE_AUTH", "true").lower() == "true"

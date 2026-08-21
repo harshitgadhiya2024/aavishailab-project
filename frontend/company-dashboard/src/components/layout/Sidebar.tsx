@@ -5,7 +5,8 @@ import { usePathname } from "next/navigation";
 import {
   Shield, LayoutDashboard, Users, UsersRound, FileText,
   Activity, Globe, Bot, Monitor, ChevronLeft, ChevronRight, ChevronDown,
-  BarChart3, FileWarning, Cloud, CloudCog, Inbox, Tags, ShieldCheck, UserCog, AppWindow, Camera
+  BarChart3, FileWarning, Cloud, CloudCog, Inbox, Tags, ShieldCheck, UserCog, AppWindow, Camera,
+  LifeBuoy
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
@@ -64,6 +65,14 @@ const navGroups: NavGroup[] = [
       { href: "/dashboard/screenshots", icon: Camera, label: "Screenshots", permission: PERMISSIONS.monitoringRead },
       { href: "/dashboard/reports", icon: BarChart3, label: "Reports", permission: PERMISSIONS.reportsRead },
       { href: "/dashboard/ai-assistant", icon: Bot, label: "AI Assistant", permission: PERMISSIONS.aiUse },
+    ],
+  },
+  {
+    id: "support",
+    label: "Help",
+    items: [
+      // No permission gate — every role can ask for help.
+      { href: "/dashboard/support", icon: LifeBuoy, label: "Support" },
     ],
   },
 ];

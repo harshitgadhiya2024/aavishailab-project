@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"github.com/aavishield/threatintel-service/internal/config"
 	"github.com/aavishield/threatintel-service/internal/feeds"
 	"github.com/aavishield/threatintel-service/internal/store"
+	"github.com/aavishield/threatintel-service/internal/tracing"
 )
 
 func main() {
@@ -21,6 +23,9 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
 		os.Exit(healthcheck(cfg.Port))
 	}
+
+	shutdownTracing := tracing.Init("threatintel-service")
+	defer shutdownTracing(context.Background())
 
 	if cfg.RequireAuth && cfg.UsingDefaultSecret() {
 		log.Println("⚠️  THREATINTEL_SERVICE_SECRET is the built-in default — set a strong shared secret in production.")

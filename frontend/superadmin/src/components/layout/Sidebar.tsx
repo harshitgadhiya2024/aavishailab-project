@@ -4,7 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Shield, LayoutDashboard, Building2, Activity,
-  Settings, ChevronLeft, ChevronRight, Globe, Download, AppWindow
+  Settings, ChevronLeft, ChevronRight, Globe, Download, AppWindow,
+  HeartPulse, ClipboardList, Users2, CreditCard, ShieldAlert, Megaphone,
+  Flag, LifeBuoy
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -12,9 +14,17 @@ import { cn } from "@/lib/utils";
 const navItems = [
   { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
   { href: "/dashboard/organizations", icon: Building2, label: "Organizations" },
+  { href: "/dashboard/billing", icon: CreditCard, label: "Billing & Revenue" },
   { href: "/dashboard/agent-versions", icon: Download, label: "Agent Versions" },
   { href: "/dashboard/applications", icon: AppWindow, label: "Application Catalog" },
+  { href: "/dashboard/threat-intel", icon: ShieldAlert, label: "Threat Intel" },
   { href: "/dashboard/activity", icon: Activity, label: "Global Activity" },
+  { href: "/dashboard/system-health", icon: HeartPulse, label: "System Health" },
+  { href: "/dashboard/audit-log", icon: ClipboardList, label: "Audit Log" },
+  { href: "/dashboard/announcements", icon: Megaphone, label: "Announcements" },
+  { href: "/dashboard/feature-flags", icon: Flag, label: "Feature Flags" },
+  { href: "/dashboard/tickets", icon: LifeBuoy, label: "Support Tickets" },
+  { href: "/dashboard/team", icon: Users2, label: "Team" },
   { href: "/dashboard/settings", icon: Settings, label: "Settings" },
 ];
 

@@ -48,7 +48,7 @@ func (h *SWGHandler) ThreatLookup(c *gin.Context) {
 	}
 
 	if threatintelclient.Enabled() {
-		if r, err := threatintelclient.Lookup(orgID, kind, indicator); err == nil {
+		if r, err := threatintelclient.Lookup(c.Request.Context(), orgID, kind, indicator); err == nil {
 			c.JSON(http.StatusOK, r)
 			return
 		}
@@ -85,14 +85,18 @@ func (h *SWGHandler) ThreatLookup(c *gin.Context) {
 func (h *SWGHandler) ListDomainRules(c *gin.Context) {
 	orgID := c.GetString("scoped_org_id")
 
-	page, _  := strconv.Atoi(c.DefaultQuery("page", "1"))
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
-	search   := c.Query("search")
-	action   := c.Query("action")
+	search := c.Query("search")
+	action := c.Query("action")
 	category := c.Query("category")
 
-	if page < 1 { page = 1 }
-	if limit > 200 { limit = 200 }
+	if page < 1 {
+		page = 1
+	}
+	if limit > 200 {
+		limit = 200
+	}
 
 	q := h.db.Where("org_id = ? OR org_id IS NULL", orgID)
 	if search != "" {
@@ -109,7 +113,7 @@ func (h *SWGHandler) ListDomainRules(c *gin.Context) {
 	q.Model(&models.DomainRule{}).Count(&total)
 
 	var rules []models.DomainRule
-	q.Order("created_at DESC").Offset((page-1)*limit).Limit(limit).Find(&rules)
+	q.Order("created_at DESC").Offset((page - 1) * limit).Limit(limit).Find(&rules)
 
 	c.JSON(http.StatusOK, gin.H{"data": rules, "total": total, "page": page, "limit": limit})
 }
@@ -120,12 +124,12 @@ func (h *SWGHandler) CreateDomainRule(c *gin.Context) {
 	orgUUID, _ := uuid.Parse(orgID)
 
 	var req struct {
-		Domain    string `json:"domain" binding:"required"`
-		Action    string `json:"action"`
-		RuleType  string `json:"rule_type"`
-		Category  string `json:"category"`
-		Reason    string `json:"reason"`
-		IsGlobal  bool   `json:"is_global"`
+		Domain   string `json:"domain" binding:"required"`
+		Action   string `json:"action"`
+		RuleType string `json:"rule_type"`
+		Category string `json:"category"`
+		Reason   string `json:"reason"`
+		IsGlobal bool   `json:"is_global"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -147,7 +151,13 @@ func (h *SWGHandler) CreateDomainRule(c *gin.Context) {
 		Reason:   req.Reason,
 		Enabled:  true,
 	}
-	if !req.IsGlobal {
+	// is_global (OrgID nil) makes a rule apply to every organization on the
+	// platform — only a superadmin may set it. Any other caller's request is
+	// honored as an org-scoped rule regardless of what they sent, so this
+	// can't be used to plant a rule outside their own org.
+	role, _ := c.Get(middleware.ContextKeyRole)
+	isSuperAdmin := role == models.RoleSuperAdmin
+	if !req.IsGlobal || !isSuperAdmin {
 		rule.OrgID = &orgUUID
 	}
 
@@ -217,11 +227,11 @@ func (h *SWGHandler) Stats(c *gin.Context) {
 	h.db.Model(&models.DomainRule{}).Where("org_id = ? OR org_id IS NULL", orgID).Count(&ruleCount)
 
 	c.JSON(http.StatusOK, gin.H{
-		"total_blocked":       totalBlocked,
-		"total_allowed":       totalAllowed,
+		"total_blocked":          totalBlocked,
+		"total_allowed":          totalAllowed,
 		"top_blocked_categories": topBlocked,
 		"top_blocked_domains":    topBlockedDomains,
-		"rule_count":          ruleCount,
+		"rule_count":             ruleCount,
 	})
 }
 
@@ -252,12 +262,12 @@ func (h *SWGHandler) CheckURLDashboard(c *gin.Context) {
 	result := h.evaluateURL(orgID, domain, "")
 	blocked := result["action"] == "block" || result["action"] == models.PolicyActionBlock
 	c.JSON(http.StatusOK, gin.H{
-		"blocked":  blocked,
-		"action":   result["action"],
-		"reason":   result["reason"],
-		"category": result["category"],
-		"domain":   domain,
-		"rule_id":  result["rule_id"],
+		"blocked":   blocked,
+		"action":    result["action"],
+		"reason":    result["reason"],
+		"category":  result["category"],
+		"domain":    domain,
+		"rule_id":   result["rule_id"],
 		"policy_id": result["policy_id"],
 	})
 }

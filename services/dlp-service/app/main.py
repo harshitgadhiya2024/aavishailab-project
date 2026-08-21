@@ -23,6 +23,7 @@ from . import scoring
 from .auth import AuthError, verify_token
 from .config import settings
 from .schemas import ScanRequest, ScanResponse
+from .tracing import setup_tracing
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("dlp-service")
@@ -39,6 +40,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Aavishield DLP Service", version=__version__, lifespan=lifespan)
+setup_tracing(app, "dlp-service")
 
 # Prometheus-style counters (in-memory; scraped via /metrics).
 _METRICS = {"scans_total": 0, "blocked_total": 0, "alerted_total": 0, "auth_failures_total": 0}

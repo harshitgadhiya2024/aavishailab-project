@@ -84,6 +84,9 @@ web_modules/
 .env.*
 !.env.example
 
+# Live payment-processor credentials — never committed
+razorpay_credential.txt
+
 # parcel-bundler cache (https://parceljs.org/)
 .cache
 .parcel-cache

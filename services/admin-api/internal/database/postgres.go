@@ -100,5 +100,13 @@ func AutoMigrate(db *gorm.DB) error {
 		&models.Screenshot{},
 		&models.ScreenshotSettings{},
 		&models.AccessRequest{},
+		&models.PlatformSetting{},
+		&models.BillingRecord{},
+		&models.ImpersonationToken{},
+		&models.Announcement{},
+		&models.FeatureFlag{},
+		&models.FeatureFlagOrg{},
+		&models.SupportTicket{},
+		&models.SupportTicketMessage{},
 	)
 }

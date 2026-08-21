@@ -5,6 +5,7 @@
 //! momentarily-unreachable admin API doesn't brick browsing.
 
 use crate::http_client::AgentClient;
+use crate::policy_sig::PolicySigVerifier;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::RwLock;
@@ -43,19 +44,23 @@ struct RulesResponse {
 
 pub struct PolicyCache {
     client: AgentClient,
+    sig_verifier: PolicySigVerifier,
     by_domain: RwLock<HashMap<String, Vec<Rule>>>,
     loaded: RwLock<bool>,
 }
 
 impl PolicyCache {
     pub fn new(client: AgentClient) -> Self {
-        PolicyCache { client, by_domain: RwLock::new(HashMap::new()), loaded: RwLock::new(false) }
+        let sig_verifier = PolicySigVerifier::new(client.clone());
+        PolicyCache { client, sig_verifier, by_domain: RwLock::new(HashMap::new()), loaded: RwLock::new(false) }
     }
 
     pub async fn refresh(&self) {
         if self.client.revoked.is_set() {
             return;
         }
+        self.sig_verifier.ensure_key().await;
+
         let resp = match self.client.get("/internal/agent/rules").await {
             Ok(r) => r,
             Err(e) => {
@@ -63,7 +68,24 @@ impl PolicyCache {
                 return;
             }
         };
-        let body: RulesResponse = match resp.json().await {
+        let sig = resp.headers().get("X-Policy-Signature").and_then(|v| v.to_str().ok()).map(str::to_string);
+        let key_id = resp.headers().get("X-Policy-Key-Id").and_then(|v| v.to_str().ok()).map(str::to_string);
+        let bytes = match resp.bytes().await {
+            Ok(b) => b,
+            Err(e) => {
+                tracing::warn!(error = %e, "rule refresh could not read response body — keeping cached rules");
+                return;
+            }
+        };
+
+        // Reject outright rather than apply an unverified bundle — a
+        // network position that can serve a 200 with a plausible-looking
+        // JSON body is exactly the threat this signature defends against.
+        if !self.sig_verifier.verify(&bytes, sig.as_deref(), key_id.as_deref()) {
+            return;
+        }
+
+        let body: RulesResponse = match serde_json::from_slice(&bytes) {
             Ok(b) => b,
             Err(e) => {
                 tracing::warn!(error = %e, "rule refresh returned unparseable body — keeping cached rules");

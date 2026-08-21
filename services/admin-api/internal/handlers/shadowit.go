@@ -80,7 +80,7 @@ func (h *ShadowITHandler) DiscoveredApps(c *gin.Context) {
 	// Classify (best-effort — if the service is down, everything is "unclassified").
 	classMap := map[string]shadowitclient.AppResult{}
 	if shadowitclient.Enabled() {
-		if results, err := shadowitclient.Classify(orgID, domains); err == nil {
+		if results, err := shadowitclient.Classify(c.Request.Context(), orgID, domains); err == nil {
 			for _, res := range results {
 				classMap[res.Domain] = res
 			}

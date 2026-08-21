@@ -4,6 +4,7 @@
 package threatintelclient
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -14,6 +15,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 type Result struct {
@@ -27,7 +30,7 @@ type Result struct {
 	Reasons        []string `json:"reasons"`
 }
 
-var httpClient = &http.Client{Timeout: 10 * time.Second}
+var httpClient = &http.Client{Timeout: 10 * time.Second, Transport: otelhttp.NewTransport(http.DefaultTransport)}
 
 func serviceURL() string { return strings.TrimRight(os.Getenv("THREATINTEL_SERVICE_URL"), "/") }
 
@@ -52,12 +55,13 @@ func MintToken(orgID string, ttl time.Duration) string {
 	return "v1." + enc.EncodeToString(payload) + "." + enc.EncodeToString(mac.Sum(nil))
 }
 
-// Lookup scores an indicator (kind: domain | ip | hash) for an org.
-func Lookup(orgID, kind, indicator string) (*Result, error) {
+// Lookup scores an indicator (kind: domain | ip | hash) for an org. ctx
+// should carry the inbound request's span so this hop joins that trace.
+func Lookup(ctx context.Context, orgID, kind, indicator string) (*Result, error) {
 	q := url.Values{}
 	q.Set("org_id", orgID)
 	q.Set(kind, indicator)
-	req, err := http.NewRequest(http.MethodGet, serviceURL()+"/v1/lookup?"+q.Encode(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, serviceURL()+"/v1/lookup?"+q.Encode(), nil)
 	if err != nil {
 		return nil, err
 	}

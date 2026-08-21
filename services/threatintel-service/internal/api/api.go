@@ -11,6 +11,7 @@ import (
 	"github.com/aavishield/threatintel-service/internal/config"
 	"github.com/aavishield/threatintel-service/internal/scoring"
 	"github.com/aavishield/threatintel-service/internal/store"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 type Server struct {
@@ -30,7 +31,10 @@ func (srv *Server) Handler() http.Handler {
 	mux.HandleFunc("/metrics", srv.metrics)
 	mux.HandleFunc("/v1/score", srv.score)   // POST {org_id, indicator, kind}
 	mux.HandleFunc("/v1/lookup", srv.lookup) // GET ?org_id=&domain=|ip=|hash=
-	return mux
+	// otelhttp.NewHandler extracts the incoming traceparent header (set by
+	// admin-api's outbound client) and starts a child span, so this hop
+	// joins the caller's trace instead of starting a disconnected one.
+	return otelhttp.NewHandler(mux, "threatintel-service")
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -62,7 +66,7 @@ func (srv *Server) authorize(r *http.Request, orgID string) bool {
 	if !srv.cfg.RequireAuth {
 		return true
 	}
-	if err := auth.Verify(r.Header.Get("Authorization"), orgID, srv.cfg.ServiceSecret); err != nil {
+	if err := auth.Verify(r.Header.Get("Authorization"), orgID, srv.cfg.ServiceSecret, srv.cfg.ServiceSecretPrevious); err != nil {
 		atomic.AddUint64(&srv.auth, 1)
 		return false
 	}

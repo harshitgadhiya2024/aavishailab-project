@@ -1,8 +1,9 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { orgApi } from "@/lib/api";
-import { Building2, Users, Shield, Activity, TrendingUp, AlertCircle } from "lucide-react";
+import Link from "next/link";
+import { orgApi, seatAlertApi } from "@/lib/api";
+import { Building2, Users, Shield, Activity, TrendingUp, AlertCircle, Gauge, ChevronRight } from "lucide-react";
 import { formatNumber, formatDate } from "@/lib/utils";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend
@@ -15,6 +16,12 @@ export default function DashboardPage() {
     queryKey: ["org-stats"],
     queryFn: orgApi.stats,
     refetchInterval: 30_000,
+  });
+
+  const { data: seatAlerts } = useQuery({
+    queryKey: ["seat-alerts"],
+    queryFn: seatAlertApi.list,
+    refetchInterval: 60_000,
   });
 
   if (isLoading) {
@@ -171,6 +178,32 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
+
+      {/* Seat-limit alerts */}
+      {(seatAlerts?.data?.alerts ?? []).length > 0 && (
+        <div className="bg-card rounded-xl border border-yellow-500/20 shadow-sm">
+          <div className="px-5 py-4 border-b border-border flex items-center gap-2">
+            <Gauge className="w-4 h-4 text-yellow-400" />
+            <h3 className="font-semibold text-foreground">Orgs Near Seat Limit</h3>
+            <span className="text-xs text-muted-foreground">({seatAlerts?.data?.threshold_pct}%+ used)</span>
+          </div>
+          <div className="divide-y divide-border">
+            {(seatAlerts?.data?.alerts ?? []).map((a: any) => (
+              <Link
+                key={a.org_id}
+                href={`/dashboard/organizations/${a.org_id}`}
+                className="px-5 py-3 flex items-center justify-between text-sm hover:bg-muted transition-colors"
+              >
+                <span className="text-foreground">{a.org_name}</span>
+                <span className="flex items-center gap-3">
+                  <span className="text-muted-foreground tabular-nums">{a.user_count}/{a.max_users} seats ({a.percent_used}%)</span>
+                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

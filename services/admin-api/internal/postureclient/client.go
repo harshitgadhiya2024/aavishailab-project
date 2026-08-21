@@ -5,6 +5,7 @@ package postureclient
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -15,6 +16,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 // Signals mirror posture-service's; pointers distinguish "off" from "unknown".
@@ -44,7 +47,7 @@ type GeoResult struct {
 	Country     string `json:"country"`
 }
 
-var httpClient = &http.Client{Timeout: 8 * time.Second}
+var httpClient = &http.Client{Timeout: 8 * time.Second, Transport: otelhttp.NewTransport(http.DefaultTransport)}
 
 func serviceURL() string { return strings.TrimRight(os.Getenv("POSTURE_SERVICE_URL"), "/") }
 
@@ -67,9 +70,9 @@ func MintToken(orgID string, ttl time.Duration) string {
 	return "v1." + enc.EncodeToString(payload) + "." + enc.EncodeToString(mac.Sum(nil))
 }
 
-func Evaluate(orgID, deviceID string, s Signals) (*PostureResult, error) {
+func Evaluate(ctx context.Context, orgID, deviceID string, s Signals) (*PostureResult, error) {
 	body, _ := json.Marshal(map[string]any{"org_id": orgID, "device_id": deviceID, "signals": s})
-	req, err := http.NewRequest(http.MethodPost, serviceURL()+"/v1/posture", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, serviceURL()+"/v1/posture", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -90,11 +93,11 @@ func Evaluate(orgID, deviceID string, s Signals) (*PostureResult, error) {
 	return &r, nil
 }
 
-func GeoIP(orgID, ip string) (*GeoResult, error) {
+func GeoIP(ctx context.Context, orgID, ip string) (*GeoResult, error) {
 	q := url.Values{}
 	q.Set("org_id", orgID)
 	q.Set("ip", ip)
-	req, err := http.NewRequest(http.MethodGet, serviceURL()+"/v1/geoip?"+q.Encode(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, serviceURL()+"/v1/geoip?"+q.Encode(), nil)
 	if err != nil {
 		return nil, err
 	}

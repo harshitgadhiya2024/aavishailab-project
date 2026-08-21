@@ -65,7 +65,7 @@ func (h *PolicyHandler) TestDLP(c *gin.Context) {
 		contentType = "text/plain"
 	}
 
-	v := scanDLPContent(orgID, filename, contentType, "test-sample", []byte(req.Text), policies)
+	v := scanDLPContent(c.Request.Context(), orgID, filename, contentType, "test-sample", []byte(req.Text), policies)
 
 	c.JSON(http.StatusOK, gin.H{
 		"matched":     v.matched,

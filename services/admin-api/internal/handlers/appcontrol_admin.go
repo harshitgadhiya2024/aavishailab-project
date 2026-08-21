@@ -119,6 +119,7 @@ func (h *AppCatalogAdminHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create the application"})
 		return
 	}
+	writeAudit(h.db, c, nil, "create", "app_catalog", &app.ID, map[string]any{"name": app.Name})
 	c.JSON(http.StatusCreated, h.withIconURL(app))
 }
 
@@ -179,6 +180,7 @@ func (h *AppCatalogAdminHandler) Update(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update the application"})
 		return
 	}
+	writeAudit(h.db, c, nil, "update", "app_catalog", &app.ID, map[string]any{"name": app.Name})
 	c.JSON(http.StatusOK, h.withIconURL(app))
 }
 
@@ -200,6 +202,7 @@ func (h *AppCatalogAdminHandler) Delete(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete the application"})
 		return
 	}
+	writeAudit(h.db, c, nil, "delete", "app_catalog", &app.ID, map[string]any{"name": app.Name})
 	c.JSON(http.StatusOK, gin.H{"message": "Application deleted"})
 }
 

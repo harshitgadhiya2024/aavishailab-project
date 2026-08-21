@@ -383,3 +383,12 @@ export const companyApi = {
   timezones: () => api.get("/api/v1/organization/timezones"),
   updateNotifications: (data: any) => api.put("/api/v1/organization/notifications", data),
 };
+
+// ─── Support tickets ──────────────────────────────────────────────────────────
+export const ticketApi = {
+  list: () => api.get("/api/v1/tickets"),
+  get: (id: string) => api.get(`/api/v1/tickets/${id}`),
+  create: (data: { subject: string; body: string; priority?: string }) =>
+    api.post("/api/v1/tickets", data),
+  addMessage: (id: string, body: string) => api.post(`/api/v1/tickets/${id}/messages`, { body }),
+};

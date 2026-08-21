@@ -157,6 +157,10 @@ func (h *OrgHandler) Create(c *gin.Context) {
 	}
 	h.db.Create(&user)
 
+	writeAudit(h.db, c, &org.ID, "create", "organization", &org.ID, map[string]any{
+		"name": org.Name, "plan": string(org.Plan), "admin_email": user.Email,
+	})
+
 	c.JSON(http.StatusCreated, gin.H{"org": org, "admin": toUserDTO(&user)})
 }
 
@@ -176,12 +180,31 @@ func (h *OrgHandler) Get(c *gin.Context) {
 	h.db.Model(&models.Policy{}).Where("org_id = ?", org.ID).Count(&pc)
 	h.db.Model(&models.Device{}).Where("org_id = ?", org.ID).Count(&dc)
 
+	// Detail-page context beyond the counts every list row already carries —
+	// enough to answer "what's going on with this customer" without a direct
+	// database query, which was previously the only way to find out.
+	var users []models.User
+	h.db.Where("org_id = ?", org.ID).Order("created_at DESC").Limit(25).Find(&users)
+	userDTOs := make([]*UserDTO, 0, len(users))
+	for i := range users {
+		userDTOs = append(userDTOs, toUserDTO(&users[i]))
+	}
+
+	var devices []models.Device
+	h.db.Where("org_id = ?", org.ID).Order("last_seen_at DESC NULLS LAST").Limit(25).Find(&devices)
+
+	var recentActivity []models.ActivityEvent
+	h.db.Where("org_id = ?", org.ID).Order("timestamp DESC").Limit(20).Find(&recentActivity)
+
 	c.JSON(http.StatusOK, gin.H{
-		"org":            org,
-		"user_count":     uc,
-		"employee_count": ec,
-		"policy_count":   pc,
-		"device_count":   dc,
+		"org":             org,
+		"user_count":      uc,
+		"employee_count":  ec,
+		"policy_count":    pc,
+		"device_count":    dc,
+		"users":           userDTOs,
+		"devices":         devices,
+		"recent_activity": recentActivity,
 	})
 }
 
@@ -217,6 +240,8 @@ func (h *OrgHandler) Update(c *gin.Context) {
 	if req.LogoURL != "" { updates["logo_url"] = req.LogoURL }
 
 	h.db.Model(&org).Updates(updates)
+	orgUUID := org.ID
+	writeAudit(h.db, c, &orgUUID, "update", "organization", &orgUUID, updates)
 	c.JSON(http.StatusOK, org)
 }
 
@@ -233,6 +258,7 @@ func (h *OrgHandler) Delete(c *gin.Context) {
 
 	// Soft delete
 	h.db.Delete(&org)
+	writeAudit(h.db, c, &orgUUID, "delete", "organization", &orgUUID, map[string]any{"name": org.Name})
 	c.JSON(http.StatusOK, gin.H{"message": "Organization deleted"})
 }
 

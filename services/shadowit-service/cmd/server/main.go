@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"github.com/aavishield/shadowit-service/internal/api"
 	"github.com/aavishield/shadowit-service/internal/catalog"
 	"github.com/aavishield/shadowit-service/internal/config"
+	"github.com/aavishield/shadowit-service/internal/tracing"
 )
 
 func main() {
@@ -20,6 +22,9 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
 		os.Exit(healthcheck(cfg.Port))
 	}
+
+	shutdownTracing := tracing.Init("shadowit-service")
+	defer shutdownTracing(context.Background())
 
 	if cfg.RequireAuth && cfg.UsingDefaultSecret() {
 		log.Println("⚠️  SHADOWIT_SERVICE_SECRET is the built-in default — set a strong shared secret in production.")

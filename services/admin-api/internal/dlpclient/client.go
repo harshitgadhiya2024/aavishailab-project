@@ -7,6 +7,7 @@ package dlpclient
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -17,6 +18,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 // CustomPattern mirrors an org-defined named regex.
@@ -71,7 +74,10 @@ type scanRequest struct {
 	Policies    []PolicyEnvelope `json:"policies"`
 }
 
-var httpClient = &http.Client{Timeout: 15 * time.Second}
+// otelhttp.NewTransport creates a child span per call and propagates the
+// traceparent header, so this hop joins whatever trace admin-api's own
+// incoming request started instead of being invisible in between.
+var httpClient = &http.Client{Timeout: 15 * time.Second, Transport: otelhttp.NewTransport(http.DefaultTransport)}
 
 func serviceURL() string {
 	return strings.TrimRight(os.Getenv("DLP_SERVICE_URL"), "/")
@@ -104,7 +110,9 @@ func MintToken(orgID string, ttl time.Duration) string {
 }
 
 // Scan submits content + policy config to dlp-service and returns its verdict.
-func Scan(orgID, filename, contentType, destination string, content []byte, policies []PolicyEnvelope) (*Verdict, error) {
+// ctx should carry the inbound request's span (c.Request.Context() from the
+// Gin handler) so this hop joins that trace instead of starting a new one.
+func Scan(ctx context.Context, orgID, filename, contentType, destination string, content []byte, policies []PolicyEnvelope) (*Verdict, error) {
 	reqBody, err := json.Marshal(scanRequest{
 		OrgID:       orgID,
 		Filename:    filename,
@@ -117,7 +125,7 @@ func Scan(orgID, filename, contentType, destination string, content []byte, poli
 		return nil, err
 	}
 
-	req, err := http.NewRequest(http.MethodPost, serviceURL()+"/v1/scan", bytes.NewReader(reqBody))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, serviceURL()+"/v1/scan", bytes.NewReader(reqBody))
 	if err != nil {
 		return nil, err
 	}

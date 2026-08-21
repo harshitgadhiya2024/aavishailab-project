@@ -9,6 +9,7 @@ import (
 	"github.com/aavishield/shadowit-service/internal/auth"
 	"github.com/aavishield/shadowit-service/internal/catalog"
 	"github.com/aavishield/shadowit-service/internal/config"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 type Server struct {
@@ -27,7 +28,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/healthz", s.health)
 	mux.HandleFunc("/metrics", s.metrics)
 	mux.HandleFunc("/v1/classify", s.classify)
-	return mux
+	// otelhttp.NewHandler extracts the incoming traceparent header (set by
+	// admin-api's outbound client) and starts a child span, so this hop
+	// joins the caller's trace instead of starting a disconnected one.
+	return otelhttp.NewHandler(mux, "shadowit-service")
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -67,7 +71,7 @@ func (s *Server) classify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.cfg.RequireAuth {
-		if err := auth.Verify(r.Header.Get("Authorization"), req.OrgID, s.cfg.ServiceSecret); err != nil {
+		if err := auth.Verify(r.Header.Get("Authorization"), req.OrgID, s.cfg.ServiceSecret, s.cfg.ServiceSecretPrevious); err != nil {
 			atomic.AddUint64(&s.authErr, 1)
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 			return

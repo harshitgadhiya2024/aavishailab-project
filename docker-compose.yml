@@ -95,6 +95,9 @@ services:
       # Threat-intel microservice: domain / IP / file-hash reputation + scoring.
       THREATINTEL_SERVICE_URL: http://threatintel-service:6220
       THREATINTEL_SERVICE_SECRET: ${THREATINTEL_SERVICE_SECRET:-change-this-threatintel-shared-secret-in-production}
+      # Ed25519 seed that signs policy bundles served to agents. Generate
+      # with `openssl rand -base64 32`. Required in production.
+      POLICY_SIGNING_KEY: ${POLICY_SIGNING_KEY:-}
       # Posture + GeoIP microservice.
       POSTURE_SERVICE_URL: http://posture-service:6230
       POSTURE_SERVICE_SECRET: ${POSTURE_SERVICE_SECRET:-change-this-posture-shared-secret-in-production}
@@ -174,6 +177,7 @@ services:
     restart: unless-stopped
     environment:
       DLP_SERVICE_SECRET: ${DLP_SERVICE_SECRET:-change-this-dlp-shared-secret-in-production}
+      DLP_SERVICE_SECRET_PREVIOUS: ${DLP_SERVICE_SECRET_PREVIOUS:-}
       DLP_REQUIRE_AUTH: "true"
       DLP_BLOCK_THRESHOLD: ${DLP_BLOCK_THRESHOLD:-80}
       DLP_ALERT_THRESHOLD: ${DLP_ALERT_THRESHOLD:-50}
@@ -204,6 +208,7 @@ services:
     stop_grace_period: 130s
     environment:
       MALWARE_SERVICE_SECRET: ${MALWARE_SERVICE_SECRET:-change-this-malware-shared-secret-in-production}
+      MALWARE_SERVICE_SECRET_PREVIOUS: ${MALWARE_SERVICE_SECRET_PREVIOUS:-}
       MALWARE_REQUIRE_AUTH: "true"
       MALWARE_BLOCK_THRESHOLD: ${MALWARE_BLOCK_THRESHOLD:-80}
       MALWARE_ALERT_THRESHOLD: ${MALWARE_ALERT_THRESHOLD:-50}
@@ -232,6 +237,7 @@ services:
     restart: unless-stopped
     environment:
       THREATINTEL_SERVICE_SECRET: ${THREATINTEL_SERVICE_SECRET:-change-this-threatintel-shared-secret-in-production}
+      THREATINTEL_SERVICE_SECRET_PREVIOUS: ${THREATINTEL_SERVICE_SECRET_PREVIOUS:-}
       THREATINTEL_REQUIRE_AUTH: "true"
       THREATINTEL_ENABLE_FEEDS: "true"
       THREATINTEL_BLOCK_THRESHOLD: ${THREATINTEL_BLOCK_THRESHOLD:-80}
@@ -261,6 +267,7 @@ services:
     restart: unless-stopped
     environment:
       POSTURE_SERVICE_SECRET: ${POSTURE_SERVICE_SECRET:-change-this-posture-shared-secret-in-production}
+      POSTURE_SERVICE_SECRET_PREVIOUS: ${POSTURE_SERVICE_SECRET_PREVIOUS:-}
       POSTURE_REQUIRE_AUTH: "true"
       POSTURE_PASS_THRESHOLD: ${POSTURE_PASS_THRESHOLD:-80}
       POSTURE_WARN_THRESHOLD: ${POSTURE_WARN_THRESHOLD:-50}
@@ -288,6 +295,7 @@ services:
     restart: unless-stopped
     environment:
       SHADOWIT_SERVICE_SECRET: ${SHADOWIT_SERVICE_SECRET:-change-this-shadowit-shared-secret-in-production}
+      SHADOWIT_SERVICE_SECRET_PREVIOUS: ${SHADOWIT_SERVICE_SECRET_PREVIOUS:-}
       SHADOWIT_REQUIRE_AUTH: "true"
       # SHADOWIT_CATALOG_FILE: /data/cloud-apps.json  # mount to extend the catalog
     healthcheck:
@@ -313,6 +321,7 @@ services:
     restart: unless-stopped
     environment:
       CASB_SERVICE_SECRET: ${CASB_SERVICE_SECRET:-change-this-casb-shared-secret-in-production}
+      CASB_SERVICE_SECRET_PREVIOUS: ${CASB_SERVICE_SECRET_PREVIOUS:-}
       CASB_REQUIRE_AUTH: "true"
     networks:
       - aavishield-net
@@ -384,6 +393,7 @@ services:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:6000}
         NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:6000}
         NEXT_PUBLIC_AI_URL: ${NEXT_PUBLIC_AI_URL:-http://localhost:6002}
+        NEXT_PUBLIC_COMPANY_URL: ${NEXTAUTH_URL_COMPANY:-http://localhost:1002}
     container_name: aavishield-superadmin
     deploy:
       resources:
@@ -521,6 +531,30 @@ services:
     networks:
       - aavishield-net
 
+  # Distributed tracing backend — every service below exports OTLP spans
+  # here. Single-binary mode (one process, local disk), right-sized for one
+  # Docker Compose host; see infra/tempo/tempo.yaml.
+  tempo:
+    build:
+      context: ./infra/tempo
+      dockerfile: Dockerfile
+    container_name: aavishield-tempo
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    restart: unless-stopped
+    volumes:
+      - tempo_data:/var/tempo
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:6320/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - aavishield-net
+
   grafana:
     build:
       context: ./infra/grafana
@@ -547,6 +581,8 @@ services:
       start_period: 20s
     depends_on:
       prometheus:
+        condition: service_healthy
+      tempo:
         condition: service_healthy
     networks:
       - aavishield-net
@@ -596,6 +632,7 @@ volumes:
   prometheus_data:
   grafana_data:
   clamav_data:
+  tempo_data:
 
 networks:
   aavishield-net:

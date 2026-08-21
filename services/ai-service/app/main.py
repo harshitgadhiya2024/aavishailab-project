@@ -14,11 +14,13 @@ from pydantic import BaseModel
 
 from app.core.agent import AavishieldAgent
 from app.llm.providers import Message, get_router
+from app.tracing import setup_tracing
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Aavishield AI Service", version="1.0.0")
+setup_tracing(app, "ai-service")
 
 app.add_middleware(
     CORSMiddleware,

@@ -221,6 +221,10 @@ func (h *AgentPackageAdminHandler) Upload(c *gin.Context) {
 		return
 	}
 
+	writeAudit(h.db, c, nil, "publish", "agent_package", nil, map[string]any{
+		"platform": platform, "version": version, "filename": name,
+	})
+
 	c.JSON(http.StatusOK, gin.H{"status": "published", "platform": platform, "version": version, "filename": name})
 }
 
@@ -265,6 +269,10 @@ func (h *AgentPackageAdminHandler) Rollback(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not write manifest"})
 		return
 	}
+
+	writeAudit(h.db, c, nil, "rollback", "agent_package", nil, map[string]any{
+		"platform": req.Platform, "version": version, "filename": req.Filename,
+	})
 
 	c.JSON(http.StatusOK, gin.H{"status": "rolled back", "platform": req.Platform, "version": version, "filename": req.Filename})
 }

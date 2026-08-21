@@ -53,6 +53,8 @@ type UserDTO struct {
 	Permissions []string    `json:"permissions,omitempty"`
 	TeamIDs     []uuid.UUID `json:"team_ids,omitempty"`
 	MFAEnabled  bool        `json:"mfa_enabled"`
+	// SuperAdminLevel only means anything for Role == superadmin.
+	SuperAdminLevel models.SuperAdminLevel `json:"superadmin_level,omitempty"`
 }
 
 type OrgSummary struct {
@@ -671,6 +673,12 @@ func toUserDTO(user *models.User) *UserDTO {
 		AvatarURL:  user.AvatarURL,
 		OrgID:      user.OrgID,
 		MFAEnabled: user.MFAEnabled,
+	}
+	if user.Role == models.RoleSuperAdmin {
+		dto.SuperAdminLevel = user.SuperAdminLevel
+		if dto.SuperAdminLevel == "" {
+			dto.SuperAdminLevel = models.SuperAdminLevelFull
+		}
 	}
 	if user.Org != nil {
 		dto.Org = &OrgSummary{

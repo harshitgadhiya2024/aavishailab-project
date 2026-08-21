@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"io"
 	"log"
 	"os"
@@ -59,7 +60,7 @@ func spoolBody(r io.Reader) (*os.File, int64, error) {
 // exactly the old single-shot path; anything larger is walked in overlapping
 // windows and the strongest verdict wins, so a sensitive value buried 2GB into
 // an archive is found rather than waved through.
-func scanDLPStream(orgID, filename, contentType, destination string, spool *os.File, size int64,
+func scanDLPStream(ctx context.Context, orgID, filename, contentType, destination string, spool *os.File, size int64,
 	policies []models.Policy) dlpVerdict {
 
 	if size <= dlpWindowSize {
@@ -67,7 +68,7 @@ func scanDLPStream(orgID, filename, contentType, destination string, spool *os.F
 		if _, err := io.ReadFull(spool, data); err != nil && err != io.ErrUnexpectedEOF {
 			return dlpVerdict{}
 		}
-		return scanDLPContent(orgID, filename, contentType, destination, data, policies)
+		return scanDLPContent(ctx, orgID, filename, contentType, destination, data, policies)
 	}
 
 	var (
@@ -87,7 +88,7 @@ func scanDLPStream(orgID, filename, contentType, destination string, spool *os.F
 				window = append(append([]byte{}, carry...), window...)
 			}
 
-			v := scanDLPContent(orgID, filename, contentType, destination, window, policies)
+			v := scanDLPContent(ctx, orgID, filename, contentType, destination, window, policies)
 			windows++
 			if v.matched && (v.score > maxScore || !worst.matched) {
 				worst, maxScore = v, v.score
