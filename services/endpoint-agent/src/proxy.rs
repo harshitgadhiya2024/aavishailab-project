@@ -161,7 +161,7 @@ async fn handle_plain_http(req: Request<Incoming>, deps: Arc<Deps>) -> Response<
     let report_action = if er.action == "alert" { "alerted" } else { "allowed" };
     deps.reporter.record(&req.uri().to_string(), &host, report_action, er.as_rule_like(), "web_request", "activity");
 
-    match forward_plain_http(req, &host, port, &path_and_query).await {
+    match forward_plain_http(req, &host, port, &path_and_query, &deps).await {
         Ok(resp) => resp,
         Err(e) => {
             tracing::warn!(error = %e, %host, "upstream connect failed");
@@ -170,7 +170,12 @@ async fn handle_plain_http(req: Request<Incoming>, deps: Arc<Deps>) -> Response<
     }
 }
 
-async fn forward_plain_http(req: Request<Incoming>, host: &str, port: u16, path_and_query: &str) -> std::io::Result<Response<BoxBody>> {
+/// Same upload (CASB + DLP) / download (malware) scanning as the MITM'd
+/// HTTPS path (tls_proxy.rs's `relay_one`) — plain HTTP is a live upload
+/// vector too (older APIs, internal tools, anything not on HTTPS), and it
+/// would be a real gap for a DLP control to only look at encrypted
+/// traffic and wave unencrypted uploads straight through.
+async fn forward_plain_http(req: Request<Incoming>, host: &str, port: u16, path_and_query: &str, deps: &Arc<Deps>) -> std::io::Result<Response<BoxBody>> {
     let stream = tokio::net::TcpStream::connect((host, port)).await?;
     let (mut sender, conn) = hyper::client::conn::http1::handshake(TokioIo::new(stream)).await.map_err(std::io::Error::other)?;
     tokio::spawn(async move {
@@ -178,20 +183,46 @@ async fn forward_plain_http(req: Request<Incoming>, host: &str, port: u16, path_
     });
 
     let (parts, body) = req.into_parts();
-    let mut upstream_req = Request::builder().method(parts.method).uri(path_and_query);
+    let method = parts.method.clone();
+    let path = parts.uri.path().to_string();
+    let content_type = parts.headers.get(hyper::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+    let content_disposition = parts.headers.get(hyper::header::CONTENT_DISPOSITION).and_then(|v| v.to_str().ok());
+    let filename = crate::scan::upload_filename(content_disposition, &path);
+
+    let body_bytes = body.collect().await.map_err(std::io::Error::other)?.to_bytes();
+
+    if matches!(method.as_str(), "POST" | "PUT" | "PATCH") && body_bytes.len() <= crate::scan::MAX_SCAN_BODY {
+        let verdict = crate::scan::upload_verdict(&deps.client, &deps.casb, &deps.gate, host, &path, method.as_str(), &content_type, &filename, &body_bytes).await;
+        if verdict.blocked {
+            return Ok(html_response(StatusCode::FORBIDDEN, &block_page_html(host, &verdict.reason, "Data Loss Prevention")));
+        }
+    }
+
+    let mut upstream_req = Request::builder().method(method).uri(path_and_query);
     for (name, value) in parts.headers.iter() {
         upstream_req = upstream_req.header(name, value);
     }
-    let upstream_req = upstream_req.body(body).map_err(std::io::Error::other)?;
+    let upstream_req = upstream_req.body(full_body(body_bytes)).map_err(std::io::Error::other)?;
 
     let resp = sender.send_request(upstream_req).await.map_err(std::io::Error::other)?;
-    let (parts, body) = resp.into_parts();
-    let bytes = body.collect().await.map_err(std::io::Error::other)?.to_bytes();
-    let mut builder = Response::builder().status(parts.status);
-    for (name, value) in parts.headers.iter() {
+    let (resp_parts, resp_body) = resp.into_parts();
+    let resp_bytes = resp_body.collect().await.map_err(std::io::Error::other)?.to_bytes();
+
+    if resp_parts.status.is_success() && resp_bytes.len() <= crate::scan::MAX_SCAN_BODY {
+        let verdict = crate::scan::download_verdict(&deps.client, &deps.gate, host, &path, &resp_bytes).await;
+        if verdict.blocked {
+            return Ok(html_response(StatusCode::FORBIDDEN, &block_page_html(host, &verdict.reason, "Malware Protection")));
+        }
+    }
+
+    let mut builder = Response::builder().status(resp_parts.status);
+    for (name, value) in resp_parts.headers.iter() {
+        if name == hyper::header::CONTENT_LENGTH || name == hyper::header::TRANSFER_ENCODING {
+            continue; // recomputed by the body we're sending (may differ post-scan)
+        }
         builder = builder.header(name, value);
     }
-    Ok(builder.body(full_body(bytes)).unwrap())
+    Ok(builder.body(full_body(resp_bytes)).unwrap())
 }
 
 pub fn status_response(status: StatusCode) -> Response<BoxBody> {

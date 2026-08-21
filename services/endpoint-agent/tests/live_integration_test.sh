@@ -128,6 +128,14 @@ code=$(curl -s -x http://127.0.0.1:6118 --cacert "$TEST_HOME/ca.pem" -X POST htt
 grep -qi "AWS Access Key" "$TEST_HOME/dlp.html" || fail "block page doesn't name the detector"
 pass "block page correctly names the detector"
 
+echo "=== DLP: AWS key over PLAIN (non-MITM) HTTP must also block — this is the gap closed by wiring scan.rs into proxy.rs's forward_plain_http; previously the plain-HTTP path had zero DLP/CASB/malware scanning ==="
+code=$(curl -s -x http://127.0.0.1:6118 -X POST http://httpbin.org/post \
+  -d "key=AKIAIOSFODNN7EXAMPLE" -o "$TEST_HOME/dlp-plain.html" -w "%{http_code}")
+[ "$code" = "403" ] && pass "AWS key upload over plain HTTP -> 403 (DLP block)" || fail "expected 403, got $code"
+grep -qi "AWS Access Key" "$TEST_HOME/dlp-plain.html" || fail "plain-HTTP block page doesn't name the detector"
+grep -qi "Data Loss Prevention" "$TEST_HOME/dlp-plain.html" || fail "plain-HTTP block page doesn't name the category"
+pass "plain-HTTP block page correctly names detector and category"
+
 echo "=== activity events reached admin-api ==="
 count=$(psql_exec "SELECT count(*) FROM activity_events WHERE org_id = '$TEST_ORG';" | tr -d ' ')
 [ "$count" -ge 2 ] && pass "$count activity events recorded" || fail "expected >=2 activity events, got $count"

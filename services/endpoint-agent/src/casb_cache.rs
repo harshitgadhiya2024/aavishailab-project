@@ -82,6 +82,16 @@ impl CASBControlCache {
         verdict
     }
 
+    /// Test-only cache seeding, letting other modules' tests (scan.rs)
+    /// exercise CASB-ordering behavior without a real admin-api. Not
+    /// `#[cfg(test)]`-gated for the same reason `config::test_config()`
+    /// isn't — a crate-external test module can't see cfg(test) items
+    /// from this lib crate.
+    pub fn seed_for_test(&self, host: &str, activity: &str, verdict: Option<Verdict>) {
+        let mut cache = self.cache.lock().unwrap();
+        cache.insert((host.to_string(), activity.to_string()), (Instant::now() + CASB_CACHE_TTL, verdict));
+    }
+
     async fn lookup(&self, host: &str, activity: &str) -> Option<Verdict> {
         let resp = self.client.get(&format!("/internal/agent/casb/app-control?domain={host}&activity={activity}")).await.ok()?;
         let result: LookupResponse = resp.json().await.ok()?;

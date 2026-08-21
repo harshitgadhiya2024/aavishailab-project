@@ -36,8 +36,8 @@ Python class/section:
 | `rfc3339.rs` | `_parse_rfc3339`/`_seconds_between` | The `time` crate's RFC3339 parser handles arbitrary fractional-second precision natively — the "truncate Go's 9 digits to Python's 6-digit limit" hack simply isn't a problem here |
 | `activity.rs` | `ActivityReporter` | Same dedup-window + gate-integration logic |
 | `mitm.rs` | `MITMEngine` | Same leaf-cert fetch/cache/prune logic |
-| `tls_proxy.rs` + `proxy.rs` | `ProxyConnection`, `_handle_https`/`_handle_mitm_tls`/`_serve_over_tls` | **Structurally different, not just translated** — see below |
-| `scan.rs` | the DLP/malware scan calls inside `ProxyConnection` | Same endpoints, same fail-open contract |
+| `tls_proxy.rs` + `proxy.rs` | `ProxyConnection`, `_handle_https`/`_handle_mitm_tls`/`_serve_over_tls`/`_handle_http` | **Structurally different, not just translated** — see below. Both the MITM'd HTTPS path (`tls_proxy.rs::relay_one`) and the plain HTTP path (`proxy.rs::forward_plain_http`) call the same `scan.rs` functions, so upload/download scanning can't drift between the two transports |
+| `scan.rs` | the DLP/malware/CASB scan calls inside `ProxyConnection` | Same endpoints, same fail-open contract, same CASB-before-DLP ordering. `upload_verdict()`/`download_verdict()` are the single shared decision point both proxy paths call — see **Real-time DLP/CASB coverage** below |
 | `system_proxy.rs` | `system_proxy_active`/`clear_system_proxy`/`apply_system_proxy` | Same per-OS commands/registry keys |
 | `enroll.rs` | the token-file half of `ensure_enrolled` | Interactive browser-callback flow not ported — see Scope |
 | `heartbeat.rs` | `send_heartbeat`/`heartbeat_loop` | Posture collection not ported — see Scope |
@@ -60,6 +60,65 @@ Length, chunked encoding, and keep-alive are hyper's problem now, not
 hand-rolled text parsing's. This removes that entire bug class by
 construction, which is as much the point of this rewrite as performance
 is.
+
+## Real-time DLP/CASB coverage
+
+Every upload — any application or browser, any file type, over either
+transport this proxy handles — goes through the same two-stage check
+before it leaves the machine:
+
+1. **CASB app-control** (`casb_cache.rs` + `scan.rs::upload_verdict`):
+   coarse "is this host allowed to receive uploads at all" gate, checked
+   first because it's a cached lookup, not a content scan.
+2. **DLP content scan** (routed to `dlp-service-rust` via admin-api's
+   `/internal/agent/scan-dlp`): the actual body bytes, scored against the
+   org's configured detectors (`credit_card`, `aws_key`, `source_code`,
+   etc.), with `filename`/`content_type` passed through so
+   filetype-aware rules (`bypass_file_types`) work.
+
+Downloads get the mirror-image malware check
+(`scan.rs::download_verdict` → `/internal/agent/scan-file`, backed by
+ClamAV + hash reputation in `malware-service-rust`).
+
+**This coverage is transport-agnostic on purpose.** An earlier version of
+this rewrite only wired scanning into the MITM'd HTTPS path
+(`tls_proxy.rs`) and never called CASB at all — a real gap, since plain
+HTTP (older internal tools, unencrypted APIs) is a live upload vector too,
+and a DLP control that only inspects encrypted traffic isn't actually a
+DLP control. Both gaps are closed: `proxy.rs::forward_plain_http` now
+calls the identical `scan.rs` functions `tls_proxy.rs::relay_one` does, so
+whichever path a given upload takes, the verdict is computed the same
+way. Live-verified with real multipart/form-data uploads (`curl -F`,
+matching actual browser file-input behavior) of four genuinely
+format-valid files — a `.txt` with an embedded AWS key, a `.csv` with
+credit card numbers, a hand-built valid `.pdf` with a credit card number
+in its visible text stream, and a valid `.png` with an AWS key hidden in
+a `tEXt` metadata chunk — each sent over **both** plain HTTP and MITM'd
+HTTPS. The AWS-key cases (both file types) blocked with 403 on both
+transports; the credit-card cases scored below the configured block
+threshold on both transports (confirmed via direct `scan-dlp` calls that
+detection genuinely fired — correctly calibrated scoring, not a coverage
+gap). Regression coverage for the two specific gaps (CASB never being
+checked; plain HTTP never being scanned) lives in `scan.rs`'s
+`test_casb_block_applies_even_to_empty_body_uploads`,
+`test_disabled_enforcement_skips_casb_check_too`, and
+`tests/live_integration_test.sh`'s plain-HTTP DLP block check.
+
+### The block page always names the reason
+
+Matching the SWG domain-block page's pattern, a DLP/CASB/malware block
+renders the same branded page a domain block does — the destination
+host, a human-readable reason (`"Sensitive company data detected: AWS
+Access Key"`, not just "blocked"), and a category (`Data Loss
+Prevention` / `Malware Protection` / `CASB App Control`) — instead of a
+bare browser connection-error screen:
+
+```html
+<h1>Access to this site is blocked</h1>
+<p><strong>httpbin.org</strong></p>
+<p>Sensitive company data detected: AWS Access Key</p>
+<p>Category: Data Loss Prevention</p>
+```
 
 ## Scope — what's NOT in this rewrite, and why
 
@@ -136,6 +195,8 @@ $ ./tests/live_integration_test.sh
   OK   response body is genuine upstream content
   OK   AWS key upload -> 403 (DLP block)
   OK   block page correctly names the detector
+  OK   AWS key upload over plain HTTP -> 403 (DLP block)
+  OK   plain-HTTP block page correctly names detector and category
   OK   5 activity events recorded
 === ALL LIVE INTEGRATION CHECKS PASSED ===
 ```
@@ -170,11 +231,11 @@ as a checked-in, repeatable script rather than a one-off manual pass.
 ## Tests
 
 ```bash
-cargo test          # 50 unit/integration tests, no network
+cargo test          # 56 unit/integration tests, no network
 cargo clippy --all-targets   # clean, zero warnings
 ```
 
-50 tests across every module, largely mirroring the 51-test suite
+56 tests across every module, largely mirroring the 51-test suite
 written for the Python original (`scripts/agent/tests/`) so both
 implementations are checked against the same behavioral spec — domain-
 matching edge cases (TLD protection, org-vs-global precedence, `www.`

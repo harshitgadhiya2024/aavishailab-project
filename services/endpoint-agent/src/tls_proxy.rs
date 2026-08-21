@@ -34,13 +34,7 @@ fn full_body(data: impl Into<Bytes>) -> BoxBody {
     Full::new(data.into()).map_err(|never| match never {}).boxed()
 }
 
-/// Maximum request/response body this agent will buffer for DLP/malware
-/// scanning. Larger bodies relay directly, unscanned — fail-open, same
-/// philosophy as everywhere else in this codebase (a scanner that can't
-/// see a body must never mean the body is blocked; see admin-api's
-/// scanstream.go for the server-side equivalent bound). Chosen to match
-/// dlp-service's own default MAX_SCAN_SIZE.
-const MAX_SCAN_BODY: usize = 20 * 1024 * 1024;
+use crate::scan::MAX_SCAN_BODY;
 
 fn server_tls_config(leaf: &Leaf) -> std::io::Result<rustls::ServerConfig> {
     let certs: Vec<rustls_pki_types::CertificateDer<'static>> =
@@ -147,11 +141,14 @@ async fn relay_one(
     let (parts, body) = req.into_parts();
     let method = parts.method.clone();
     let path = parts.uri.path().to_string();
+    let content_type = parts.headers.get(hyper::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+    let content_disposition = parts.headers.get(hyper::header::CONTENT_DISPOSITION).and_then(|v| v.to_str().ok());
+    let filename = crate::scan::upload_filename(content_disposition, &path);
 
-    // Upload scanning (DLP): buffer the body (bounded — see MAX_SCAN_BODY),
-    // scan it, and block the request outright on a "block" verdict rather
-    // than forwarding it. A body over the cap relays unscanned rather than
-    // failing the request — fail-open.
+    // Upload scanning (CASB app-control, then DLP content): buffer the body
+    // (bounded — see MAX_SCAN_BODY), scan it, and block the request
+    // outright on a "block" verdict rather than forwarding it. A body over
+    // the cap relays unscanned rather than failing the request — fail-open.
     let body_bytes = match body.collect().await {
         Ok(collected) => collected.to_bytes(),
         Err(e) => {
@@ -160,12 +157,10 @@ async fn relay_one(
         }
     };
 
-    if matches!(method.as_str(), "POST" | "PUT" | "PATCH") && !body_bytes.is_empty() && body_bytes.len() <= MAX_SCAN_BODY && deps.gate.enforces_dlp() {
-        if let Some(verdict) = crate::scan::scan_dlp(&deps.client, &host, &path, method.as_str(), &body_bytes).await {
-            if verdict.action == "block" {
-                tracing::info!(%host, %path, reason = %verdict.reason, "DLP block");
-                return Ok(crate::proxy::html_response(StatusCode::FORBIDDEN, &block_page_html(&host, &verdict.reason, "DLP")));
-            }
+    if matches!(method.as_str(), "POST" | "PUT" | "PATCH") && body_bytes.len() <= MAX_SCAN_BODY {
+        let verdict = crate::scan::upload_verdict(&deps.client, &deps.casb, &deps.gate, &host, &path, method.as_str(), &content_type, &filename, &body_bytes).await;
+        if verdict.blocked {
+            return Ok(crate::proxy::html_response(StatusCode::FORBIDDEN, &block_page_html(&host, &verdict.reason, "Data Loss Prevention")));
         }
     }
 
@@ -198,12 +193,10 @@ async fn relay_one(
     };
 
     // Download scanning (malware): same bounded-buffer, fail-open pattern.
-    if resp_parts.status.is_success() && !resp_bytes.is_empty() && resp_bytes.len() <= MAX_SCAN_BODY && deps.gate.scans_downloads() {
-        if let Some(verdict) = crate::scan::scan_malware(&deps.client, &host, &path, &resp_bytes).await {
-            if verdict.action == "block" {
-                tracing::info!(%host, %path, reason = %verdict.reason, "malware block");
-                return Ok(crate::proxy::html_response(StatusCode::FORBIDDEN, &block_page_html(&host, &verdict.reason, "malware")));
-            }
+    if resp_parts.status.is_success() && resp_bytes.len() <= MAX_SCAN_BODY {
+        let verdict = crate::scan::download_verdict(&deps.client, &deps.gate, &host, &path, &resp_bytes).await;
+        if verdict.blocked {
+            return Ok(crate::proxy::html_response(StatusCode::FORBIDDEN, &block_page_html(&host, &verdict.reason, "Malware Protection")));
         }
     }
 
