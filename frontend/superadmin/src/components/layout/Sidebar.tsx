@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Shield, LayoutDashboard, Building2, Activity,
-  Settings, ChevronLeft, ChevronRight, Globe
+  Settings, ChevronLeft, ChevronRight, Globe, Download
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 const navItems = [
   { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
   { href: "/dashboard/organizations", icon: Building2, label: "Organizations" },
+  { href: "/dashboard/agent-versions", icon: Download, label: "Agent Versions" },
   { href: "/dashboard/activity", icon: Activity, label: "Global Activity" },
   { href: "/dashboard/settings", icon: Settings, label: "Settings" },
 ];

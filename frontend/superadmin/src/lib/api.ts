@@ -72,3 +72,19 @@ export const orgApi = {
   delete: (id: string) => api.delete(`/superadmin/organizations/${id}`),
   stats: () => api.get("/superadmin/stats"),
 };
+
+export const agentPackageApi = {
+  manifest: () => api.get("/superadmin/agent-packages"),
+  history: () => api.get("/superadmin/agent-packages/history"),
+  upload: (platform: string, version: string, file: File) => {
+    const form = new FormData();
+    form.append("platform", platform);
+    form.append("version", version);
+    form.append("file", file);
+    return api.post("/superadmin/agent-packages", form, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+  },
+  rollback: (platform: string, filename: string) =>
+    api.post("/superadmin/agent-packages/rollback", { platform, filename }),
+};

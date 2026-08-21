@@ -59,6 +59,7 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	enfH := handlers.NewEnforcementHandler(db)
 	monH := handlers.NewMonitoringHandler(db)
 	monIngestH := handlers.NewMonitoringIngestHandler(db, agentH)
+	agentPkgH := handlers.NewAgentPackageAdminHandler(db)
 
 	// ─── Agent script + native packages (public — used by installers) ──────────
 	r.GET("/agent/aavishield-agent.py", handlers.ServeAgentScript)
@@ -159,6 +160,14 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 			orgs.GET("/:id", orgH.Get)
 			orgs.PUT("/:id", orgH.Update)
 			orgs.DELETE("/:id", orgH.Delete)
+		}
+
+		agentPkgs := superadmin.Group("/agent-packages")
+		{
+			agentPkgs.GET("", agentPkgH.Manifest)
+			agentPkgs.GET("/history", agentPkgH.History)
+			agentPkgs.POST("", agentPkgH.Upload)
+			agentPkgs.POST("/rollback", agentPkgH.Rollback)
 		}
 	}
 

@@ -5,7 +5,9 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -103,10 +105,50 @@ func readManifest() (packageManifest, error) {
 	return m, err
 }
 
+func writeManifest(m packageManifest) error {
+	data, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(agentPackageDir(), "manifest.json"), data, 0o644)
+}
+
 // manifestMu serializes manifest read-modify-write so two CI jobs publishing
 // different platforms for the same release (e.g. macOS and Windows finishing
 // within seconds of each other) merge instead of one clobbering the other.
+// Also guards the superadmin upload/rollback paths in agent_packages_admin.go
+// — every writer of manifest.json goes through this one lock.
 var manifestMu sync.Mutex
+
+// publishPackageFile saves an uploaded package under agentPackageDir and
+// merges it into manifest.json — the shared core of both the CI-token
+// upload path (UploadAgentPackage below) and the superadmin dashboard's
+// upload path (AgentPackageAdminHandler.Upload).
+func publishPackageFile(c *gin.Context, fileHeader *multipart.FileHeader, platform, version, name string) error {
+	dir := agentPackageDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return errors.New("could not prepare package directory")
+	}
+
+	manifestMu.Lock()
+	defer manifestMu.Unlock()
+
+	if err := c.SaveUploadedFile(fileHeader, filepath.Join(dir, name)); err != nil {
+		return errors.New("could not save package")
+	}
+
+	manifest, _ := readManifest() // a missing/corrupt manifest just starts fresh
+	if manifest.Artifacts == nil {
+		manifest.Artifacts = map[string]string{}
+	}
+	manifest.Version = version
+	manifest.Artifacts[platform] = name
+
+	if err := writeManifest(manifest); err != nil {
+		return errors.New("could not write manifest")
+	}
+	return nil
+}
 
 var validPlatforms = map[string]bool{"macos": true, "windows": true, "linux": true}
 
@@ -151,34 +193,8 @@ func UploadAgentPackage(c *gin.Context) {
 		return
 	}
 
-	dir := agentPackageDir()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not prepare package directory"})
-		return
-	}
-
-	manifestMu.Lock()
-	defer manifestMu.Unlock()
-
-	if err := c.SaveUploadedFile(fileHeader, filepath.Join(dir, name)); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not save package"})
-		return
-	}
-
-	manifest, _ := readManifest() // a missing/corrupt manifest just starts fresh
-	if manifest.Artifacts == nil {
-		manifest.Artifacts = map[string]string{}
-	}
-	manifest.Version = version
-	manifest.Artifacts[platform] = name
-
-	data, err := json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not encode manifest"})
-		return
-	}
-	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), data, 0o644); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not write manifest"})
+	if err := publishPackageFile(c, fileHeader, platform, version, name); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
