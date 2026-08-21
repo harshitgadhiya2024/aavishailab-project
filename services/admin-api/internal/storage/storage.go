@@ -23,6 +23,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"os"
@@ -42,6 +43,11 @@ type Backend interface {
 	// Open streams an object back — used only by the local media route; R2
 	// serves its own presigned URLs and never hits this.
 	Open(ctx context.Context, key string) (io.ReadCloser, string, error)
+	// Delete removes an object. Both backends already implemented this for
+	// their own screenshot-retention sweeps; exposing it on the interface
+	// lets other callers (e.g. replacing/removing an app-catalog icon) reuse
+	// it instead of re-deriving a key-to-path mapping of their own.
+	Delete(key string) error
 	Kind() string
 }
 
@@ -118,7 +124,20 @@ func (b *localBackend) Open(_ context.Context, key string) (io.ReadCloser, strin
 	if err != nil {
 		return nil, "", err
 	}
-	return f, "image/webp", nil
+	return f, contentTypeForKey(key), nil
+}
+
+// contentTypeForKey infers Content-Type from the key's own extension.
+// Every screenshot key ends in ".webp" (see screenshotKey in
+// handlers/monitoring_ingest.go), so that stays the fallback and existing
+// screenshots are unaffected — but other object kinds sharing this same
+// backend (e.g. app-catalog icons, which can be .png/.svg/.jpg) need their
+// real type served, not a hardcoded one a browser may refuse to decode.
+func contentTypeForKey(key string) string {
+	if ct := mime.TypeByExtension(filepath.Ext(key)); ct != "" {
+		return ct
+	}
+	return "image/webp"
 }
 
 // SignedURL for local disk points back at admin-api's public media route with

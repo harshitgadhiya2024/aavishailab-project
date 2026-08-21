@@ -113,6 +113,11 @@ services:
       # Unset disables the upload endpoint entirely (404) — packages can still be
       # dropped into the volume by hand.
       AGENT_PACKAGE_UPLOAD_TOKEN: ${AGENT_PACKAGE_UPLOAD_TOKEN:-}
+      # Lets superadmin trigger the agent-packages CI workflow from the
+      # dashboard. Both unset disables the trigger/status endpoints only —
+      # CI itself is unaffected.
+      GITHUB_REPOSITORY: ${GITHUB_REPOSITORY:-}
+      GITHUB_ACTIONS_PAT: ${GITHUB_ACTIONS_PAT:-}
     volumes:
       - agent_packages:/app/agent-packages
       - screenshot_data:/data/screenshots

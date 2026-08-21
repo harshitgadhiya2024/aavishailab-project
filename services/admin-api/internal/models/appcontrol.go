@@ -35,6 +35,12 @@ type ManagedApplication struct {
 	Description string `json:"description"`
 	RiskLevel   int    `gorm:"default:50" json:"risk_level"`
 
+	// IconKey is a storage.Backend object key (not a URL — URLs are minted
+	// fresh per response via SignedURL, same reasoning as Screenshot.StorageKey).
+	// Empty when no logo has been uploaded; callers fall back to a generated
+	// initial/placeholder client-side.
+	IconKey string `gorm:"column:icon_key" json:"-"`
+
 	// ── Process identity ─────────────────────────────────────────────────
 	// Matched case-insensitively against the executable's own name, so
 	// "chatgpt.exe" matches regardless of where it was installed.

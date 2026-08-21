@@ -5,11 +5,22 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { agentPackageApi } from "@/lib/api";
 import {
   Download, Monitor, Apple, Terminal, Upload, RotateCcw, CheckCircle2,
-  Users, X, Loader2,
+  Users, X, Loader2, Play, ExternalLink, Clock, XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { Modal } from "@/components/ui/Modal";
+
+type WorkflowRun = {
+  id: number;
+  status: string;
+  conclusion: string;
+  ref: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  url: string;
+};
 
 const PLATFORM_META: Record<string, { label: string; icon: React.ElementType; ext: string }> = {
   macos: { label: "macOS", icon: Apple, ext: ".pkg" },
@@ -34,6 +45,7 @@ export default function AgentVersionsPage() {
   const qc = useQueryClient();
   const [uploadPlatform, setUploadPlatform] = useState<string | null>(null);
   const [rollbackTarget, setRollbackTarget] = useState<{ platform: string; filename: string; version: string } | null>(null);
+  const [triggerOpen, setTriggerOpen] = useState(false);
 
   const { data: manifestData, isLoading: manifestLoading } = useQuery({
     queryKey: ["agent-packages-manifest"],
@@ -43,6 +55,17 @@ export default function AgentVersionsPage() {
   const { data: historyData, isLoading: historyLoading } = useQuery({
     queryKey: ["agent-packages-history"],
     queryFn: agentPackageApi.history,
+  });
+  const { data: buildStatusData } = useQuery({
+    queryKey: ["agent-packages-build-status"],
+    queryFn: agentPackageApi.buildStatus,
+    // Poll faster while something is actually running so "in progress"
+    // doesn't sit stale for 30s — settle back down once nothing is active.
+    refetchInterval: (query) => {
+      const runs: WorkflowRun[] = query.state.data?.data?.runs ?? [];
+      const active = runs.some((r) => r.status === "queued" || r.status === "in_progress");
+      return active ? 10_000 : 60_000;
+    },
   });
 
   const rollbackMut = useMutation({
@@ -56,6 +79,9 @@ export default function AgentVersionsPage() {
     },
     onError: (e: any) => toast.error(e.response?.data?.error ?? "Rollback failed"),
   });
+
+  const configured: boolean = buildStatusData?.data?.configured ?? false;
+  const runs: WorkflowRun[] = buildStatusData?.data?.runs ?? [];
 
   const current = manifestData?.data?.current ?? {};
   const artifacts: Record<string, any> = current?.artifacts ?? {};
@@ -81,7 +107,43 @@ export default function AgentVersionsPage() {
             Endpoint connector rollout — what&apos;s published per platform, what the fleet is actually running, and rollback
           </p>
         </div>
+        <button
+          onClick={() => setTriggerOpen(true)}
+          disabled={!configured}
+          title={configured ? undefined : "Set GITHUB_REPOSITORY and GITHUB_ACTIONS_PAT to enable this"}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-brand-500 text-white hover:bg-brand-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <Play className="w-4 h-4" /> Trigger new build
+        </button>
       </div>
+
+      {/* CI build status */}
+      {configured && (
+        <div className="bg-card rounded-xl border border-border shadow-sm p-5">
+          <h3 className="font-semibold text-foreground mb-3">Recent CI builds</h3>
+          {runs.length === 0 ? (
+            <p className="text-sm text-[#6B6B6B]">No runs yet — trigger one above.</p>
+          ) : (
+            <div className="space-y-2">
+              {runs.map((r) => (
+                <div key={r.id} className="flex items-center justify-between text-sm py-2 border-b border-border last:border-0">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <RunStatusIcon status={r.status} conclusion={r.conclusion} />
+                    <span className="text-foreground truncate">{r.title || "Agent packages"}</span>
+                    <span className="text-xs text-[#6B6B6B] font-mono flex-shrink-0">{r.ref}</span>
+                  </div>
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    <span className="text-xs text-muted-foreground">{formatWhen(r.updated_at)}</span>
+                    <a href={r.url} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-brand-500">
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Fleet adoption summary */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -264,8 +326,31 @@ export default function AgentVersionsPage() {
           </div>
         )}
       </Modal>
+
+      {triggerOpen && (
+        <TriggerBuildModal
+          onClose={() => setTriggerOpen(false)}
+          onDone={() => {
+            setTriggerOpen(false);
+            qc.invalidateQueries({ queryKey: ["agent-packages-build-status"] });
+          }}
+        />
+      )}
     </div>
   );
+}
+
+function RunStatusIcon({ status, conclusion }: { status: string; conclusion: string }) {
+  if (status !== "completed") {
+    return <Loader2 className="w-4 h-4 text-brand-500 animate-spin flex-shrink-0" />;
+  }
+  if (conclusion === "success") {
+    return <CheckCircle2 className="w-4 h-4 text-green-400 flex-shrink-0" />;
+  }
+  if (conclusion === "failure" || conclusion === "cancelled") {
+    return <XCircle className="w-4 h-4 text-red-400 flex-shrink-0" />;
+  }
+  return <Clock className="w-4 h-4 text-muted-foreground flex-shrink-0" />;
 }
 
 function UploadModal({ platform, onClose, onDone }: { platform: string; onClose: () => void; onDone: () => void }) {
@@ -326,6 +411,71 @@ function UploadModal({ platform, onClose, onDone }: { platform: string; onClose:
           >
             {uploadMut.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
             Publish
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function TriggerBuildModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const [version, setVersion] = useState("");
+  const [ref, setRef] = useState("main");
+
+  const triggerMut = useMutation({
+    mutationFn: () => agentPackageApi.triggerBuild(version, ref || undefined),
+    onSuccess: () => {
+      toast.success(`Build triggered for v${version} — check status below in a few seconds`);
+      onDone();
+    },
+    onError: (e: any) => toast.error(e.response?.data?.error ?? "Could not trigger the build"),
+  });
+
+  return (
+    <Modal open onClose={onClose} className="max-w-md">
+      <div className="p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-foreground">Trigger a new build</h3>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <p className="text-xs text-muted-foreground mb-4">
+          Fires the same <code className="text-xs bg-muted px-1 py-0.5 rounded">workflow_dispatch</code> event the &quot;Run
+          workflow&quot; button on the Actions tab does — builds all three platforms in parallel and auto-publishes here when
+          CI publishing secrets are set.
+        </p>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">Version</label>
+            <input
+              value={version}
+              onChange={(e) => setVersion(e.target.value)}
+              placeholder="1.6.0"
+              className="w-full px-3 py-2 border border-border bg-background rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">Branch / ref</label>
+            <input
+              value={ref}
+              onChange={(e) => setRef(e.target.value)}
+              placeholder="main"
+              className="w-full px-3 py-2 border border-border bg-background rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 mt-6">
+          <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-medium border border-border text-muted-foreground hover:bg-muted transition-colors">
+            Cancel
+          </button>
+          <button
+            onClick={() => triggerMut.mutate()}
+            disabled={!version || triggerMut.isPending}
+            className="px-4 py-2 rounded-lg text-sm font-medium bg-brand-500 text-white hover:bg-brand-600 transition-colors disabled:opacity-50 flex items-center gap-2"
+          >
+            {triggerMut.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+            <Play className="w-4 h-4" /> Trigger build
           </button>
         </div>
       </div>

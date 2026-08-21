@@ -87,4 +87,33 @@ export const agentPackageApi = {
   },
   rollback: (platform: string, filename: string) =>
     api.post("/superadmin/agent-packages/rollback", { platform, filename }),
+  triggerBuild: (version: string, ref?: string) =>
+    api.post("/superadmin/agent-packages/trigger-build", { version, ref }),
+  buildStatus: () => api.get("/superadmin/agent-packages/build-status"),
+};
+
+export type AppCatalogInput = {
+  name: string;
+  vendor?: string;
+  category?: string;
+  description?: string;
+  risk_level?: number;
+  process_names?: string[];
+  bundle_ids?: string[];
+  path_patterns?: string[];
+  domains?: string[];
+};
+
+export const appCatalogApi = {
+  list: () => api.get("/superadmin/applications"),
+  create: (data: AppCatalogInput) => api.post("/superadmin/applications", data),
+  update: (id: string, data: AppCatalogInput) => api.patch(`/superadmin/applications/${id}`, data),
+  delete: (id: string) => api.delete(`/superadmin/applications/${id}`),
+  uploadIcon: (id: string, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return api.post(`/superadmin/applications/${id}/icon`, form, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+  },
 };
