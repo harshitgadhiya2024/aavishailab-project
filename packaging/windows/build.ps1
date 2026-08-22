@@ -93,7 +93,7 @@ Invoke-Sign $AgentExe
 # They are written to enroll.json, which the agent consumes on first run.
 $Wxs = @"
 <?xml version="1.0" encoding="UTF-8"?>
-<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi" xmlns:util="http://schemas.microsoft.com/wix/UtilExtension">
   <Product Id="*" Name="Aavishield Agent" Language="1033" Version="$Version"
            Manufacturer="Aavishield" UpgradeCode="6E9F3C2A-6F1B-4E52-9F1D-2C7A1B4D8E30">
     <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine"
@@ -125,6 +125,23 @@ $Wxs = @"
       </Component>
     </DirectoryRef>
 
+    <!-- Program Files is Administrators/SYSTEM-write by default, but the
+         agent runs as the unprivileged logged-in user (see AgentExe's Run
+         key above) and AutoUpdater._download_and_swap() replaces its own
+         .exe in place — on a standard (non-admin) corporate account, the
+         overwhelmingly common case, that write would fail silently and
+         auto-update would never actually work. Grant the interactive Users
+         group write access to just this folder so self-update can succeed
+         without loosening anything else under Program Files. -->
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="AgentExePermissions" Guid="*">
+        <CreateFolder>
+          <util:PermissionEx User="Users" GenericRead="yes" GenericExecute="yes"
+                              GenericWrite="yes" Delete="yes" />
+        </CreateFolder>
+      </Component>
+    </DirectoryRef>
+
     <DirectoryRef Id="DATAFOLDER">
       <Component Id="EnrollDrop" Guid="*">
         <CreateFolder />
@@ -136,6 +153,7 @@ $Wxs = @"
 
     <Feature Id="Main" Title="Aavishield Agent" Level="1">
       <ComponentRef Id="AgentExe" />
+      <ComponentRef Id="AgentExePermissions" />
       <ComponentRef Id="EnrollDrop" />
     </Feature>
 
@@ -186,9 +204,11 @@ Set-Content -Path $WxsPath -Value $Wxs -Encoding UTF8
 
 # ─── 4. Build the MSI ─────────────────────────────────────────────────────────
 Write-Host "==> candle / light"
-& candle.exe -nologo -out "$BuildDir\aavishield.wixobj" $WxsPath
+# -ext WixUtilExtension: needed for util:PermissionEx (the AgentExePermissions
+# component above) — ships with the core WiX v3 toolset, no separate install.
+& candle.exe -nologo -ext WixUtilExtension -out "$BuildDir\aavishield.wixobj" $WxsPath
 $MsiOut = Join-Path $OutDir "aavishield-agent-$Version.msi"
-& light.exe -nologo -sval -out $MsiOut "$BuildDir\aavishield.wixobj"
+& light.exe -nologo -sval -ext WixUtilExtension -out $MsiOut "$BuildDir\aavishield.wixobj"
 
 Invoke-Sign $MsiOut
 

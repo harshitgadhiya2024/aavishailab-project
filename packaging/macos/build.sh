@@ -214,6 +214,16 @@ CONSOLE_UID=$(id -u "$CONSOLE_USER")
 PLIST="/Library/LaunchAgents/com.aavishield.agent.plist"
 CATRUST_PLIST="/Library/LaunchDaemons/com.aavishield.catrust.plist"
 
+# pkgbuild preserves the payload's build-time ownership (the CI runner's
+# uid), which has no reliable relationship to this Mac's actual console
+# user. The agent runs as that console user via the LaunchAgent above, and
+# AutoUpdater._download_and_swap() writes its own replacement binary into
+# this same directory — without this chown that write silently fails with
+# a permission error nobody sees (the update loop only logs at debug), so
+# the agent can build/publish new versions forever and never actually
+# self-update on a real Mac.
+chown -R "$CONSOLE_USER" /usr/local/aavishield 2>/dev/null || true
+
 launchctl bootout   "gui/$CONSOLE_UID/com.aavishield.agent" 2>/dev/null || true
 launchctl bootstrap "gui/$CONSOLE_UID" "$PLIST" 2>/dev/null || true
 launchctl enable    "gui/$CONSOLE_UID/com.aavishield.agent" 2>/dev/null || true
