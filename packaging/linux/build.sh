@@ -125,6 +125,18 @@ if [[ -n "${AAVISHIELD_ENROLL_TOKEN:-}" ]]; then
         "$AAVISHIELD_ENROLL_TOKEN" "${AAVISHIELD_ADMIN_URL:-}" > /etc/aavishield/enroll.json
     chmod 644 /etc/aavishield/enroll.json
 fi
+
+# dpkg installs this root-owned, but the agent runs as the unprivileged
+# desktop user via the --user unit below, and AutoUpdater._download_and_swap()
+# replaces its own binary in place — without this it would silently fail to
+# write and auto-update would never actually apply. SUDO_USER is the standard
+# way a postinst learns who ran `sudo dpkg -i`/`sudo apt install`; if it's
+# unset (installed as a bare root shell, or via some non-sudo path) this is a
+# no-op and the directory stays root-owned, same as before.
+if [[ -n "${SUDO_USER:-}" ]]; then
+    chown -R "$SUDO_USER" /opt/aavishield 2>/dev/null || true
+fi
+
 systemctl --global enable aavishield-agent.service 2>/dev/null || true
 
 # The CA-trust helper is systemwide, so unlike the agent it is enabled and
