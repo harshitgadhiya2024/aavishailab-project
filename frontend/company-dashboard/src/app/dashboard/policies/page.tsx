@@ -97,8 +97,12 @@ export default function PoliciesPage() {
       }),
   });
 
+  // "teams" as the first key element so this participates in the same
+  // invalidation family as the Teams page's create/update/delete mutations
+  // (which invalidate queryKey: ["teams"]) — see employees/page.tsx for the
+  // full reasoning.
   const { data: teamsData } = useQuery({
-    queryKey: ["teams-assign"],
+    queryKey: ["teams", "assign"],
     queryFn: () => teamApi.list({ limit: 100 }),
     enabled: showForm && form.target.scope === "team",
   });

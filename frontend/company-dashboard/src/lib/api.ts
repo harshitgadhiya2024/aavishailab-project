@@ -101,8 +101,10 @@ export const employeeApi = {
   exportCsv: () => api.get("/api/v1/employees/export", { responseType: "blob" }),
   activity: (id: string, params?: Record<string, any>) =>
     api.get(`/api/v1/employees/${id}/activity`, { params }),
-  setPortalPassword: (id: string, password: string) =>
-    api.post(`/api/v1/employees/${id}/portal-password`, { password }),
+  // Always server-generated and emailed — there's no field to fill in, this
+  // just triggers a reset.
+  resetPortalPassword: (id: string) =>
+    api.post(`/api/v1/employees/${id}/portal-password`),
   departments: () => api.get("/api/v1/employees/departments"),
 };
 

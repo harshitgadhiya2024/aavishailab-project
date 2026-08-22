@@ -15,6 +15,7 @@ import (
 	"github.com/aavishield/admin-api/internal/mailer"
 	"github.com/aavishield/admin-api/internal/models"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
@@ -693,21 +694,44 @@ func (h *PortalHandler) DeleteDevice(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Device removed"})
 }
 
-// ─── Admin: set portal password for employee ──────────────────────────────────
+// ─── Admin: portal password provisioning for employees ────────────────────────
 
-// SetPortalPassword handles POST /employees/:id/portal-password
-// Company admin sets (or resets) an employee's portal password.
+// provisionPortalPassword generates a random password, hashes and stores it
+// on the employee, and emails it to them — the one path both a fresh
+// employee creation (EmployeeHandler.Create) and an admin-triggered reset
+// (SetPortalPassword below) go through, so there's exactly one way an
+// employee's portal password is ever set: the admin never sees or chooses
+// it themselves, it's generated server-side and delivered by email.
+func provisionPortalPassword(db *gorm.DB, emp *models.Employee, orgName string) error {
+	password := generatePassword()
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	if err := db.Model(emp).Update("portal_password_hash", string(hash)).Error; err != nil {
+		return err
+	}
+	mailer.PortalAccessReady(emp.Email, emp.FirstName, orgName, password)
+	return nil
+}
+
+// orgNameFor is a best-effort lookup used only for the email's greeting —
+// a missing org name shouldn't stop the password from being set and sent.
+func orgNameFor(db *gorm.DB, orgID uuid.UUID) string {
+	var org models.Organization
+	if err := db.First(&org, "id = ?", orgID).Error; err == nil {
+		return org.Name
+	}
+	return "your organization"
+}
+
+// SetPortalPassword handles POST /employees/:id/portal-password — resets an
+// employee's portal password and emails them the new one. No password
+// travels in the request: this always generates a fresh one, the same as
+// what happens automatically when the employee is first created.
 func (h *PortalHandler) SetPortalPassword(c *gin.Context) {
 	orgID := c.GetString("scoped_org_id")
 	empID := c.Param("id")
-
-	var req struct {
-		Password string `json:"password" binding:"required,min=6"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
 
 	var emp models.Employee
 	if err := h.db.Where("id = ? AND org_id = ?", empID, orgID).First(&emp).Error; err != nil {
@@ -715,27 +739,13 @@ func (h *PortalHandler) SetPortalPassword(c *gin.Context) {
 		return
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
+	if err := provisionPortalPassword(h.db, &emp, orgNameFor(h.db, emp.OrgID)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reset the portal password"})
 		return
 	}
-
-	if err := h.db.Model(&emp).Update("portal_password_hash", string(hash)).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update password"})
-		return
-	}
-
-	// The employee has no other way to learn their portal password exists.
-	var org models.Organization
-	orgName := "your organization"
-	if err := h.db.First(&org, "id = ?", emp.OrgID).Error; err == nil {
-		orgName = org.Name
-	}
-	mailer.PortalAccessReady(emp.Email, emp.FirstName, orgName, req.Password)
 
 	c.JSON(http.StatusOK, gin.H{
-		"message":  "Portal password set. Employee can now log in at the employee portal.",
+		"message":  "A new password was emailed to the employee.",
 		"employee": emp.FullName(),
 		"email":    emp.Email,
 	})

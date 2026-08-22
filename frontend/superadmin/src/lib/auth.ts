@@ -61,29 +61,77 @@ export const authOptions: NextAuthOptions = {
       credentials: {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
+        // Emailed 6-digit code step — every login gets one in production
+        // (there's no authenticator-app enrolment for superadmin accounts),
+        // so this can't be optional the way it might look at a glance.
+        otpCode: { label: "Email code", type: "text" },
+        otpToken: { label: "OTP token", type: "text" },
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
+
+        // next-auth serializes a missing field as the literal string
+        // "undefined" — treated as real input that would send a fresh
+        // password attempt straight into code verification with a bogus
+        // code.
+        const field = (v?: string) => {
+          const t = (v ?? "").trim();
+          return t === "undefined" || t === "null" ? "" : t;
+        };
+        const otpCode = field(credentials.otpCode);
+        const otpToken = field(credentials.otpToken);
+
+        const session = (data: any) => ({
+          id: data.user.id,
+          email: data.user.email,
+          name: data.user.full_name,
+          role: data.user.role,
+          accessToken: data.access_token,
+          refreshToken: data.refresh_token,
+          user: data.user,
+        });
+
         try {
+          // A code plus its challenge token means the password step already
+          // passed — finish signing in instead of asking for the password
+          // again.
+          if (otpCode && otpToken) {
+            const verified = await axios.post(`${API_URL}/api/v1/auth/otp/verify`, {
+              otp_token: otpToken,
+              code: otpCode,
+            });
+            if (verified.data?.access_token && verified.data?.user?.role === "superadmin") {
+              return session(verified.data);
+            }
+            return null;
+          }
+
           const res = await axios.post(`${API_URL}/api/v1/auth/login`, {
             email: credentials.email,
             password: credentials.password,
             panel: "superadmin",
           });
+          const data = res.data;
 
-          const { access_token, refresh_token, user } = res.data;
-          if (!access_token || user?.role !== "superadmin") return null;
+          // The password was right, but every sign-in needs a second step.
+          // The challenge token travels back through the thrown error,
+          // since authorize() can only return a user or throw — the login
+          // page reads this and switches to the code-entry screen.
+          if (data.otp_required) {
+            throw new Error(`OTP_REQUIRED:${data.otp_token}|${data.email ?? ""}`);
+          }
+          if (data.mfa_required) {
+            throw new Error(`MFA_REQUIRED:${data.mfa_token}`);
+          }
 
-          return {
-            id: user.id,
-            email: user.email,
-            name: user.full_name,
-            role: user.role,
-            accessToken: access_token,
-            refreshToken: refresh_token,
-            user,
-          };
+          if (data.access_token && data.user?.role === "superadmin") {
+            return session(data);
+          }
+          return null;
         } catch (err: any) {
+          if (typeof err?.message === "string" && (err.message.startsWith("OTP_REQUIRED:") || err.message.startsWith("MFA_REQUIRED:"))) {
+            throw err;
+          }
           const msg = err.response?.data?.error || "Login failed";
           throw new Error(msg);
         }

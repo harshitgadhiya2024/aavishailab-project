@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { signIn } from "next-auth/react";
-import { Shield, Eye, EyeOff, Loader2, CheckCircle2 } from "lucide-react";
+import { Shield, Eye, EyeOff, Loader2, CheckCircle2, Mail } from "lucide-react";
+import { otpApi } from "@/lib/api";
 
 const FEATURES = [
   "Oversee every organization's security posture",
@@ -17,20 +18,46 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // Emailed 6-digit code step — every superadmin sign-in gets one, since
+  // there's no authenticator-app enrolment for this panel.
+  const [otpToken, setOtpToken] = useState("");
+  const [otpCode, setOtpCode] = useState("");
+  const [otpEmail, setOtpEmail] = useState("");
+  const [resendIn, setResendIn] = useState(0);
+  const [resending, setResending] = useState(false);
 
   useEffect(() => {
     const err = new URLSearchParams(window.location.search).get("error");
     if (err) setError(err);
   }, []);
 
+  useEffect(() => {
+    if (resendIn <= 0) return;
+    const t = setTimeout(() => setResendIn((n) => n - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendIn]);
+
+  const backToPassword = () => {
+    setOtpToken("");
+    setOtpCode("");
+    setOtpEmail("");
+    setResendIn(0);
+    setError("");
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
 
+    const credentials: Record<string, string> = { email, password };
+    if (otpToken && otpCode) {
+      credentials.otpToken = otpToken;
+      credentials.otpCode = otpCode;
+    }
+
     const result = await signIn("credentials", {
-      email,
-      password,
+      ...credentials,
       redirect: false,
       callbackUrl: "/dashboard",
     });
@@ -42,7 +69,46 @@ export default function LoginPage() {
       return;
     }
 
-    setError(result?.error || "Invalid credentials");
+    const raw = result?.error || "";
+
+    // The password was right; the account's second factor is a mailed code.
+    if (raw.startsWith("OTP_REQUIRED:")) {
+      const [, rest = ""] = raw.split("OTP_REQUIRED:");
+      const [token, masked = ""] = rest.split("|");
+      setOtpToken(token ?? "");
+      setOtpEmail(masked);
+      setOtpCode("");
+      setResendIn(45);
+      setError("");
+      return;
+    }
+
+    if (raw.startsWith("MFA_REQUIRED:")) {
+      setError("This account has an authenticator app enrolled, which the superadmin console doesn't support signing in with yet. Disable it on the account or sign in from the company dashboard instead.");
+      return;
+    }
+
+    if (otpToken) {
+      setError(raw || "That code is not valid or has expired.");
+      return;
+    }
+
+    setError(raw || "Invalid credentials");
+  };
+
+  const resendCode = async () => {
+    if (resendIn > 0 || resending) return;
+    setResending(true);
+    try {
+      await otpApi.resendLogin(otpToken);
+      setResendIn(45);
+    } catch (err: any) {
+      const message = err?.response?.data?.error || "Could not send a new code.";
+      setError(message);
+      if (err?.response?.data?.code === "OTP_CHALLENGE_EXPIRED") backToPassword();
+    } finally {
+      setResending(false);
+    }
   };
 
   return (
@@ -94,7 +160,15 @@ export default function LoginPage() {
           </div>
 
           <div className="bg-card/95 backdrop-blur-xl border border-white/10 rounded-2xl p-8 shadow-2xl">
-            <h2 className="text-xl font-semibold text-foreground mb-6">Sign in to your account</h2>
+            <h2 className="text-xl font-semibold text-foreground mb-1">
+              {otpToken ? "Check your email" : "Sign in to your account"}
+            </h2>
+            {otpToken && (
+              <p className="text-sm text-muted-foreground mb-5">
+                We sent a 6-digit code to <span className="text-foreground font-medium">{otpEmail || "your email address"}</span>. It expires in 10 minutes.
+              </p>
+            )}
+            {!otpToken && <div className="mb-6" />}
 
             {error && (
               <div className="bg-red-500/10 border border-red-500/30 text-red-400 rounded-lg px-4 py-3 mb-4 text-sm">
@@ -105,46 +179,83 @@ export default function LoginPage() {
             )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-muted-foreground mb-1">Email address</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full border border-border bg-background rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
-                  placeholder="you@company.com"
-                  required
-                />
-              </div>
+              {otpToken ? (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-muted-foreground mb-1">
+                      Verification code
+                    </label>
+                    <input
+                      autoFocus
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      value={otpCode}
+                      onChange={(e) => { setOtpCode(e.target.value.replace(/\D/g, "")); setError(""); }}
+                      className="w-full border border-border bg-background rounded-lg px-3 py-2.5 text-sm tracking-[0.3em] text-center text-lg font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                      placeholder="000000"
+                      required
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <button type="button" onClick={backToPassword} className="text-xs text-brand-500 hover:text-brand-400">
+                      ← Use a different account
+                    </button>
+                    <button
+                      type="button"
+                      onClick={resendCode}
+                      disabled={resendIn > 0 || resending}
+                      className="inline-flex items-center gap-1.5 text-xs text-brand-500 hover:text-brand-400 disabled:text-muted-foreground"
+                    >
+                      <Mail className="w-3.5 h-3.5" />
+                      {resendIn > 0 ? `Resend in ${resendIn}s` : resending ? "Sending..." : "Resend code"}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-muted-foreground mb-1">Email address</label>
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => { setEmail(e.target.value); setError(""); }}
+                      className="w-full border border-border bg-background rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                      placeholder="you@company.com"
+                      required
+                    />
+                  </div>
 
-              <div>
-                <label className="block text-sm font-medium text-muted-foreground mb-1">Password</label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full border border-border bg-background rounded-lg px-3 py-2.5 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
-                    placeholder="••••••••"
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
+                  <div>
+                    <label className="block text-sm font-medium text-muted-foreground mb-1">Password</label>
+                    <div className="relative">
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        value={password}
+                        onChange={(e) => { setPassword(e.target.value); setError(""); }}
+                        className="w-full border border-border bg-background rounded-lg px-3 py-2.5 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                        placeholder="••••••••"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
 
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || (!!otpToken && otpCode.trim().length < 6)}
                 className="w-full bg-primary hover:bg-brand-600 text-primary-foreground font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
               >
                 {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-                {loading ? "Signing in..." : "Sign In"}
+                {loading ? "Signing in..." : otpToken ? "Verify and sign in" : "Sign In"}
               </button>
             </form>
           </div>

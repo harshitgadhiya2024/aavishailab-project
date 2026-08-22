@@ -69,8 +69,12 @@ export default function UsersPage() {
     queryFn: () => orgUserApi.list({ search: search || undefined }),
   });
 
+  // "teams" as the first key element so this participates in the same
+  // invalidation family as the Teams page's create/update/delete mutations
+  // (which invalidate queryKey: ["teams"]) — see employees/page.tsx for the
+  // full reasoning.
   const { data: teamsData } = useQuery({
-    queryKey: ["teams-for-access"],
+    queryKey: ["teams", "for-access"],
     queryFn: () => teamApi.list({ limit: 200 }),
   });
 

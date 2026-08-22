@@ -426,6 +426,31 @@ services:
     networks:
       - aavishield-net
 
+  # Public documentation site — no auth, no backend calls; pure static
+  # content served by Next.js. Doesn't depend on admin-api.
+  docs:
+    build:
+      context: ./frontend/docs
+      dockerfile: Dockerfile
+    container_name: aavishield-docs
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+    restart: unless-stopped
+    environment:
+      PORT: "1004"
+    ports:
+      - "127.0.0.1:5004:1004"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://$$HOSTNAME:1004/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - aavishield-net
+
   company-dashboard:
     build:
       context: ./frontend/company-dashboard
@@ -620,6 +645,8 @@ services:
       admin-api:
         condition: service_healthy
       ai-service:
+        condition: service_healthy
+      docs:
         condition: service_healthy
     networks:
       - aavishield-net

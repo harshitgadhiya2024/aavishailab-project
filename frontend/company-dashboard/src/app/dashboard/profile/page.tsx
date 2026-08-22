@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { companyApi } from "@/lib/api";
 import {
@@ -103,9 +103,20 @@ export default function CompanyProfilePage() {
   const org = data?.data?.organization ?? {};
   const usage = data?.data?.usage ?? {};
 
-  // Seed the form from the server once, then leave the user's edits alone.
+  // Seed the form from the server once, then leave the user's edits alone —
+  // "once" has to mean once per actual edit session, not once per fetch:
+  // react-query refetches this in the background (window refocus, staleTime
+  // expiry) independent of anything the user is doing, and re-seeding on
+  // every one of those would silently overwrite in-progress typing with
+  // whatever was last saved. dirtyRef (kept in sync below) lets this effect
+  // read the current dirty flag without depending on it directly — depending
+  // on `dirty` here would re-run this effect on every keystroke.
+  const dirtyRef = useRef(false);
+  useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
+
   useEffect(() => {
     if (!data?.data?.organization) return;
+    if (dirtyRef.current) return;
     const o = data.data.organization;
     setForm({
       name: o.name ?? "", legal_name: o.legal_name ?? "", domain: o.domain ?? "",

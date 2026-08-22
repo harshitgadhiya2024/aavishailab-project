@@ -6,6 +6,7 @@
 # Produces dist/aavishield-agent (a single self-contained executable).
 
 import os
+import sys
 
 block_cipher = None
 
@@ -86,3 +87,26 @@ exe = EXE(
     codesign_identity=None,  # signing happens in the platform build scripts
     entitlements_file=None,
 )
+
+# A bare Mach-O binary has no bundle identity, and macOS's Window Server will
+# not reliably create an NSStatusItem (the menu-bar icon pystray draws) for a
+# process without one — it can silently fail to appear with no error anywhere
+# the user would see. Wrapping the executable in a proper .app bundle is what
+# macOS/AppKit actually expect for anything that shows UI, tray icon included.
+# Windows and Linux builds use this same spec but don't hit this constraint,
+# so BUNDLE only runs when freezing on macOS.
+if sys.platform == "darwin":
+    app = BUNDLE(
+        exe,
+        name="Aavishield.app",
+        bundle_identifier="com.aavishield.agent",
+        info_plist={
+            "CFBundleName": "Aavishield",
+            "CFBundleDisplayName": "Aavishield",
+            "CFBundleShortVersionString": os.environ.get("AAVISHIELD_VERSION", "1.0.0"),
+            # Menu-bar agent, not a Dock app: no Dock icon, no Cmd-Tab entry.
+            "LSUIElement": True,
+            "NSHighResolutionCapable": True,
+            "LSMinimumSystemVersion": "11.0",
+        },
+    )

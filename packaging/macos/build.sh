@@ -63,15 +63,21 @@ AAVISHIELD_AGENT_SRC="$STAMPED_SRC/aavishield-agent.py" \
 python3 -m PyInstaller --clean --noconfirm --distpath "$BUILD_DIR/dist" \
     --workpath "$BUILD_DIR/work" packaging/aavishield-agent.spec
 
-cp "$BUILD_DIR/dist/aavishield-agent" "$ROOT_DIR$INSTALL_PREFIX/aavishield-agent"
-chmod 755 "$ROOT_DIR$INSTALL_PREFIX/aavishield-agent"
+# The spec wraps EXE in a BUNDLE() on macOS — see packaging/aavishield-agent.spec
+# for why a bare Mach-O binary isn't enough for the tray icon to show up.
+APP_NAME="Aavishield.app"
+AGENT_BIN="$INSTALL_PREFIX/$APP_NAME/Contents/MacOS/aavishield-agent"
+cp -R "$BUILD_DIR/dist/$APP_NAME" "$ROOT_DIR$INSTALL_PREFIX/$APP_NAME"
+chmod 755 "$ROOT_DIR$INSTALL_PREFIX/$APP_NAME/Contents/MacOS/aavishield-agent"
 
-# ─── 2. Sign the binary ───────────────────────────────────────────────────────
-# Hardened runtime is required for notarization.
+# ─── 2. Sign the app bundle ───────────────────────────────────────────────────
+# Hardened runtime is required for notarization. Signing the bundle path (not
+# just the inner binary) lets codesign pick up Info.plist and seal the bundle
+# as a unit, which is what Gatekeeper/notarization expect.
 if [[ -n "${DEVELOPER_ID_APP:-}" ]]; then
-    echo "==> Signing binary as: $DEVELOPER_ID_APP"
+    echo "==> Signing app bundle as: $DEVELOPER_ID_APP"
     codesign --force --options runtime --timestamp \
-        --sign "$DEVELOPER_ID_APP" "$ROOT_DIR$INSTALL_PREFIX/aavishield-agent"
+        --sign "$DEVELOPER_ID_APP" "$ROOT_DIR$INSTALL_PREFIX/$APP_NAME"
 else
     echo "==> DEVELOPER_ID_APP unset — building UNSIGNED (testing only)"
 fi
@@ -87,7 +93,7 @@ cat > "$ROOT_DIR/Library/LaunchAgents/$IDENTIFIER.plist" <<PLIST
 <dict>
     <key>Label</key><string>$IDENTIFIER</string>
     <key>ProgramArguments</key>
-    <array><string>$INSTALL_PREFIX/aavishield-agent</string></array>
+    <array><string>$AGENT_BIN</string></array>
     <key>RunAtLoad</key><true/>
     <key>KeepAlive</key><true/>
     <key>ProcessType</key><string>Background</string>
@@ -111,7 +117,7 @@ cat > "$ROOT_DIR/Library/LaunchDaemons/$CATRUST_IDENTIFIER.plist" <<PLIST
     <key>Label</key><string>$CATRUST_IDENTIFIER</string>
     <key>ProgramArguments</key>
     <array>
-        <string>$INSTALL_PREFIX/aavishield-agent</string>
+        <string>$AGENT_BIN</string>
         <string>--ca-trust-daemon</string>
     </array>
     <key>RunAtLoad</key><true/>

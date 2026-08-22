@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/csv"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -40,15 +41,19 @@ type EmployeeRequest struct {
 func (h *EmployeeHandler) List(c *gin.Context) {
 	orgID := c.GetString("scoped_org_id")
 
-	page, _  := strconv.Atoi(c.DefaultQuery("page", "1"))
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-	search   := c.Query("search")
-	teamID   := c.Query("team_id")
-	dept     := c.Query("department")
-	status   := c.Query("status")
+	search := c.Query("search")
+	teamID := c.Query("team_id")
+	dept := c.Query("department")
+	status := c.Query("status")
 
-	if page < 1 { page = 1 }
-	if limit < 1 || limit > 100 { limit = 20 }
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
 	offset := (page - 1) * limit
 
 	q := h.db.Where("org_id = ?", orgID)
@@ -150,6 +155,16 @@ func (h *EmployeeHandler) Create(c *gin.Context) {
 	}
 
 	h.logAudit(c, orgUUID, &uid, "create", "employee", &emp.ID, nil)
+
+	// Portal access is provisioned immediately, not left for the employee to
+	// self-register — a generated password goes out by email the moment the
+	// record exists, the same path SetPortalPassword uses for a later reset.
+	// Best-effort: an email hiccup shouldn't fail the employee creation
+	// itself, since the admin can always trigger a resend via "Set Portal
+	// Password" afterward.
+	if err := provisionPortalPassword(h.db, &emp, orgNameFor(h.db, orgUUID)); err != nil {
+		log.Printf("employees: could not provision portal password for %s: %v", emp.Email, err)
+	}
 
 	h.db.Preload("Team").First(&emp, "id = ?", emp.ID)
 	c.JSON(http.StatusCreated, emp)
@@ -339,9 +354,15 @@ func (h *EmployeeHandler) ImportCSV(c *gin.Context) {
 			Email:     email,
 			Status:    models.StatusActive,
 		}
-		if len(row) > 3 { emp.Phone = strings.TrimSpace(row[3]) }
-		if len(row) > 4 { emp.Department = strings.TrimSpace(row[4]) }
-		if len(row) > 5 { emp.JobTitle = strings.TrimSpace(row[5]) }
+		if len(row) > 3 {
+			emp.Phone = strings.TrimSpace(row[3])
+		}
+		if len(row) > 4 {
+			emp.Department = strings.TrimSpace(row[4])
+		}
+		if len(row) > 5 {
+			emp.JobTitle = strings.TrimSpace(row[5])
+		}
 
 		if err := h.db.Create(&emp).Error; err == nil {
 			created++
@@ -389,10 +410,14 @@ func (h *EmployeeHandler) GetActivity(c *gin.Context) {
 	orgID := c.GetString("scoped_org_id")
 	empID := c.Param("id")
 
-	page, _  := strconv.Atoi(c.DefaultQuery("page", "1"))
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
-	if page < 1 { page = 1 }
-	if limit > 100 { limit = 100 }
+	if page < 1 {
+		page = 1
+	}
+	if limit > 100 {
+		limit = 100
+	}
 
 	var total int64
 	var events []models.ActivityEvent
@@ -400,7 +425,7 @@ func (h *EmployeeHandler) GetActivity(c *gin.Context) {
 	h.db.Model(&models.ActivityEvent{}).Where("org_id = ? AND employee_id = ?", orgID, empID).Count(&total)
 	h.db.Where("org_id = ? AND employee_id = ?", orgID, empID).
 		Order("timestamp DESC").
-		Offset((page-1)*limit).Limit(limit).
+		Offset((page - 1) * limit).Limit(limit).
 		Find(&events)
 
 	c.JSON(http.StatusOK, gin.H{

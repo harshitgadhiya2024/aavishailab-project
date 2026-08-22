@@ -187,29 +187,29 @@ export default function DownloadPage() {
             Download {native.filename.split(".").pop()?.toUpperCase()}
           </a>
 
-          <div className="mt-5">
-            <p className="text-sm font-medium text-body mb-2">
-              Your enrolment code — needed once, during setup
-            </p>
-            <div className="flex items-center gap-2">
-              <code className="flex-1 min-w-0 bg-black text-green-400 text-xs rounded-lg px-3 py-2 font-mono truncate border border-border">
-                {info.token}
-              </code>
-              <button
-                onClick={() => copy(info.token, "Enrolment code")}
-                className="p-2 rounded-lg border border-border text-muted-foreground hover:bg-elevated hover:text-foreground transition-colors"
-                aria-label="Copy enrolment code"
-              >
-                <Copy className="w-4 h-4" />
-              </button>
+          {/* Nothing to copy or type here on purpose — the installer opens
+              your account in a browser on first run and finishes connecting
+              this device on its own, as long as you're signed in here. */}
+          <div className="mt-5 flex items-start gap-3 bg-elevated rounded-lg p-4">
+            <ShieldCheck className="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-body">Run it — that's the whole setup</p>
+              <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                When it starts, a browser tab opens automatically to finish connecting this device
+                to your account. Stay signed in here and it completes on its own — nothing to copy
+                or type.
+              </p>
             </div>
-            <p className="text-xs text-subtle mt-2">Expires in 2 hours.</p>
           </div>
 
           <details className="mt-4 group">
             <summary className="text-xs text-brand-500 hover:text-brand-400 cursor-pointer select-none">
-              IT / unattended install command
+              IT / unattended install (for bulk or MDM deployment)
             </summary>
+            <p className="text-xs text-subtle mt-2 mb-1">
+              Not needed for a normal install — this bypasses the automatic browser step for
+              scripted rollouts. The code below is single-use and expires in 2 hours.
+            </p>
             <div className="flex items-start gap-2 mt-2">
               <pre className="flex-1 min-w-0 bg-black text-green-400 text-xs rounded-lg px-3 py-2 overflow-x-auto whitespace-pre-wrap break-all font-mono border border-border">
                 {enrollCommand(selectedOS.id, info)}

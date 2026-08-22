@@ -17,4 +17,7 @@ ingress:
   # AI assistant
   - hostname: aavishield-ai.aavishailab.com
     service: http://ai-service:6002
+  # Documentation site
+  - hostname: aavishield-docs.aavishailab.com
+    service: http://docs:1004
   - service: http_status:404

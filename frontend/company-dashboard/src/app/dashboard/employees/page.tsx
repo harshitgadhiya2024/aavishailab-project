@@ -5,7 +5,7 @@ import { keepPreviousData, useQuery, useMutation, useQueryClient } from "@tansta
 import { employeeApi, teamApi } from "@/lib/api";
 import {
   Plus, Search, Upload, Download, Trash2, Edit,
-  X, Loader2, Users, Filter, MoreHorizontal, Eye, EyeOff, Mail, Phone, KeyRound, RefreshCw
+  X, Loader2, Users, Filter, MoreHorizontal, Eye, Mail, Phone, KeyRound
 } from "lucide-react";
 import { formatDate, cn, getInitials } from "@/lib/utils";
 import { toast } from "sonner";
@@ -35,18 +35,6 @@ const STATUS_COLORS: Record<string, string> = {
   suspended: "bg-red-500/10 text-danger",
 };
 
-function generatePortalPassword(length = 12): string {
-  const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
-  const lower = "abcdefghijkmnopqrstuvwxyz";
-  const digits = "23456789";
-  const symbols = "@#$%&*!";
-  const all = upper + lower + digits + symbols;
-  const pick = (chars: string) => chars[Math.floor(Math.random() * chars.length)];
-  const required = [pick(upper), pick(lower), pick(digits), pick(symbols)];
-  const rest = Array.from({ length: Math.max(0, length - required.length) }, () => pick(all));
-  return [...required, ...rest].sort(() => Math.random() - 0.5).join("");
-}
-
 export default function EmployeesPage() {
   const qc = useQueryClient();
   const { can } = usePermissions();
@@ -67,20 +55,9 @@ export default function EmployeesPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [viewEmp, setViewEmp] = useState<any>(null);
   const [portalEmp, setPortalEmp] = useState<any>(null);
-  const [portalPassword, setPortalPassword] = useState("");
-  const [showPortalPassword, setShowPortalPassword] = useState(false);
 
-  const openPortalPassword = (emp: any) => {
-    setPortalEmp(emp);
-    setPortalPassword(generatePortalPassword());
-    setShowPortalPassword(false);
-  };
-
-  const closePortalPassword = () => {
-    setPortalEmp(null);
-    setPortalPassword("");
-    setShowPortalPassword(false);
-  };
+  const openPortalPassword = (emp: any) => setPortalEmp(emp);
+  const closePortalPassword = () => setPortalEmp(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["employees", page, limit, search, statusFilter, teamFilter, deptFilter],
@@ -95,8 +72,14 @@ export default function EmployeesPage() {
     placeholderData: keepPreviousData,
   });
 
+  // "teams" as the first key element, not a standalone name like "teams-list"
+  // — the Teams page's create/update/delete mutations invalidate
+  // queryKey: ["teams"], which react-query matches by prefix. A differently
+  // named key here would sit in its own cache entry forever, showing
+  // whatever teams existed the first time this page loaded until its own
+  // 30s staleTime happened to expire on a later remount.
   const { data: teamsData } = useQuery({
-    queryKey: ["teams-list"],
+    queryKey: ["teams", "for-employees"],
     queryFn: () => teamApi.list({ limit: 100 }),
   });
 
@@ -138,13 +121,12 @@ export default function EmployeesPage() {
   });
 
   const portalPasswordMut = useMutation({
-    mutationFn: ({ id, password }: { id: string; password: string }) =>
-      employeeApi.setPortalPassword(id, password),
+    mutationFn: (id: string) => employeeApi.resetPortalPassword(id),
     onSuccess: (res) => {
-      toast.success(res.data?.message ?? "Portal password set");
+      toast.success(res.data?.message ?? "A new password was emailed to the employee");
       closePortalPassword();
     },
-    onError: (e: any) => toast.error(e.response?.data?.error ?? "Failed to set portal password"),
+    onError: (e: any) => toast.error(e.response?.data?.error ?? "Failed to reset portal password"),
   });
 
   const employees = Array.isArray(data?.data?.data) ? data.data.data : (data?.data?.employees ?? []);
@@ -501,6 +483,11 @@ export default function EmployeesPage() {
                   </div>
                 )}
               </div>
+              {!editEmp && (
+                <p className="text-xs text-muted-foreground">
+                  A portal password will be generated and emailed to them automatically.
+                </p>
+              )}
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={closeForm} className="flex-1 border border-border text-body py-2 rounded-lg text-sm hover:bg-elevated">Cancel</button>
                 <button type="submit" disabled={isPending}
@@ -558,49 +545,21 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* Portal password modal */}
+      {/* Reset portal password confirm */}
       {portalEmp && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
           <div className="bg-card rounded-2xl shadow-2xl w-full max-w-sm p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-foreground">Set Portal Password</h3>
+              <h3 className="font-semibold text-foreground">Reset Portal Password</h3>
               <button onClick={closePortalPassword} className="text-subtle hover:text-body">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <p className="text-sm text-muted-foreground mb-4">
-              Set a password for <strong className="text-foreground">{portalEmp.first_name} {portalEmp.last_name}</strong> to log in at the Employee Portal.
+            <p className="text-sm text-muted-foreground mb-6">
+              A new password will be generated and emailed to{" "}
+              <strong className="text-foreground">{portalEmp.first_name} {portalEmp.last_name}</strong>{" "}
+              ({portalEmp.email}). Their current portal password stops working immediately.
             </p>
-            <div className="mb-4">
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-xs font-medium text-body">Portal Password</label>
-                <button
-                  type="button"
-                  onClick={() => setPortalPassword(generatePortalPassword())}
-                  className="inline-flex items-center gap-1 text-xs text-brand-500 hover:text-brand-400"
-                >
-                  <RefreshCw className="w-3 h-3" /> Regenerate
-                </button>
-              </div>
-              <div className="relative">
-                <input
-                  type={showPortalPassword ? "text" : "password"}
-                  value={portalPassword}
-                  onChange={e => setPortalPassword(e.target.value)}
-                  className="w-full bg-background border border-border rounded-lg pl-3 pr-10 py-2 text-sm text-foreground placeholder:text-subtle focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono"
-                  placeholder="Auto-generated password"
-                  minLength={6}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPortalPassword(v => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-subtle hover:text-body"
-                  aria-label={showPortalPassword ? "Hide password" : "Show password"}
-                >
-                  {showPortalPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
             <div className="flex gap-3">
               <button
                 onClick={closePortalPassword}
@@ -609,12 +568,12 @@ export default function EmployeesPage() {
                 Cancel
               </button>
               <button
-                onClick={() => portalPasswordMut.mutate({ id: portalEmp.id, password: portalPassword })}
-                disabled={portalPasswordMut.isPending || portalPassword.length < 6}
+                onClick={() => portalPasswordMut.mutate(portalEmp.id)}
+                disabled={portalPasswordMut.isPending}
                 className="flex-1 bg-brand-500 text-on-brand py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-60"
               >
                 {portalPasswordMut.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                Set Password
+                Send New Password
               </button>
             </div>
           </div>

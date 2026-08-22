@@ -63,6 +63,11 @@ export const authApi = {
     api.put("/auth/profile", data),
 };
 
+export const otpApi = {
+  resendLogin: (otpToken: string) =>
+    api.post("/auth/otp/resend", { otp_token: otpToken }),
+};
+
 export const orgApi = {
   list: (params?: Record<string, any>) =>
     api.get("/superadmin/organizations", { params }),
