@@ -16,7 +16,7 @@ on:
 
 jobs:
   macos:
-    runs-on: macos-14 # Apple Silicon host; built universal2 below so Intel Macs work too
+    runs-on: macos-14 # Apple Silicon only — see the arm64-only note in the Build .pkg step
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -55,11 +55,16 @@ jobs:
           # token, so the agent has to already know where to enrol.
           AAVISHIELD_ADMIN_URL: ${{ vars.AAVISHIELD_ADMIN_URL }}
           AAVISHIELD_PORTAL_URL: ${{ vars.AAVISHIELD_PORTAL_URL }}
-          # macos-14 is Apple Silicon only; without this the .pkg silently
-          # can't install on an Intel Mac at all. actions/setup-python ships
-          # a universal2 CPython on macOS, so a universal2 freeze works from
-          # this same runner without needing an Intel machine.
-          AAVISHIELD_TARGET_ARCH: universal2
+          # KNOWN GAP: macos-14 is Apple Silicon only, and this produces an
+          # arm64-only .pkg — it will not install on an Intel Mac. Tried
+          # AAVISHIELD_TARGET_ARCH=universal2 here; PyInstaller's own
+          # interpreter is universal2 but pip installs arch-specific wheels
+          # for compiled deps (confirmed: Pillow's _imagingft.so came back
+          # arm64-only and PyInstaller refused to proceed — "is not a fat
+          # binary"). A real fix needs each dependency built/lipo-merged for
+          # both arches, or two separate builds merged after the fact —
+          # more than a one-line flag, and not verifiable without real
+          # Intel Mac hardware to test the result on.
         run: bash packaging/macos/build.sh "${{ inputs.version || '1.1.0' }}"
 
       - uses: actions/upload-artifact@v4

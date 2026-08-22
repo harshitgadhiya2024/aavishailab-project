@@ -5,7 +5,7 @@ machines no longer need Python preinstalled.
 
 | Platform | Output | Persistence | Build on |
 |---|---|---|---|
-| macOS | `aavishield-agent-<v>.pkg` | LaunchAgent (`KeepAlive`) | macOS (universal2 — Apple Silicon + Intel) |
+| macOS | `aavishield-agent-<v>.pkg` | LaunchAgent (`KeepAlive`) | macOS (Apple Silicon only — see known gaps below) |
 | Windows | `aavishield-agent-<v>.msi` | `HKLM\...\Run` | Windows + WiX v3 |
 | Linux | `aavishield-agent-<v>-<arch>.deb` + `.tar.gz` | systemd user unit | Ubuntu 22.04 |
 
@@ -143,3 +143,17 @@ shared by all platforms — publishing macOS at 1.4.1 while Linux is still at
 the 1.4.0 binary. Build/publish all platforms for a release together (which
 is what the CI workflow does — one run, three parallel jobs, one version
 input) rather than triggering them separately.
+
+## Known gaps
+
+- **macOS is Apple Silicon only.** `macos-14` builds a native arm64 `.pkg`
+  that will not install on an Intel Mac. Making it universal2 isn't a
+  one-line flag: the interpreter is universal2, but pip installs arch-
+  specific wheels for compiled deps (Pillow's `_imagingft.so` came back
+  arm64-only and PyInstaller refused to build — "is not a fat binary").
+  A real fix needs either every dependency built and `lipo`-merged for both
+  arches, or two separate builds merged after freezing — and needs real
+  Intel Mac hardware to verify the result actually runs, not just builds.
+- **Windows and Linux both build x86_64 only** — an ARM64 Windows or Linux
+  device (rare on a typical corporate fleet, but not nonexistent) can't
+  install either. Same class of fix as above if it ever matters.
