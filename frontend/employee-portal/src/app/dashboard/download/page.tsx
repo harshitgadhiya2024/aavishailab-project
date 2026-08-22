@@ -35,6 +35,38 @@ const enrollCommand = (os: OSType, info: InstallerInfo): string => {
   return `sudo mkdir -p /etc/aavishield && sudo chown "$(id -u):$(id -g)" /etc/aavishield && echo '{"token":"${t}","admin_url":"${u}"}' | sudo tee /etc/aavishield/enroll.json >/dev/null && sudo installer -pkg ~/Downloads/${info.native?.filename ?? "aavishield-agent.pkg"} -target /`;
 };
 
+type NativeStep = { title: string; code?: string };
+
+/** The 5-step walkthrough shown under the recommended native installer.
+ *  Gatekeeper/SmartScreen steps use the terminal/manual-override route since
+ *  our packages aren't code-signed yet (see the macOS/Windows build scripts). */
+const NATIVE_STEPS: Record<OSType, NativeStep[]> = {
+  macos: [
+    { title: "Download the .pkg installer above" },
+    {
+      title: "Open Terminal and allow it past Gatekeeper",
+      code: "xattr -d com.apple.quarantine ~/Downloads/aavishield-agent-*.pkg",
+    },
+    { title: "Double-click the .pkg in Finder and follow the installer" },
+    { title: "A browser tab opens on its own to enroll this device — just stay signed in here" },
+    { title: "Check it's working: look for the Aavishield icon in the menu bar, or check My Devices below" },
+  ],
+  windows: [
+    { title: "Download the .msi installer above" },
+    { title: "If Windows shows \"Windows protected your PC\", click More info → Run anyway" },
+    { title: "Run the installer and follow the setup wizard" },
+    { title: "A browser tab opens on its own to enroll this device — just stay signed in here" },
+    { title: "Check it's working: look for the Aavishield icon in the system tray, or check My Devices below" },
+  ],
+  linux: [
+    { title: "Download the .deb installer above" },
+    { title: "Open a terminal — Linux has no Gatekeeper-style prompt, just needs sudo" },
+    { title: "Install it", code: "sudo dpkg -i ~/Downloads/aavishield-agent-*.deb" },
+    { title: "A browser tab opens on its own to enroll this device — just stay signed in here" },
+    { title: "Check it's working", code: "systemctl --user status aavishield-agent" },
+  ],
+};
+
 const OS_OPTIONS: { id: OSType; label: string; icon: React.ElementType; desc: string; steps: string[] }[] = [
   {
     id: "macos",
@@ -187,22 +219,25 @@ export default function DownloadPage() {
             Download {native.filename.split(".").pop()?.toUpperCase()}
           </a>
 
-          {/* Nothing to copy or type here on purpose — the installer opens
-              your account in a browser on first run and finishes connecting
-              this device on its own, as long as you're signed in here. */}
-          <div className="mt-5 flex items-start gap-3 bg-elevated rounded-lg p-4">
-            <ShieldCheck className="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-medium text-body">Run it — that's the whole setup</p>
-              <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                When it starts, a browser tab opens automatically to finish connecting this device
-                to your account. Stay signed in here and it completes on its own — nothing to copy
-                or type.
-              </p>
-            </div>
-          </div>
+          <ol className="mt-5 space-y-3">
+            {NATIVE_STEPS[selectedOS.id].map((step, i) => (
+              <li key={i} className="flex items-start gap-3 text-sm text-body">
+                <span className="w-6 h-6 rounded-full bg-brand-500/10 text-brand-500 text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">
+                  {i + 1}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <span>{step.title}</span>
+                  {step.code && (
+                    <pre className="mt-1.5 bg-black text-green-400 text-xs rounded-lg px-3 py-2 overflow-x-auto whitespace-pre-wrap break-all font-mono leading-relaxed border border-border">
+                      {step.code}
+                    </pre>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ol>
 
-          <details className="mt-4 group">
+          <details className="mt-5 group">
             <summary className="text-xs text-brand-500 hover:text-brand-400 cursor-pointer select-none">
               IT / unattended install (for bulk or MDM deployment)
             </summary>
