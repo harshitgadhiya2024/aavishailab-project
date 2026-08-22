@@ -226,16 +226,14 @@ export default function DownloadPage() {
         </div>
       )}
 
-      {selectedOS && (
+      {/* Script installer: only shown when no native package is published for
+          this OS. The native installer above is otherwise the only download
+          offered — no "alternative" script option once it's available. */}
+      {selectedOS && !native && (
         <div className="bg-card rounded-xl border border-border shadow-sm p-6">
           <h3 className="font-semibold text-foreground mb-1">
-            {native ? `Alternative — script installer` : `Setup steps for ${selectedOS.label}`}
+            Setup steps for {selectedOS.label}
           </h3>
-          {native && (
-            <p className="text-xs text-subtle mb-4">
-              Requires Python 3 on the machine. Use this only if the installer above doesn&apos;t work.
-            </p>
-          )}
           <ol className="space-y-3 mb-6">
             {selectedOS.steps.map((step, i) => {
               const codeMatch = step.match(/^(Run:|Then run:)\s+(.+)$/);
@@ -273,23 +271,25 @@ export default function DownloadPage() {
           <p className="text-xs text-subtle mt-3">
             Installer link expires in 2 hours. Download a new one if it expires.
           </p>
+        </div>
+      )}
 
-          <div className="mt-6 pt-5 border-t border-border">
-            <p className="text-sm font-medium text-body mb-2">Need to remove the agent?</p>
-            <button
-              onClick={handleUninstall}
-              disabled={uninstalling}
-              className="flex items-center gap-2 border border-red-500/30 text-danger hover:bg-red-500/10 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
-            >
-              {uninstalling
-                ? <Loader2 className="w-4 h-4 animate-spin" />
-                : <Trash2 className="w-4 h-4" />}
-              {uninstalling ? "Preparing..." : `Download Uninstaller for ${selectedOS?.label}`}
-            </button>
-            <p className="text-xs text-subtle mt-2">
-              Stops the agent, clears system proxy, and removes all files.
-            </p>
-          </div>
+      {selectedOS && (
+        <div className="bg-card rounded-xl border border-border shadow-sm p-6">
+          <p className="text-sm font-medium text-body mb-2">Need to remove the agent?</p>
+          <button
+            onClick={handleUninstall}
+            disabled={uninstalling}
+            className="flex items-center gap-2 border border-red-500/30 text-danger hover:bg-red-500/10 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
+          >
+            {uninstalling
+              ? <Loader2 className="w-4 h-4 animate-spin" />
+              : <Trash2 className="w-4 h-4" />}
+            {uninstalling ? "Preparing..." : `Download Uninstaller for ${selectedOS?.label}`}
+          </button>
+          <p className="text-xs text-subtle mt-2">
+            Stops the agent, clears system proxy, and removes all files.
+          </p>
         </div>
       )}
     </div>
