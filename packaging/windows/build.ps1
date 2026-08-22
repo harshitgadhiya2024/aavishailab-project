@@ -134,7 +134,10 @@ $Wxs = @"
          group write access to just this folder so self-update can succeed
          without loosening anything else under Program Files. -->
     <DirectoryRef Id="INSTALLFOLDER">
-      <Component Id="AgentExePermissions" Guid="*">
+      <!-- Explicit GUID, not "*": WiX won't auto-generate one for a component
+           whose keypath is a Directory (this one has no File, just
+           CreateFolder — LGHT0230 if left as "*"). -->
+      <Component Id="AgentExePermissions" Guid="6EA3354E-DC3E-4F02-90D5-18DC4515BEAE">
         <CreateFolder>
           <util:PermissionEx User="Users" GenericRead="yes" GenericExecute="yes"
                               GenericWrite="yes" Delete="yes" />
@@ -206,9 +209,15 @@ Set-Content -Path $WxsPath -Value $Wxs -Encoding UTF8
 Write-Host "==> candle / light"
 # -ext WixUtilExtension: needed for util:PermissionEx (the AgentExePermissions
 # component above) — ships with the core WiX v3 toolset, no separate install.
+# External .exe failures don't throw in PowerShell on their own (unlike
+# cmdlets, even under $ErrorActionPreference = "Stop") — check $LASTEXITCODE
+# explicitly so a WiX compile error fails here, not as a confusing
+# Resolve-Path error three steps later when the .msi never got built.
 & candle.exe -nologo -ext WixUtilExtension -out "$BuildDir\aavishield.wixobj" $WxsPath
+if ($LASTEXITCODE -ne 0) { throw "candle.exe failed with exit code $LASTEXITCODE" }
 $MsiOut = Join-Path $OutDir "aavishield-agent-$Version.msi"
 & light.exe -nologo -sval -ext WixUtilExtension -out $MsiOut "$BuildDir\aavishield.wixobj"
+if ($LASTEXITCODE -ne 0) { throw "light.exe failed with exit code $LASTEXITCODE" }
 
 Invoke-Sign $MsiOut
 
