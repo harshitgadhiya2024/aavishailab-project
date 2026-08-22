@@ -399,7 +399,7 @@ func (h *PortalHandler) DownloadInstaller(c *gin.Context) {
 	// installs a self-contained binary, so the employee needs nothing
 	// preinstalled. The Python installers stay as the fallback for any OS whose
 	// package hasn't been published yet.
-	pkgName, _, _, _, hasNative := NativePackageFor(c, osType)
+	pkgName, _, _, _, _, hasNative := NativePackageFor(c, osType)
 
 	switch osType {
 	case "macos":
@@ -476,12 +476,13 @@ func (h *PortalHandler) InstallerInfo(c *gin.Context) {
 		"expires_at": expiresAt,
 		"native":     nil,
 	}
-	if name, url, version, size, found := NativePackageFor(c, osType); found {
+	if name, url, version, sha256sum, size, found := NativePackageFor(c, osType); found {
 		resp["native"] = gin.H{
 			"filename": name,
 			"url":      url,
 			"version":  version,
 			"size":     size,
+			"sha256":   sha256sum,
 		}
 	}
 	c.JSON(http.StatusOK, resp)

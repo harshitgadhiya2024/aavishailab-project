@@ -16,14 +16,18 @@ on:
 
 jobs:
   macos:
-    runs-on: macos-14 # Apple Silicon
+    runs-on: macos-14 # Apple Silicon host; built universal2 below so Intel Macs work too
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - run: pip install pyinstaller pystray Pillow certifi
+      # Pinned so a build never silently changes what it produces, and
+      # covers every optional feature (mss/pynput screen+activity capture,
+      # cryptography for policy-signature verification) that the frozen
+      # binary otherwise degrades away from without any visible error.
+      - run: pip install -r scripts/agent/requirements-build.txt
 
       # Signing secrets are optional: without them the job still produces an
       # unsigned .pkg so the pipeline is testable before certs exist.
@@ -51,6 +55,11 @@ jobs:
           # token, so the agent has to already know where to enrol.
           AAVISHIELD_ADMIN_URL: ${{ vars.AAVISHIELD_ADMIN_URL }}
           AAVISHIELD_PORTAL_URL: ${{ vars.AAVISHIELD_PORTAL_URL }}
+          # macos-14 is Apple Silicon only; without this the .pkg silently
+          # can't install on an Intel Mac at all. actions/setup-python ships
+          # a universal2 CPython on macOS, so a universal2 freeze works from
+          # this same runner without needing an Intel machine.
+          AAVISHIELD_TARGET_ARCH: universal2
         run: bash packaging/macos/build.sh "${{ inputs.version || '1.1.0' }}"
 
       - uses: actions/upload-artifact@v4
@@ -66,18 +75,39 @@ jobs:
         with:
           python-version: "3.12"
 
-      - run: pip install pyinstaller pystray Pillow certifi
+      # Pinned so a build never silently changes what it produces, and
+      # covers every optional feature (mss/pynput screen+activity capture,
+      # cryptography for policy-signature verification) that the frozen
+      # binary otherwise degrades away from without any visible error.
+      - run: pip install -r scripts/agent/requirements-build.txt
       - run: choco install wixtoolset --no-progress -y
       - run: echo "C:\Program Files (x86)\WiX Toolset v3.14\bin" >> $env:GITHUB_PATH
 
+      # SIGNING_CERT_PFX_B64 (the secret) holds the .pfx file's bytes,
+      # base64-encoded — a secret can't hold a filesystem path that would mean
+      # anything on a fresh runner. Decode it to an actual file here, the same
+      # way the macOS job imports MACOS_CERT_P12 into a keychain, before
+      # build.ps1 hands a real path to signtool. Thumbprint-based signing (an
+      # already-installed machine cert) skips this — there's no file to decode.
+      - name: Decode signing certificate
+        if: env.SIGNING_CERT_PFX_B64 != ''
+        env:
+          SIGNING_CERT_PFX_B64: ${{ secrets.SIGNING_CERT_PFX_B64 }}
+        run: |
+          $bytes = [Convert]::FromBase64String($env:SIGNING_CERT_PFX_B64)
+          [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\aavishield-signing.pfx", $bytes)
+
       - name: Build .msi
         env:
-          SIGNING_CERT_PFX: ${{ secrets.SIGNING_CERT_PFX_PATH }}
           SIGNING_CERT_PASSWORD: ${{ secrets.SIGNING_CERT_PASSWORD }}
           SIGNING_CERT_THUMBPRINT: ${{ secrets.SIGNING_CERT_THUMBPRINT }}
           AAVISHIELD_ADMIN_URL: ${{ vars.AAVISHIELD_ADMIN_URL }}
           AAVISHIELD_PORTAL_URL: ${{ vars.AAVISHIELD_PORTAL_URL }}
-        run: powershell -ExecutionPolicy Bypass -File packaging\windows\build.ps1 -Version "${{ inputs.version || '1.1.0' }}"
+        run: |
+          if (Test-Path "$env:RUNNER_TEMP\aavishield-signing.pfx") {
+            $env:SIGNING_CERT_PFX = "$env:RUNNER_TEMP\aavishield-signing.pfx"
+          }
+          powershell -ExecutionPolicy Bypass -File packaging\windows\build.ps1 -Version "${{ inputs.version || '1.1.0' }}"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -92,7 +122,11 @@ jobs:
         with:
           python-version: "3.12"
 
-      - run: pip install pyinstaller pystray Pillow certifi
+      # Pinned so a build never silently changes what it produces, and
+      # covers every optional feature (mss/pynput screen+activity capture,
+      # cryptography for policy-signature verification) that the frozen
+      # binary otherwise degrades away from without any visible error.
+      - run: pip install -r scripts/agent/requirements-build.txt
       - name: Build .deb
         env:
           AAVISHIELD_ADMIN_URL: ${{ vars.AAVISHIELD_ADMIN_URL }}

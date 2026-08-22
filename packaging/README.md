@@ -5,12 +5,12 @@ machines no longer need Python preinstalled.
 
 | Platform | Output | Persistence | Build on |
 |---|---|---|---|
-| macOS | `aavishield-agent-<v>.pkg` | LaunchAgent (`KeepAlive`) | macOS (Apple Silicon) |
+| macOS | `aavishield-agent-<v>.pkg` | LaunchAgent (`KeepAlive`) | macOS (universal2 — Apple Silicon + Intel) |
 | Windows | `aavishield-agent-<v>.msi` | `HKLM\...\Run` | Windows + WiX v3 |
 | Linux | `aavishield-agent-<v>-<arch>.deb` + `.tar.gz` | systemd user unit | Ubuntu 22.04 |
 
 ```bash
-pip install pyinstaller pystray Pillow certifi
+pip install -r scripts/agent/requirements-build.txt
 
 bash packaging/macos/build.sh 1.1.0
 bash packaging/linux/build.sh 1.1.0
@@ -110,7 +110,7 @@ Repo secrets to set (Settings → Secrets and variables → Actions):
 | `AAVISHIELD_ADMIN_URL` | Publishing at all (e.g. `https://aavishield-api.aavishailab.com`) |
 | `AGENT_PACKAGE_UPLOAD_TOKEN` | Publishing at all — must match the server's env var of the same name |
 | `DEVELOPER_ID_APP`, `DEVELOPER_ID_INSTALLER`, `NOTARY_PROFILE`, `MACOS_CERT_P12`, `MACOS_CERT_PASSWORD` | Signed/notarized macOS build |
-| `SIGNING_CERT_THUMBPRINT` or `SIGNING_CERT_PFX_PATH` + `SIGNING_CERT_PASSWORD` | Signed Windows build |
+| `SIGNING_CERT_THUMBPRINT` or `SIGNING_CERT_PFX_B64` (the `.pfx` file, base64-encoded — e.g. `base64 -i cert.pfx \| pbcopy`) + `SIGNING_CERT_PASSWORD` | Signed Windows build |
 
 Without the first two secrets the workflow still builds and uploads to
 GitHub's own artifact storage (the "agent-packages" run artifact) — publish

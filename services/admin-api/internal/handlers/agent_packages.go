@@ -249,21 +249,21 @@ func (h *AgentHandler) AgentVersion(c *gin.Context) {
 // ("macos" / "windows" / "linux"), or ok=false when nothing is published yet.
 // Used by the employee portal to decide whether to offer the native installer
 // or fall back to the script.
-func NativePackageFor(c *gin.Context, platform string) (name, url, version string, size int64, ok bool) {
+func NativePackageFor(c *gin.Context, platform string) (name, url, version, sha256sum string, size int64, ok bool) {
 	manifest, err := readManifest()
 	if err != nil || manifest.Version == "" {
-		return "", "", "", 0, false
+		return "", "", "", "", 0, false
 	}
 	name = manifest.Artifacts[platform]
 	if name == "" || name != filepath.Base(name) {
-		return "", "", "", 0, false
+		return "", "", "", "", 0, false
 	}
-	_, size, err = fileSHA256(filepath.Join(agentPackageDir(), name))
+	sha256sum, size, err = fileSHA256(filepath.Join(agentPackageDir(), name))
 	if err != nil {
-		return "", "", "", 0, false
+		return "", "", "", "", 0, false
 	}
 	url = strings.TrimRight(adminAPIURL(c), "/") + "/agent/packages/" + name
-	return name, url, manifest.Version, size, true
+	return name, url, manifest.Version, sha256sum, size, true
 }
 
 // ServeAgentPackage handles GET /agent/packages/:file — public, because the

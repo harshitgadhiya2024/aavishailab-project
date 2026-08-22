@@ -14,6 +14,7 @@ Runs on the employee's device and:
      events for reporting.
 """
 
+import base64
 import datetime
 import errno
 import hmac
@@ -42,6 +43,18 @@ try:
     import resource  # POSIX-only; used to raise the open-file limit
 except ImportError:  # pragma: no cover - Windows
     resource = None
+
+try:
+    # Verifies the Ed25519 signature on policy bundles (PolicySignatureVerifier
+    # below). Optional at import time — unlike TLS itself, this is a defense-
+    # in-depth layer on top of an already-authenticated HTTPS fetch, so a
+    # missing dependency degrades to "no extra check" rather than bricking
+    # the agent, the same posture pystray/Pillow already get for the tray UI.
+    from cryptography.exceptions import InvalidSignature
+    from cryptography.hazmat.primitives.asymmetric import ed25519 as _ed25519
+except ImportError:  # pragma: no cover - exercised via requirements-build.txt in CI
+    InvalidSignature = None
+    _ed25519 = None
 
 AGENT_VERSION = "1.5.0"
 
@@ -285,6 +298,128 @@ def mark_revoked_if_auth_error(exc: BaseException) -> bool:
     return False
 
 
+# ─── Policy signature verification ──────────────────────────────────────────────
+
+# Sibling of CONFIG_PATH's directory, not a new top-level location — keeps
+# every piece of this device's local state under the one ~/.aavishield/ dir.
+_POLICY_PUBKEY_PATH = os.path.join(os.path.dirname(CONFIG_PATH), "policy-signing-key.pub")
+
+
+class PolicySignatureVerifier:
+    """
+    Verifies the Ed25519 signature admin-api attaches to every policy bundle
+    (X-Policy-Signature / X-Policy-Key-Id on GET /internal/agent/rules) —
+    this agent's half of the contract services/admin-api/internal/policysig
+    implements. A bundle that arrived over an authenticated HTTPS connection
+    has proven who sent it, not that the bytes weren't altered somewhere
+    between the database and this device; the signature is what proves the
+    latter.
+
+    Trust-on-first-use, deliberately: the public key is fetched once and
+    pinned to ~/.aavishield/policy-signing-key.pub, the same posture the org
+    CA certificate already gets for MITM. Re-fetching on every restart would
+    let whoever controls the network path at that exact moment hand a fresh
+    device a different key, silently defeating the point of signing at all.
+    """
+
+    def __init__(self, config: dict):
+        self.config = config
+        self._lock = threading.Lock()
+        self._key_id: Optional[str] = None
+        self._public_key = None
+        self._warned_no_crypto = False
+
+    def ensure_key(self):
+        if _ed25519 is None:
+            if not self._warned_no_crypto:
+                log.warning("cryptography package not available — policy bundle signatures will NOT be verified")
+                self._warned_no_crypto = True
+            return
+        with self._lock:
+            if self._public_key is not None:
+                return
+        pinned = self._load_pinned()
+        if pinned:
+            with self._lock:
+                self._key_id, self._public_key = pinned
+            log.info("Loaded pinned policy signing key (key_id=%s)", pinned[0])
+            return
+        fetched = self._fetch_and_pin()
+        if fetched:
+            with self._lock:
+                self._key_id, self._public_key = fetched
+
+    def _load_pinned(self):
+        try:
+            with open(_POLICY_PUBKEY_PATH, "r", encoding="utf-8") as f:
+                lines = f.read().splitlines()
+            key_id, pubkey_b64 = lines[0].strip(), lines[1].strip()
+        except (OSError, IndexError):
+            return None
+        return self._parse_key(key_id, pubkey_b64)
+
+    def _fetch_and_pin(self):
+        try:
+            req = _agent_request(self.config, "/internal/agent/policy-public-key")
+            with _DIRECT_OPENER.open(req, timeout=RULES_FETCH_TIMEOUT) as resp:
+                body = json.loads(resp.read().decode("utf-8"))
+        except (urllib.error.URLError, ValueError, OSError) as exc:
+            mark_revoked_if_auth_error(exc)
+            log.warning("Could not fetch policy signing public key (%s) — bundles will be rejected until this succeeds", exc)
+            return None
+
+        key_id, pubkey_b64 = body.get("key_id", ""), body.get("public_key", "")
+        parsed = self._parse_key(key_id, pubkey_b64)
+        if parsed is None:
+            log.warning("Policy signing public key endpoint returned an unusable key")
+            return None
+        try:
+            os.makedirs(os.path.dirname(_POLICY_PUBKEY_PATH), exist_ok=True)
+            with open(_POLICY_PUBKEY_PATH, "w", encoding="utf-8") as f:
+                f.write(f"{key_id}\n{pubkey_b64}\n")
+            log.info("Pinned policy signing public key (key_id=%s)", key_id)
+        except OSError as exc:
+            log.warning("Could not persist pinned policy signing key (%s) — will re-fetch next restart", exc)
+        return parsed
+
+    @staticmethod
+    def _parse_key(key_id: str, pubkey_b64: str):
+        if not key_id or not pubkey_b64:
+            return None
+        try:
+            raw = base64.b64decode(pubkey_b64, validate=True)
+            key = _ed25519.Ed25519PublicKey.from_public_bytes(raw)
+        except (ValueError, TypeError):
+            return None
+        return key_id, key
+
+    def verify(self, body: bytes, sig_b64: Optional[str], key_id: Optional[str]) -> bool:
+        """Every failure mode is a hard reject EXCEPT the cryptography package
+        being unavailable at all, which fails open (logged once in
+        ensure_key) — a missing optional dependency degrading a defense-in-
+        depth layer is not the same risk as an actual bad signature."""
+        if _ed25519 is None:
+            return True
+        if not sig_b64 or not key_id:
+            log.warning("Policy bundle missing signature headers — rejecting")
+            return False
+        with self._lock:
+            pinned_id, key = self._key_id, self._public_key
+        if key is None:
+            log.warning("No pinned policy signing key available yet — rejecting")
+            return False
+        if pinned_id != key_id:
+            log.warning("Policy signature key_id mismatch (pinned=%s got=%s) — rejecting", pinned_id, key_id)
+            return False
+        try:
+            sig = base64.b64decode(sig_b64, validate=True)
+            key.verify(sig, body)
+            return True
+        except (InvalidSignature, ValueError, TypeError):
+            log.warning("Policy bundle signature does not verify — rejecting (possible tampering)")
+            return False
+
+
 # ─── Policy cache ──────────────────────────────────────────────────────────────
 
 class PolicyCache:
@@ -301,17 +436,33 @@ class PolicyCache:
         self._lock = threading.Lock()
         self._by_domain: dict = {}
         self._loaded = False
+        self._sig_verifier = PolicySignatureVerifier(config)
 
     def refresh(self):
         if AGENT_REVOKED.is_set():
             return
+        self._sig_verifier.ensure_key()
         try:
             req = _agent_request(self.config, "/internal/agent/rules")
             with _DIRECT_OPENER.open(req, timeout=RULES_FETCH_TIMEOUT) as resp:
-                body = json.loads(resp.read().decode("utf-8"))
+                raw = resp.read()
+                sig = resp.headers.get("X-Policy-Signature")
+                key_id = resp.headers.get("X-Policy-Key-Id")
         except (urllib.error.URLError, ValueError, OSError) as exc:
             mark_revoked_if_auth_error(exc)
             log.warning("Rule refresh failed (%s) — keeping cached rules", exc)
+            return
+
+        # Reject outright rather than apply an unverified bundle — a network
+        # position that can serve a 200 with a plausible-looking JSON body is
+        # exactly the threat this signature defends against.
+        if not self._sig_verifier.verify(raw, sig, key_id):
+            return
+
+        try:
+            body = json.loads(raw.decode("utf-8"))
+        except ValueError as exc:
+            log.warning("Rule refresh returned unparseable body (%s) — keeping cached rules", exc)
             return
 
         index: dict = {}
@@ -3403,6 +3554,8 @@ class TrayUI:
                 pystray.Menu.SEPARATOR,
                 pystray.MenuItem("Open activity", self._open_portal),
                 pystray.MenuItem("Check for updates now", self._check_updates),
+                pystray.Menu.SEPARATOR,
+                pystray.MenuItem("Uninstall Aavishield...", self._open_uninstall),
             )
             self._icon = pystray.Icon("aavishield", image, "Aavishield", menu)
             threading.Thread(target=self._follow_mode, daemon=True).start()
@@ -3471,6 +3624,16 @@ class TrayUI:
             AutoUpdater(self.config).check_once()
         except Exception as exc:  # noqa: BLE001
             log.warning("manual update check failed: %s", exc)
+
+    def _open_uninstall(self, *_):
+        # The uninstall itself needs elevated/administrator privileges on every
+        # platform, which a background tray process cannot silently obtain (nor
+        # should it). The portal's Download page already builds a working,
+        # per-OS uninstaller — send the person there rather than reimplement
+        # privilege escalation three different ways in the frozen agent.
+        import webbrowser  # noqa: PLC0415
+        portal_url = (self.config.get("portal_url") or self.config["admin_url"]).rstrip("/")
+        webbrowser.open(f"{portal_url}/dashboard/download")
 
 
 def main():

@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 
 type OSType = "macos" | "windows" | "linux";
 
-type NativePackage = { filename: string; url: string; version: string; size: number };
+type NativePackage = { filename: string; url: string; version: string; size: number; sha256: string };
 type InstallerInfo = {
   os: OSType;
   token: string;
@@ -237,6 +237,17 @@ export default function DownloadPage() {
             <Package className="w-5 h-5" />
             Download {native.filename.split(".").pop()?.toUpperCase()}
           </a>
+
+          {native.sha256 && (
+            <button
+              onClick={() => copy(native.sha256, "SHA-256")}
+              className="mt-2 flex items-center gap-1.5 text-xs text-subtle hover:text-muted-foreground transition-colors"
+              title="Copy the SHA-256 checksum to verify this download wasn't tampered with"
+            >
+              <Copy className="w-3 h-3 flex-shrink-0" />
+              <span className="truncate font-mono">SHA-256: {native.sha256}</span>
+            </button>
+          )}
 
           <ol className="mt-5 space-y-3">
             {NATIVE_STEPS[selectedOS.id].map((step, i) => (
