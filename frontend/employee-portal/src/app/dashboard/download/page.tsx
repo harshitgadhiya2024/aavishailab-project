@@ -67,6 +67,25 @@ const NATIVE_STEPS: Record<OSType, NativeStep[]> = {
   ],
 };
 
+/** How to remove the agent without the guided uninstaller script below —
+ *  the native, OS-standard way to uninstall on each platform. */
+const UNINSTALL_STEPS: Record<OSType, NativeStep[]> = {
+  macos: [
+    { title: "Open Finder → Applications → double-click \"Aavishield Uninstaller\"" },
+    { title: "Enter your Mac login password when asked" },
+    { title: "The agent stops, the proxy clears, and all files are removed" },
+  ],
+  windows: [
+    { title: "Open Settings → Apps → Installed apps" },
+    { title: "Find \"Aavishield Agent\" in the list and click Uninstall" },
+    { title: "Confirm the prompt — it removes the agent completely" },
+  ],
+  linux: [
+    { title: "Open a terminal" },
+    { title: "Remove the package", code: "sudo apt remove aavishield-agent" },
+  ],
+};
+
 const OS_OPTIONS: { id: OSType; label: string; icon: React.ElementType; desc: string; steps: string[] }[] = [
   {
     id: "macos",
@@ -311,20 +330,48 @@ export default function DownloadPage() {
 
       {selectedOS && (
         <div className="bg-card rounded-xl border border-border shadow-sm p-6">
-          <p className="text-sm font-medium text-body mb-2">Need to remove the agent?</p>
-          <button
-            onClick={handleUninstall}
-            disabled={uninstalling}
-            className="flex items-center gap-2 border border-red-500/30 text-danger hover:bg-red-500/10 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
-          >
-            {uninstalling
-              ? <Loader2 className="w-4 h-4 animate-spin" />
-              : <Trash2 className="w-4 h-4" />}
-            {uninstalling ? "Preparing..." : `Download Uninstaller for ${selectedOS?.label}`}
-          </button>
-          <p className="text-xs text-subtle mt-2">
-            Stops the agent, clears system proxy, and removes all files.
+          <p className="text-sm font-medium text-body mb-3">Need to remove the agent?</p>
+
+          <ol className="space-y-3 mb-5">
+            {UNINSTALL_STEPS[selectedOS.id].map((step, i) => (
+              <li key={i} className="flex items-start gap-3 text-sm text-body">
+                <span className="w-6 h-6 rounded-full bg-red-500/10 text-danger text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">
+                  {i + 1}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <span>{step.title}</span>
+                  {step.code && (
+                    <pre className="mt-1.5 bg-black text-green-400 text-xs rounded-lg px-3 py-2 overflow-x-auto whitespace-pre-wrap break-all font-mono leading-relaxed border border-border">
+                      {step.code}
+                    </pre>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ol>
+
+          <p className="text-xs text-subtle mb-2">
+            Or use the tray icon: right-click it and choose "Uninstall Aavishield...".
           </p>
+
+          <details className="group">
+            <summary className="text-xs text-brand-500 hover:text-brand-400 cursor-pointer select-none">
+              None of these handy? Download a guided uninstaller instead
+            </summary>
+            <button
+              onClick={handleUninstall}
+              disabled={uninstalling}
+              className="mt-3 flex items-center gap-2 border border-red-500/30 text-danger hover:bg-red-500/10 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
+            >
+              {uninstalling
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : <Trash2 className="w-4 h-4" />}
+              {uninstalling ? "Preparing..." : `Download Uninstaller for ${selectedOS?.label}`}
+            </button>
+            <p className="text-xs text-subtle mt-2">
+              Stops the agent, clears system proxy, and removes all files.
+            </p>
+          </details>
         </div>
       )}
     </div>
