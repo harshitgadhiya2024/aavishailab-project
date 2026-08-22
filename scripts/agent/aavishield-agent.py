@@ -3554,6 +3554,8 @@ class TrayUI:
                 pystray.Menu.SEPARATOR,
                 pystray.MenuItem("Open activity", self._open_portal),
                 pystray.MenuItem("Check for updates now", self._check_updates),
+                pystray.Menu.SEPARATOR,
+                pystray.MenuItem("Uninstall Aavishield...", self._open_uninstall),
             )
             self._icon = pystray.Icon("aavishield", image, "Aavishield", menu)
             threading.Thread(target=self._follow_mode, daemon=True).start()
@@ -3622,6 +3624,16 @@ class TrayUI:
             AutoUpdater(self.config).check_once()
         except Exception as exc:  # noqa: BLE001
             log.warning("manual update check failed: %s", exc)
+
+    def _open_uninstall(self, *_):
+        # The uninstall itself needs elevated/administrator privileges on every
+        # platform, which a background tray process cannot silently obtain (nor
+        # should it). The portal's Download page already builds a working,
+        # per-OS uninstaller — send the person there rather than reimplement
+        # privilege escalation three different ways in the frozen agent.
+        import webbrowser  # noqa: PLC0415
+        portal_url = (self.config.get("portal_url") or self.config["admin_url"]).rstrip("/")
+        webbrowser.open(f"{portal_url}/dashboard/download")
 
 
 def main():
