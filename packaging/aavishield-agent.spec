@@ -73,7 +73,11 @@ a = Analysis(
     runtime_hooks=[],
     # Trim the heavyweight stdlib GUI/test packages the agent never touches;
     # keeps the binary small enough to ship as an auto-update payload.
-    excludes=["tkinter", "unittest", "pydoc_data", "test", "distutils"],
+    # distutils is deliberately NOT excluded: pywebview's Windows backend
+    # pulls in pythonnet/clr-loader, whose PyInstaller hook imports it, and
+    # excluding a module another hook requires is a hard build error
+    # ("already imported as ExcludedModule"). The size win wasn't worth it.
+    excludes=["tkinter", "unittest", "pydoc_data", "test"],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
