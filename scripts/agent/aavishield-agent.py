@@ -3075,6 +3075,50 @@ def _discard_enroll_drops():
             log.warning("could not remove enrollment drop %s: %s", path, exc)
 
 
+# Kept open for the life of the process — closing the file descriptor (or the
+# process exiting) is what releases the lock. Must be a module-level name, not
+# a local in acquire_single_instance_lock(), or it would be garbage-collected
+# (and the lock released) the moment that function returns.
+_INSTANCE_LOCK_FILE = None
+
+
+def acquire_single_instance_lock() -> bool:
+    """True if this is the only running copy of the agent; False if another
+    instance already holds the lock.
+
+    Verified on a real Mac: launchd can end up starting the LaunchAgent
+    twice within the same second — the postinstall script's explicit
+    `launchctl bootstrap` racing launchd's own RunAtLoad pickup of a plist
+    that just appeared on disk — producing two fully live agent processes at
+    once, both fighting over the same enrollment-callback port forever
+    (neither ever wins, since neither exits). That's an expected startup
+    race, not a real failure, and the loser should exit quietly — not spam
+    the same "can't bind" error and notification every few seconds for good.
+    """
+    global _INSTANCE_LOCK_FILE
+    lock_dir = os.path.dirname(CONFIG_PATH)
+    os.makedirs(lock_dir, exist_ok=True)
+    lock_path = os.path.join(lock_dir, "agent.lock")
+    try:
+        _INSTANCE_LOCK_FILE = open(lock_path, "w")
+        if platform.system() == "Windows":
+            import msvcrt  # noqa: PLC0415 - Windows-only stdlib module
+
+            msvcrt.locking(_INSTANCE_LOCK_FILE.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl  # noqa: PLC0415 - POSIX-only stdlib module
+
+            fcntl.flock(_INSTANCE_LOCK_FILE.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _INSTANCE_LOCK_FILE.write(str(os.getpid()))
+        _INSTANCE_LOCK_FILE.flush()
+        return True
+    except OSError:
+        if _INSTANCE_LOCK_FILE is not None:
+            _INSTANCE_LOCK_FILE.close()
+            _INSTANCE_LOCK_FILE = None
+        return False
+
+
 def ensure_enrolled() -> Optional[dict]:
     """Return an existing config, or enroll if a token was supplied."""
     if os.path.exists(CONFIG_PATH):
@@ -3701,6 +3745,17 @@ def main():
     # one signed, notarized executable instead of two.
     if "--ca-trust-daemon" in sys.argv[1:]:
         sys.exit(ca_trust_daemon())
+
+    if not acquire_single_instance_lock():
+        # Not an error — see acquire_single_instance_lock()'s docstring for
+        # the exact startup race this guards against. The other instance
+        # already holds the lock and is doing the real work; this one has
+        # nothing left to do. The sleep keeps KeepAlive from respawning a
+        # pointless loser in a tight loop; it'll keep losing the lock to the
+        # same winner every time regardless, so there's nothing to retry for.
+        log.debug("another agent instance already holds the lock — exiting quietly")
+        time.sleep(5)
+        sys.exit(0)
 
     config = ensure_enrolled()
     if config is None:
