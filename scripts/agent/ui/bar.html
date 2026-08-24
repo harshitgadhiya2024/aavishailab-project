@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Aavishield</title>
+<style>
+  :root {
+    --brand: #FF7000;
+    --card: #141414; --border-strong: #383838; --border: #262626;
+    --fg: #F5F5F5; --subtle: #6B6B6B; --faint: #4A4A4A; --muted: #A3A3A3;
+    --success: #4ADE80; --warn: #FACC15;
+  }
+  * { box-sizing: border-box; -webkit-user-select: none; user-select: none; }
+  html, body { height: 100%; margin: 0; background: transparent; overflow: hidden; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    /* The whole bar drags; the two actions opt out. */
+    -webkit-app-region: drag;
+  }
+  .bar {
+    height: 100%; display: flex; align-items: center; gap: 11px;
+    background: var(--card); border: 1px solid var(--border-strong);
+    border-radius: 10px; padding: 0 12px;
+  }
+  .grip { display: grid; grid-template-columns: repeat(2, 2.5px); gap: 2.5px; flex: 0 0 auto; cursor: grab; }
+  .grip span { width: 2.5px; height: 2.5px; border-radius: 50%; background: var(--faint); display: block; }
+  .mark { width: 21px; height: 21px; flex: 0 0 auto; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+  .txt { font-size: 12.5px; font-weight: 550; color: var(--fg); white-space: nowrap; }
+  .sep { width: 1px; height: 15px; background: var(--border); flex: 0 0 auto; }
+  .sub {
+    font-size: 11.5px; color: var(--subtle); white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; min-width: 0;
+  }
+  .acts { margin-left: auto; display: flex; align-items: center; gap: 11px; flex: 0 0 auto; }
+  .acts button {
+    -webkit-app-region: no-drag; border: 0; background: transparent;
+    font-family: inherit; font-size: 11.5px; cursor: pointer; padding: 3px 4px; border-radius: 4px;
+  }
+  #act-open { color: var(--brand); font-weight: 600; }
+  #act-hide { color: var(--subtle); font-weight: 550; }
+  .acts button:hover { background: #1E1E1E; }
+  .acts button:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+</style>
+</head>
+<body>
+  <div class="bar">
+    <div class="grip"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+    <span id="mark"></span>
+    <div class="dot" id="dot"></div>
+    <span class="txt" id="txt">—</span>
+    <div class="sep"></div>
+    <span class="sub" id="sub"></span>
+    <div class="acts">
+      <button id="act-open">Open</button>
+      <button id="act-hide">Hide</button>
+    </div>
+  </div>
+
+<script>
+  const SHIELD = '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>';
+  const CHECK  = '<path d="M9 12l2 2 4-4"/>';
+  const PAUSE  = '<path d="M10 10v4M14 10v4"/>';
+  const el = (id) => document.getElementById(id);
+
+  function mark(color, extra = "") {
+    el("mark").innerHTML =
+      `<svg class="mark" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="1.7"
+            stroke-linecap="round" stroke-linejoin="round">${SHIELD}${extra}</svg>`;
+  }
+
+  function paint(s) {
+    const open = el("act-open");
+    if (s.state === "connected") {
+      mark("#4ADE80", CHECK);
+      el("dot").style.cssText = "background:#4ADE80;box-shadow:0 0 0 3px rgba(74,222,128,.16)";
+      el("txt").textContent = "Protected"; el("txt").style.color = "#F5F5F5";
+      el("sub").textContent = s.org_name || "";
+      open.textContent = "Open";
+    } else if (s.state === "paused") {
+      mark("#FACC15", PAUSE);
+      el("dot").style.cssText = "background:#FACC15;box-shadow:0 0 0 3px rgba(250,204,21,.16)";
+      el("txt").textContent = "Paused"; el("txt").style.color = "#F5F5F5";
+      el("sub").textContent = s.reason || "Personal time";
+      open.textContent = "Open";
+    } else if (s.state === "connecting") {
+      mark("#FF7000");
+      el("dot").style.cssText = "background:#FF7000;box-shadow:0 0 0 3px rgba(255,112,0,.16)";
+      el("txt").textContent = "Signing in"; el("txt").style.color = "#F5F5F5";
+      el("sub").textContent = "Finish in your browser";
+      open.textContent = "Open";
+    } else if (s.state === "blocked") {
+      mark("#F87171");
+      el("dot").style.cssText = "background:#F87171";
+      el("txt").textContent = "Can't connect"; el("txt").style.color = "#A3A3A3";
+      el("sub").textContent = "Ask your IT administrator";
+      open.textContent = "Open";
+    } else {
+      mark("#6B6B6B");
+      el("dot").style.cssText = "background:#4A4A4A";
+      el("txt").textContent = "Not connected"; el("txt").style.color = "#A3A3A3";
+      el("sub").textContent = "Sign in to protect";
+      open.textContent = "Connect";
+    }
+  }
+
+  async function refresh() {
+    try { paint(await window.pywebview.api.get_state()); } catch (e) {}
+  }
+
+  el("act-open").addEventListener("click", async () => {
+    if (el("act-open").textContent === "Connect") await window.pywebview.api.connect();
+    window.pywebview.api.restore_window();
+  });
+  el("act-hide").addEventListener("click", () => window.pywebview.api.hide_all());
+
+  window.addEventListener("pywebviewready", refresh);
+  setInterval(refresh, 2000);
+  refresh();
+</script>
+</body>
+</html>

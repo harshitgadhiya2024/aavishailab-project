@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Aavishield</title>
+<style>
+  /* Tokens lifted from the portal's globals.css so the app and the web
+     dashboards are visibly the same product. Committed dark: this is a
+     product surface with its own identity, not a page that adapts to a host. */
+  :root {
+    --brand: #FF7000; --brand-600: #E56400;
+    --panel: #111111; --card: #141414; --sunken: #0D0D0D; --elevated: #1E1E1E;
+    --border: #262626; --border-strong: #383838;
+    --fg: #F5F5F5; --body: #D4D4D4; --muted: #A3A3A3; --subtle: #6B6B6B; --faint: #4A4A4A;
+    --success: #4ADE80; --warn: #FACC15; --danger: #F87171;
+    --on-brand: #0A0A0A;
+  }
+  * { box-sizing: border-box; -webkit-user-select: none; user-select: none; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--panel); color: var(--body);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+    font-size: 14px; -webkit-font-smoothing: antialiased;
+    display: flex; flex-direction: column;
+    /* The whole window is a drag handle except the controls — a frameless
+       window has no title bar to grab. */
+    -webkit-app-region: drag;
+  }
+  button, a, .no-drag { -webkit-app-region: no-drag; }
+
+  /* ── title bar ── */
+  .titlebar {
+    height: 38px; flex: 0 0 auto; display: flex; align-items: center;
+    padding: 0 12px; background: var(--card); border-bottom: 1px solid var(--border);
+  }
+  .brandmark { display: flex; align-items: center; gap: 7px; }
+  .brandmark svg { width: 15px; height: 15px; }
+  .brandmark span { font-size: 12.5px; font-weight: 600; color: var(--fg); letter-spacing: .01em; }
+  .winbtns { margin-left: auto; display: flex; gap: 2px; }
+  .winbtn {
+    width: 26px; height: 24px; border: 0; background: transparent; color: var(--subtle);
+    border-radius: 5px; cursor: pointer; display: grid; place-items: center; padding: 0;
+  }
+  .winbtn:hover { background: var(--elevated); color: var(--fg); }
+  .winbtn:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+  .winbtn svg { width: 13px; height: 13px; pointer-events: none; }
+
+  /* ── body ── */
+  .main { flex: 1 1 auto; padding: 26px 24px 18px; text-align: center; overflow-y: auto; }
+
+  .medallion { position: relative; width: 92px; height: 92px; margin: 0 auto 20px; }
+  .ring {
+    position: absolute; inset: 0; border-radius: 50%;
+    border: 1.5px solid var(--ring-c, var(--border-strong)); background: var(--ring-bg, transparent);
+  }
+  .ring.pulse { animation: pulse 2.4s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { transform: scale(1); opacity: .9 } 50% { transform: scale(1.06); opacity: .45 } }
+  @media (prefers-reduced-motion: reduce) { .ring.pulse { animation: none } }
+  .glyph { position: absolute; inset: 0; display: grid; place-items: center; }
+  .glyph svg { width: 40px; height: 40px; }
+
+  h1 { font-size: 18px; font-weight: 650; color: var(--fg); margin: 0 0 6px; letter-spacing: -.01em; }
+  .sub { font-size: 13px; color: var(--subtle); margin: 0 0 22px; line-height: 1.5; }
+
+  .profile {
+    display: flex; align-items: center; gap: 11px; text-align: left;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 9px; padding: 11px 13px; margin-bottom: 16px;
+  }
+  .profile.live { border-color: rgba(74,222,128,.28); background: rgba(74,222,128,.05); }
+  .avatar {
+    width: 32px; height: 32px; border-radius: 7px; flex: 0 0 auto;
+    background: linear-gradient(145deg, var(--brand), var(--brand-600));
+    display: grid; place-items: center; color: var(--on-brand); font-weight: 700; font-size: 13px;
+  }
+  .pname { font-size: 13.5px; font-weight: 550; color: var(--fg); line-height: 1.35; }
+  .pmeta { font-size: 11.5px; color: var(--subtle); line-height: 1.35; }
+  .pstate { margin-left: auto; font-size: 11px; font-variant-numeric: tabular-nums; }
+
+  .btn {
+    display: block; width: 100%; border-radius: 8px; padding: 11px 16px;
+    font-size: 14px; font-weight: 600; font-family: inherit;
+    border: 1px solid transparent; cursor: pointer;
+  }
+  .btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+  .btn-primary { background: var(--brand); color: var(--on-brand); }
+  .btn-primary:hover { background: var(--brand-600); }
+  .btn-busy { background: var(--elevated); color: var(--muted); border-color: var(--border); cursor: default; }
+  .btn[disabled] { opacity: .55; cursor: default; }
+
+  /* Blocked-reconnect notice. Deliberately not styled as a dismissible
+     toast: it's the whole reason the window is open, and it names the one
+     action that resolves it. */
+  .notice {
+    text-align: left; background: rgba(248,113,113,.07);
+    border: 1px solid rgba(248,113,113,.28); border-radius: 9px;
+    padding: 12px 13px; margin-bottom: 16px;
+  }
+  .notice .nt { font-size: 12.5px; font-weight: 600; color: #FCA5A5; margin-bottom: 4px; }
+  .notice .nd { font-size: 12px; color: var(--muted); line-height: 1.5; }
+
+  .foot {
+    flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 15px; border-top: 1px solid var(--border); background: var(--sunken);
+    font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums;
+  }
+  .foot button {
+    border: 0; background: transparent; color: var(--subtle); font-size: 11px;
+    font-family: inherit; cursor: pointer; padding: 2px 4px; border-radius: 4px;
+  }
+  .foot button:hover { color: var(--fg); }
+  .foot button:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+  <div class="titlebar">
+    <div class="brandmark">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#FF7000" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+      </svg>
+      <span>Aavishield</span>
+    </div>
+    <div class="winbtns">
+      <button class="winbtn" id="btn-min" title="Minimize to bar" aria-label="Minimize to bar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14"/></svg>
+      </button>
+      <button class="winbtn" id="btn-hide" title="Hide — keeps running" aria-label="Hide">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 6 6 18M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="medallion">
+      <div class="ring" id="ring"></div>
+      <div class="glyph" id="glyph"></div>
+    </div>
+
+    <h1 id="headline">Not connected</h1>
+    <p class="sub" id="subline">Sign in to protect this device</p>
+
+    <div class="notice hidden" id="notice">
+      <div class="nt">Device already registered</div>
+      <div class="nd" id="notice-body"></div>
+    </div>
+
+    <div class="profile" id="profile">
+      <div class="avatar" id="avatar">A</div>
+      <div>
+        <div class="pname" id="org-name">—</div>
+        <div class="pmeta" id="who">Work profile</div>
+      </div>
+      <div class="pstate" id="uptime"></div>
+    </div>
+
+    <button class="btn btn-primary" id="cta">Connect</button>
+  </div>
+
+  <div class="foot">
+    <span id="version">v—</span>
+    <button id="btn-uninstall" class="hidden">Uninstall</button>
+  </div>
+
+<script>
+  const SHIELD = '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>';
+  const CHECK  = '<path d="M9 12l2 2 4-4"/>';
+  const PAUSE  = '<path d="M10 10v4M14 10v4"/>';
+
+  const el = (id) => document.getElementById(id);
+
+  function shield(color, extra = "", pulse = false) {
+    el("glyph").innerHTML =
+      `<svg viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="1.6"
+            stroke-linecap="round" stroke-linejoin="round">${SHIELD}${extra}</svg>`;
+    const ring = el("ring");
+    ring.className = "ring" + (pulse ? " pulse" : "");
+    return ring;
+  }
+
+  function paint(s) {
+    el("version").textContent = "v" + (s.version || "—");
+    el("org-name").textContent = s.org_name || "Your company";
+    el("avatar").textContent = (s.org_name || "A").trim().charAt(0).toUpperCase();
+
+    const cta = el("cta");
+    const profile = el("profile");
+    const notice = el("notice");
+    const ring = el("ring");
+
+    notice.classList.add("hidden");
+    profile.classList.remove("live");
+    el("uptime").textContent = "";
+    cta.className = "btn btn-primary";
+    cta.disabled = false;
+
+    if (s.state === "connected") {
+      shield("#4ADE80", CHECK);
+      ring.style.cssText = "--ring-c: rgba(74,222,128,.5); --ring-bg: rgba(74,222,128,.07)";
+      el("headline").textContent = "Protected";
+      el("subline").textContent = "Your device is connected and monitored";
+      el("who").textContent = s.employee_name || "This device";
+      el("uptime").textContent = s.uptime || "";
+      el("uptime").style.color = "#4ADE80";
+      profile.classList.add("live");
+      // No disconnect: a device enrols once, and unhooking it is the
+      // company's decision, not something to offer as a button here.
+      cta.classList.remove("btn-primary");
+      cta.className = "btn btn-busy";
+      cta.textContent = "Connected";
+      cta.disabled = true;
+
+    } else if (s.state === "paused") {
+      // Only ever reached on a personal device — the server forces company
+      // hardware to "full", so this state cannot appear there.
+      shield("#FACC15", PAUSE);
+      ring.style.cssText = "--ring-c: rgba(250,204,21,.45); --ring-bg: rgba(250,204,21,.06)";
+      el("headline").textContent = "Paused";
+      el("subline").textContent = s.reason || "Personal time — monitoring is off";
+      el("who").textContent = s.employee_name || "This device";
+      profile.classList.add("live");
+      cta.className = "btn btn-busy";
+      cta.textContent = "Connected";
+      cta.disabled = true;
+
+    } else if (s.state === "connecting") {
+      shield("#FF7000", "", true);
+      ring.style.cssText = "--ring-c: #FF7000; --ring-bg: rgba(255,112,0,.07)";
+      el("headline").textContent = "Waiting for browser";
+      el("subline").textContent = "Finish signing in — this window updates on its own";
+      el("who").textContent = "Work profile";
+      el("uptime").textContent = "···";
+      el("uptime").style.color = "#FF7000";
+      cta.className = "btn btn-busy";
+      cta.textContent = "Cancel";
+
+    } else if (s.state === "blocked") {
+      shield("#F87171");
+      ring.style.cssText = "--ring-c: rgba(248,113,113,.4); --ring-bg: rgba(248,113,113,.05)";
+      el("headline").textContent = "Can't connect";
+      el("subline").textContent = "";
+      el("notice-body").textContent = s.message ||
+        "Your device entry already exists so ask to company IT administrator to give permission to again connect";
+      notice.classList.remove("hidden");
+      el("who").textContent = "Work profile";
+      cta.className = "btn btn-busy";
+      cta.textContent = "Waiting for permission";
+      cta.disabled = true;
+
+    } else {
+      shield("#6B6B6B");
+      ring.style.cssText = "--ring-c: #2E2E2E";
+      el("headline").textContent = "Not connected";
+      el("subline").textContent = "Sign in to protect this device";
+      el("who").textContent = "Work profile";
+      cta.textContent = "Connect";
+    }
+
+    // Uninstall only exists where the company turned it on for this device.
+    el("btn-uninstall").classList.toggle("hidden", !s.uninstall_allowed);
+  }
+
+  async function refresh() {
+    try { paint(await window.pywebview.api.get_state()); }
+    catch (e) { /* bridge not up yet on the first tick */ }
+  }
+
+  el("cta").addEventListener("click", async () => {
+    const label = el("cta").textContent;
+    if (el("cta").disabled) return;
+    if (label === "Cancel") await window.pywebview.api.cancel_connect();
+    else await window.pywebview.api.connect();
+    refresh();
+  });
+  el("btn-min").addEventListener("click", () => window.pywebview.api.minimize_to_bar());
+  el("btn-hide").addEventListener("click", () => window.pywebview.api.hide_all());
+  el("btn-uninstall").addEventListener("click", () => window.pywebview.api.open_uninstall());
+
+  window.addEventListener("pywebviewready", refresh);
+  setInterval(refresh, 2000);
+  refresh();
+</script>
+</body>
+</html>

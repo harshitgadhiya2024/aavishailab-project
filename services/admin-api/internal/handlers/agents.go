@@ -491,12 +491,26 @@ func (h *AgentHandler) GetConfig(c *gin.Context) {
 	var dev models.Device
 	h.db.Select("ownership", "uninstall_allowed").Where("id = ?", deviceID).First(&dev)
 
+	// Names for the desktop UI's profile card — it has no other source for
+	// them, and showing an employee a bare UUID would be worse than nothing.
+	var orgName string
+	h.db.Model(&models.Organization{}).Where("id = ?", orgID).Pluck("name", &orgName)
+	var empName string
+	if empID != nil {
+		var emp models.Employee
+		if h.db.Select("first_name", "last_name").Where("id = ?", *empID).First(&emp).Error == nil {
+			empName = strings.TrimSpace(emp.FirstName + " " + emp.LastName)
+		}
+	}
+
 	swgHost, swgPort := swgEndpoint()
 	c.JSON(http.StatusOK, gin.H{
 		"device_id":          deviceID,
 		"org_id":             orgID,
 		"ownership":          dev.Ownership,
 		"uninstall_allowed":  dev.UninstallAllowed,
+		"org_name":           orgName,
+		"employee_name":      empName,
 		"rules_count":        ruleCount,
 		"policy_count":       policyCount,
 		"proxy_mode":         "http",

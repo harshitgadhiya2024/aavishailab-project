@@ -29,6 +29,14 @@ for mod in (
     "pynput.keyboard._darwin", "pynput.mouse._darwin",
     "pynput.keyboard._win32", "pynput.mouse._win32",
     "pynput.keyboard._xorg", "pynput.mouse._xorg",
+    # Desktop UI. Each platform has exactly one usable backend and the others
+    # legitimately fail to import here, which the probe below already handles;
+    # naming them all keeps one spec working for all three builds.
+    "webview",
+    "webview.platforms.cocoa",          # macOS (PyObjC + WebKit)
+    "webview.platforms.edgechromium",   # Windows (WebView2 via pythonnet)
+    "webview.platforms.winforms",       # Windows fallback
+    "webview.platforms.gtk",            # Linux (WebKitGTK)
 ):
     try:
         __import__(mod)
@@ -45,11 +53,20 @@ for mod in (
 # — and risk leaving edits in — the tracked source.
 agent_source = os.environ.get("AAVISHIELD_AGENT_SRC") or "../scripts/agent/aavishield-agent.py"
 
+# The desktop UI's HTML, resolved from the repo rather than from the stamped
+# scratch copy the build scripts point AAVISHIELD_AGENT_SRC at — those live in
+# build/, which has no ui/ directory. Bundled under "ui/" so _ui_asset() finds
+# it at sys._MEIPASS/ui/. Absent assets are not fatal: the agent falls back to
+# the tray, exactly as it does when pywebview itself is missing.
+_repo_root = os.path.dirname(SPECPATH)
+_ui_dir = os.path.join(_repo_root, "scripts", "agent", "ui")
+ui_datas = [(_ui_dir, "ui")] if os.path.isdir(_ui_dir) else []
+
 a = Analysis(
     [agent_source],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=ui_datas,
     hiddenimports=required_hiddenimports + optional_hiddenimports,
     hookspath=[],
     hooksconfig={},

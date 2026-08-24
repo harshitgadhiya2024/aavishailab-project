@@ -2721,7 +2721,7 @@ def send_heartbeat(config: dict):
     SCREENSHOT.apply(body.get("screenshots"))
 
 
-def seed_enforcement(config: dict):
+def seed_enforcement(config: dict, state: "Optional[AgentState]" = None):
     """One-shot fetch of the working-hours verdict at startup.
 
     Fails open to "enforcing": if the server can't be reached we cannot know a
@@ -2739,6 +2739,15 @@ def seed_enforcement(config: dict):
         return
     GATE.apply(body.get("enforcement"))
     SCREENSHOT.apply(body.get("screenshots"))
+
+    # Only the company can enable removal, so the desktop UI has to learn it
+    # from the server rather than assume — the entry stays hidden until then.
+    if state is not None:
+        state.set_org_info(
+            org_name=body.get("org_name") or "",
+            employee_name=body.get("employee_name") or "",
+            uninstall_allowed=bool(body.get("uninstall_allowed")),
+        )
 
 
 def heartbeat_loop(config: dict):
@@ -3065,6 +3074,91 @@ def _find_enroll_token() -> Tuple[Optional[str], Optional[str]]:
     return None, None
 
 
+class AgentState:
+    """What the desktop UI renders, kept apart from how the agent works.
+
+    The UI polls this a couple of times a second from the webview thread while
+    enrollment, heartbeats and the enforcement gate all write to it from their
+    own threads — hence the lock. It holds presentation state only: no
+    credentials, and nothing the UI could use to change enforcement.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._state = "disconnected"       # disconnected|connecting|connected|paused|blocked
+        self._message = ""
+        self._org_name = ""
+        self._employee_name = ""
+        self._connected_at: Optional[float] = None
+        self._uninstall_allowed = False
+
+    def _set(self, **kw):
+        with self._lock:
+            for k, v in kw.items():
+                setattr(self, "_" + k, v)
+
+    def set_disconnected(self):
+        self._set(state="disconnected", message="")
+
+    def set_connecting(self):
+        self._set(state="connecting", message="")
+
+    def set_blocked(self, message: str):
+        self._set(state="blocked", message=message)
+
+    def set_connected(self, org_name: str = "", employee_name: str = ""):
+        with self._lock:
+            self._state = "connected"
+            self._message = ""
+            if org_name:
+                self._org_name = org_name
+            if employee_name:
+                self._employee_name = employee_name
+            if self._connected_at is None:
+                self._connected_at = time.time()
+
+    def set_enforcement(self, mode: str, reason: str):
+        """Mirrors the enforcement gate. Only ever shows paused — the server
+        forces company-owned devices to 'full', so a company machine cannot
+        reach this state (see deviceEnforcement in admin-api)."""
+        with self._lock:
+            if self._state not in ("connected", "paused"):
+                return
+            self._state = "paused" if mode == "paused" else "connected"
+            self._message = reason if mode == "paused" else ""
+
+    def set_org_info(self, org_name: str, employee_name: str, uninstall_allowed: bool):
+        self._set(org_name=org_name, employee_name=employee_name,
+                  uninstall_allowed=uninstall_allowed)
+
+    def snapshot(self) -> dict:
+        with self._lock:
+            uptime = ""
+            if self._connected_at and self._state in ("connected", "paused"):
+                secs = int(time.time() - self._connected_at)
+                uptime = f"{secs // 3600}h {secs % 3600 // 60}m" if secs >= 3600 else f"{secs // 60}m"
+            return {
+                "state": self._state,
+                "message": self._message,
+                "reason": self._message,
+                "org_name": self._org_name,
+                "employee_name": self._employee_name,
+                "uptime": uptime,
+                "uninstall_allowed": self._uninstall_allowed,
+                "version": AGENT_VERSION,
+            }
+
+
+class EnrollmentBlocked(Exception):
+    """The server refused because this machine already has a device entry.
+
+    Distinct from a generic enrollment failure because the resolution is
+    different and specific: an administrator has to grant a reconnect. The
+    desktop UI shows the server's own wording rather than a retry prompt,
+    since retrying is exactly what won't help.
+    """
+
+
 def enroll(token: str, admin_url: str) -> dict:
     """Exchange an enrollment token for device credentials and write config."""
     payload = json.dumps({
@@ -3082,8 +3176,19 @@ def enroll(token: str, admin_url: str) -> dict:
         method="POST",
         headers={"Content-Type": "application/json", "User-Agent": f"AavishieldAgent/{AGENT_VERSION}"},
     )
-    with _DIRECT_OPENER.open(req, timeout=30) as resp:
-        body = json.load(resp)
+    try:
+        with _DIRECT_OPENER.open(req, timeout=30) as resp:
+            body = json.load(resp)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 403:
+            try:
+                err = json.loads(exc.read().decode("utf-8", "replace") or "{}")
+            except ValueError:
+                err = {}
+            if err.get("code") == "device_already_enrolled":
+                raise EnrollmentBlocked(err.get("error") or
+                                        "This device is already registered.") from exc
+        raise
 
     config = {
         "device_id":   body["device_id"],
@@ -3322,8 +3427,18 @@ def _enroll_callback_handler(state: str, portal_origin: str, result: dict,
 
             try:
                 result["config"] = enroll(token, admin_url)
+            except EnrollmentBlocked as exc:
+                # Terminal, not a retry: only an administrator can clear it.
+                # Recorded so the desktop UI can show the server's wording,
+                # and `done` is set because waiting longer changes nothing.
+                log.error("enrollment refused: %s", exc)
+                result["blocked"] = str(exc)
+                self._json(403, {"error": str(exc), "code": "device_already_enrolled"})
+                done.set()
+                return
             except Exception as exc:  # noqa: BLE001 - report it to the page
                 log.error("first-run enrollment failed: %s", exc)
+                result["error"] = str(exc)
                 self._json(502, {"error": str(exc)})
                 return
 
@@ -3334,8 +3449,13 @@ def _enroll_callback_handler(state: str, portal_origin: str, result: dict,
     return Handler
 
 
-def browser_enroll() -> Optional[dict]:
+def browser_enroll(state: "Optional[AgentState]" = None,
+                   cancel: Optional[threading.Event] = None) -> Optional[dict]:
     """Opens the employee portal and blocks until it enrolls this device.
+
+    `state`, when given, receives the outcome so the desktop UI can show it;
+    `cancel` lets that UI stop waiting. Both are optional so the headless
+    path (no GUI toolkit available) still works exactly as before.
 
     Blocks rather than exiting so KeepAlive doesn't respawn the agent — and
     with it a fresh browser tab — every few seconds while the employee is
@@ -3413,14 +3533,31 @@ def browser_enroll() -> Optional[dict]:
     # Open once up front, then re-open on the slow interval until enrolled.
     _open_in_browser(enroll_url)
     while not done.wait(timeout=ENROLL_BROWSER_REOPEN):
+        if cancel is not None and cancel.is_set():
+            break
         log.info("Still waiting for portal enrollment — reopening %s", enroll_url)
         _open_in_browser(enroll_url)
 
     server.shutdown()
     server.server_close()
+
+    # Refused because the machine already has a device entry. Terminal until
+    # an administrator grants a reconnect, so this reports rather than retries.
+    if result.get("blocked"):
+        if state is not None:
+            state.set_blocked(result["blocked"])
+        return None
+
+    config = result.get("config")
+    if not config:
+        # Cancelled from the UI, or the listener stopped without a result.
+        if state is not None:
+            state.set_disconnected()
+        return None
+
     _discard_enroll_drops()
-    log.info("Enrolled from the portal as device %s", result["config"]["device_id"])
-    return result["config"]
+    log.info("Enrolled from the portal as device %s", config["device_id"])
+    return config
 
 
 # ─── CA trust helper (runs as root) ───────────────────────────────────────────
@@ -3670,6 +3807,166 @@ def _version_gt(a: str, b: str) -> bool:
 
 # ─── Tray / menu-bar UI ───────────────────────────────────────────────────────
 
+def _ui_asset(name: str) -> Optional[str]:
+    """Absolute path to a bundled UI file, frozen or from source.
+
+    PyInstaller unpacks datas under sys._MEIPASS; a source checkout has them
+    next to this file. Returns None when the assets aren't there at all, which
+    is what makes the desktop UI cleanly optional rather than a hard import.
+    """
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    path = os.path.join(base, "ui", name)
+    return path if os.path.isfile(path) else None
+
+
+class _UIBridge:
+    """The object the webview exposes to JavaScript as window.pywebview.api.
+
+    Deliberately narrow: it reports presentation state and drives windows.
+    Nothing here can change enforcement, read credentials, or reach the
+    network — a compromised renderer gets no more than the buttons offer.
+    """
+
+    def __init__(self, ui: "DesktopUI"):
+        self._ui = ui
+
+    def get_state(self) -> dict:
+        return self._ui.state.snapshot()
+
+    def connect(self) -> dict:
+        self._ui.begin_connect()
+        return self._ui.state.snapshot()
+
+    def cancel_connect(self) -> dict:
+        self._ui.cancel_connect()
+        return self._ui.state.snapshot()
+
+    def minimize_to_bar(self):
+        self._ui.show_bar()
+
+    def restore_window(self):
+        self._ui.show_main()
+
+    def hide_all(self):
+        self._ui.hide_all()
+
+    def open_uninstall(self):
+        # Removal needs privileges this process doesn't have, and the portal
+        # already gates it on the company's permission — so this hands off
+        # there rather than trying to elevate.
+        portal = (os.environ.get(ENROLL_PORTAL_ENV) or DEFAULT_PORTAL_URL).rstrip("/")
+        _open_in_browser(f"{portal}/dashboard/download")
+
+
+class DesktopUI:
+    """The connection window and the floating status bar.
+
+    Optional in exactly the way TrayUI is: a machine without pywebview (or
+    without a display) runs headless and the agent behaves as it always did.
+    """
+
+    BAR_W, BAR_H = 400, 44
+    WIN_W, WIN_H = 340, 420
+
+    def __init__(self, state: AgentState, on_enrolled, has_tray: bool = False):
+        self.state = state
+        self._on_enrolled = on_enrolled
+        self._has_tray = has_tray
+        self._webview = None
+        self._main = None
+        self._bar = None
+        self._cancel = threading.Event()
+        self._connect_thread: Optional[threading.Thread] = None
+
+    def start(self) -> bool:
+        """Creates the windows. Returns False to fall back to headless."""
+        main_html, bar_html = _ui_asset("main.html"), _ui_asset("bar.html")
+        if not main_html or not bar_html:
+            log.info("desktop UI assets not bundled — running without a window")
+            return False
+        try:
+            import webview  # noqa: PLC0415
+        except ImportError:
+            log.info("desktop UI unavailable (pywebview not installed) — running headless")
+            return False
+
+        try:
+            bridge = _UIBridge(self)
+            self._main = webview.create_window(
+                "Aavishield", main_html, js_api=bridge,
+                width=self.WIN_W, height=self.WIN_H,
+                resizable=False, frameless=True, easy_drag=False,
+                background_color="#111111",
+            )
+            # Created hidden: minimizing shows it, and a bar on screen at
+            # startup alongside the main window would be two of the same app.
+            self._bar = webview.create_window(
+                "Aavishield", bar_html, js_api=bridge,
+                width=self.BAR_W, height=self.BAR_H,
+                resizable=False, frameless=True, easy_drag=True,
+                on_top=True, hidden=True, background_color="#141414",
+            )
+            self._webview = webview
+            log.info("desktop UI ready")
+            return True
+        except Exception as exc:  # noqa: BLE001 - a UI failure must never stop enforcement
+            log.warning("desktop UI failed to start: %s", exc)
+            return False
+
+    def run_blocking(self):
+        """Runs the GUI loop. MUST be the main thread — same AppKit constraint
+        the tray has (see TrayUI.run_blocking)."""
+        if self._webview is None:
+            return
+        try:
+            self._webview.start()
+        except Exception as exc:  # noqa: BLE001 - cosmetic; enforcement continues
+            log.warning("desktop UI stopped: %s", exc)
+
+    # ── window switching ──────────────────────────────────────────────────
+    def show_main(self):
+        self._safe(lambda: (self._bar.hide(), self._main.show()))
+
+    def show_bar(self):
+        self._safe(lambda: (self._main.hide(), self._bar.show()))
+
+    def hide_all(self):
+        # Without a tray icon there would be no way back, so hiding degrades
+        # to the bar rather than stranding the person with no UI at all.
+        if not self._has_tray:
+            log.info("no tray icon available — collapsing to the bar instead of hiding")
+            self.show_bar()
+            return
+        self._safe(lambda: (self._main.hide(), self._bar.hide()))
+
+    def _safe(self, fn):
+        try:
+            fn()
+        except Exception as exc:  # noqa: BLE001
+            log.debug("desktop UI window call failed: %s", exc)
+
+    # ── enrollment ────────────────────────────────────────────────────────
+    def begin_connect(self):
+        """Runs enrollment off the GUI thread so the window keeps painting."""
+        if self._connect_thread and self._connect_thread.is_alive():
+            return
+        self._cancel.clear()
+        self.state.set_connecting()
+
+        def worker():
+            config = browser_enroll(state=self.state, cancel=self._cancel)
+            if config:
+                self.state.set_connected()
+                self._on_enrolled(config)
+
+        self._connect_thread = threading.Thread(target=worker, daemon=True)
+        self._connect_thread.start()
+
+    def cancel_connect(self):
+        self._cancel.set()
+        self.state.set_disconnected()
+
+
 class TrayUI:
     """
     Optional status icon. pystray/Pillow are not always present (headless
@@ -3816,12 +4113,32 @@ def main():
         time.sleep(5)
         sys.exit(0)
 
+    state = AgentState()
     config = ensure_enrolled()
-    if config is None:
-        # No config and nobody dropped a token: this is a plain package
-        # install, so ask the employee through the portal instead of dying
-        # with an error only an administrator would know what to do with.
-        config = browser_enroll()
+
+    # With a desktop UI the window comes up first and enrollment happens when
+    # the person clicks Connect — so an unenrolled agent shows "Not connected"
+    # rather than silently waiting on a browser tab. Headless keeps the old
+    # behaviour: block in browser_enroll() until it succeeds.
+    ui = DesktopUI(state, on_enrolled=lambda cfg: _start_agent_thread(cfg, state),
+                   has_tray=True)
+    ui_ready = ui.start()
+
+    if config is not None:
+        state.set_connected()
+        if ui_ready:
+            _start_agent_thread(config, state)
+            ui.show_main()
+            ui.run_blocking()
+            return
+    elif ui_ready:
+        state.set_disconnected()
+        ui.show_main()
+        ui.run_blocking()   # Connect is driven from the window from here on
+        return
+    else:
+        config = browser_enroll(state=state)
+
     if config is None:
         print(f"Config not found at {CONFIG_PATH}")
         print(
@@ -3831,6 +4148,22 @@ def main():
         )
         sys.exit(1)
 
+    run_agent(config, state, block=True)
+
+
+def _start_agent_thread(config: dict, state: AgentState):
+    """Brings the agent up behind a live UI, off the GUI thread."""
+    threading.Thread(target=run_agent, args=(config, state),
+                     kwargs={"block": False}, daemon=True).start()
+
+
+def run_agent(config: dict, state: AgentState, block: bool = True):
+    """Everything the agent does once it has credentials.
+
+    Split out of main() so the desktop UI can start before enrollment and
+    call this the moment it completes — the window has to exist first, since
+    it's what the person uses to enrol at all.
+    """
     raise_fd_limit()
     try:
         threading.stack_size(THREAD_STACK_BYTES)
@@ -3874,7 +4207,7 @@ def main():
     # a personal laptop rebooted at 9pm would arm the proxy on startup and only
     # stand down at the first heartbeat a minute later — a minute of somebody's
     # private browsing going through us.
-    seed_enforcement(config)
+    seed_enforcement(config, state)
     if GATE.intercepts():
         # The agent owns its own interception now, so a packaged install works
         # without the shell installer having configured anything.
@@ -3922,13 +4255,24 @@ def main():
             log.error("Proxy loop returned unexpectedly — exiting for a restart")
         os._exit(1)
 
-    tray = TrayUI(config, cache)
-    tray_ready = tray.start()
-
     proxy_thread = threading.Thread(target=_serve_or_exit, daemon=True)
     proxy_thread.start()
 
-    if tray_ready:
+    # Keeps the window's status line honest about the enforcement gate — the
+    # only place "paused" can come from, and only ever on a personal device.
+    def _mirror_enforcement():
+        while True:
+            state.set_enforcement(GATE.mode, GATE.reason)
+            time.sleep(5)
+
+    threading.Thread(target=_mirror_enforcement, daemon=True).start()
+
+    if not block:
+        # A desktop UI already owns the main thread; this is running behind it.
+        return
+
+    tray = TrayUI(config, cache)
+    if tray.start():
         tray.run_blocking()
 
     # Reached when there is no tray, or the icon was dismissed. Enforcement is
