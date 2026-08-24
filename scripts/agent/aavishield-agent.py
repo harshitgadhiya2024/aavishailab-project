@@ -3113,6 +3113,43 @@ def ensure_enrolled() -> Optional[dict]:
 # can silently enrol this device.
 
 
+def _notify_user(title: str, message: str) -> None:
+    """Best-effort native OS notification for the window before the tray
+    exists (enrollment) — without this, a failure here is completely
+    invisible: nothing has opened a window yet, and the process's own
+    stdout/stderr go to a log file under a LaunchAgent/service that nobody
+    is watching. Every OS call here is a tool that ships with the OS itself,
+    so this never becomes a new thing that can fail to import."""
+    try:
+        system = platform.system()
+        if system == "Darwin":
+            script = f'display notification "{message}" with title "{title}"'
+            subprocess.run(["/usr/bin/osascript", "-e", script],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+        elif system == "Linux":
+            subprocess.run(["notify-send", title, message],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+        elif system == "Windows":
+            # No blocking MessageBoxW here on purpose: under KeepAlive, a
+            # repeated crash would stack an unbounded pile of modal dialogs
+            # nobody is at the keyboard to dismiss. The balloon-style
+            # PowerShell toast is fire-and-forget instead.
+            ps = (
+                "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, "
+                "ContentType = WindowsRuntime] | Out-Null; "
+                f"$t = [Windows.UI.Notifications.ToastNotificationManager]::"
+                f"GetTemplateContent(0); $x = $t.GetElementsByTagName('text'); "
+                f"$x.Item(0).AppendChild($t.CreateTextNode('{title}')) | Out-Null; "
+                f"$n = New-Object Windows.UI.Notifications.ToastNotification $t; "
+                "[Windows.UI.Notifications.ToastNotificationManager]::"
+                "CreateToastNotifier('Aavishield').Show($n)"
+            )
+            subprocess.run(["powershell", "-NoProfile", "-Command", ps],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+    except Exception as exc:  # noqa: BLE001 - a notification failing must never take the agent down
+        log.debug("could not show a native notification: %s", exc)
+
+
 def _open_in_browser(url: str) -> bool:
     try:
         if platform.system() == "Darwin":
@@ -3233,14 +3270,37 @@ def browser_enroll() -> Optional[dict]:
     done = threading.Event()
     handler = _enroll_callback_handler(state, portal_origin, result, done, enroll_url)
 
-    try:
-        server = ThreadingHTTPServer(("127.0.0.1", ENROLL_CALLBACK_PORT), handler)
-    except OSError as exc:
+    # Retried rather than failing on the first attempt: the most common real
+    # cause is a previous instance of this same agent (an old install being
+    # replaced, or KeepAlive restarting it a beat after the old one's port
+    # hasn't been released by the kernel yet) — not a permanently-stuck
+    # conflict. A few seconds is enough for that to clear on its own.
+    server = None
+    bind_exc: Optional[OSError] = None
+    for attempt in range(5):
+        try:
+            server = ThreadingHTTPServer(("127.0.0.1", ENROLL_CALLBACK_PORT), handler)
+            break
+        except OSError as exc:
+            bind_exc = exc
+            if attempt < 4:
+                time.sleep(2)
+
+    if server is None:
         # Almost always a second copy of the agent already waiting on this
         # port. Enrolling twice would register two devices for one laptop.
+        # This is a hard stop with nothing on screen yet — under KeepAlive
+        # the process is about to be silently relaunched to fail the exact
+        # same way, forever, so this is the one place a notification the
+        # employee can actually see matters most.
         log.error("enrollment listener could not bind 127.0.0.1:%d (%s) — "
                   "is another Aavishield agent already running?",
-                  ENROLL_CALLBACK_PORT, exc)
+                  ENROLL_CALLBACK_PORT, bind_exc)
+        _notify_user(
+            "Aavishield setup couldn't start",
+            "Another copy of the agent seems to already be running on this Mac. "
+            "Restart your computer, or ask IT for help if this keeps happening.",
+        )
         return None
 
     threading.Thread(target=server.serve_forever, daemon=True).start()
