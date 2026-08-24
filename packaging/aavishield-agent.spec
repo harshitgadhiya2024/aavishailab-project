@@ -21,6 +21,21 @@ block_cipher = None
 # the device never shows up in the dashboard.
 required_hiddenimports = ["certifi"]
 
+# pywebview picks its platform backend at runtime through importlib, which
+# static analysis cannot see — so the backend has to be named here or the
+# frozen app imports `webview` fine and then has no way to open a window.
+#
+# Required rather than probed: a build where these are missing produces a
+# package whose UI silently never appears, which is exactly the failure that
+# is worst to discover on an employee's machine. Failing the build is better.
+if sys.platform == "darwin":
+    required_hiddenimports += ["webview", "webview.platforms.cocoa"]
+elif sys.platform == "win32":
+    required_hiddenimports += [
+        "webview", "webview.platforms.edgechromium", "webview.platforms.winforms",
+        "clr_loader", "pythonnet",
+    ]
+
 optional_hiddenimports = []
 for mod in (
     "pystray", "PIL.Image", "PIL.ImageDraw", "PIL.ImageFilter", "PIL.ImageGrab",
@@ -29,14 +44,11 @@ for mod in (
     "pynput.keyboard._darwin", "pynput.mouse._darwin",
     "pynput.keyboard._win32", "pynput.mouse._win32",
     "pynput.keyboard._xorg", "pynput.mouse._xorg",
-    # Desktop UI. Each platform has exactly one usable backend and the others
-    # legitimately fail to import here, which the probe below already handles;
-    # naming them all keeps one spec working for all three builds.
-    "webview",
-    "webview.platforms.cocoa",          # macOS (PyObjC + WebKit)
-    "webview.platforms.edgechromium",   # Windows (WebView2 via pythonnet)
-    "webview.platforms.winforms",       # Windows fallback
-    "webview.platforms.gtk",            # Linux (WebKitGTK)
+    # Linux's WebKitGTK backend needs system PyGObject, which isn't reliably
+    # pip-installable — so it stays optional and a Linux build without it
+    # simply ships the tray-only agent. macOS/Windows backends are required
+    # instead; see below.
+    "webview.platforms.gtk",
 ):
     try:
         __import__(mod)
