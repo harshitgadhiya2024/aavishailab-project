@@ -309,6 +309,11 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 		// Working hours: which device is company-owned vs personal, and when
 		// its agent is allowed to enforce.
 		devices.PATCH("/:id", middleware.RequirePermission(models.PermDevicesWrite), enfH.SetDeviceOwnership)
+		// A device enrols once; these are the two company-controlled escapes —
+		// letting a machine reconnect after it already has an entry, and
+		// letting the employee uninstall at all.
+		devices.POST("/:id/allow-reconnect", middleware.RequirePermission(models.PermDevicesWrite), agentH.AllowDeviceReconnect)
+		devices.PUT("/:id/uninstall-allowed", middleware.RequirePermission(models.PermDevicesWrite), agentH.SetDeviceUninstallAllowed)
 		devices.GET("/:id/enforcement", middleware.RequirePermission(models.PermDevicesRead), enfH.GetDeviceEnforcement)
 		devices.PUT("/:id/schedule", middleware.RequirePermission(models.PermDevicesWrite), enfH.PutDeviceSchedule)
 		devices.DELETE("/:id/schedule", middleware.RequirePermission(models.PermDevicesWrite), enfH.DeleteDeviceSchedule)

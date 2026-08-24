@@ -278,9 +278,26 @@ type Device struct {
 	IPAddress    string     `json:"ip_address"`
 	Status       string     `gorm:"default:'offline'" json:"status"`
 	// company | personal. Personal (BYOD) devices are the reason working-hours
-	// schedules exist; see models/enforcement.go.
-	Ownership    string         `gorm:"default:'company';index" json:"ownership"`
-	LastSeenAt   *time.Time     `json:"last_seen_at"`
+	// schedules exist; see models/enforcement.go. A company-owned device is
+	// never paused, whatever schedule it inherits — see deviceEnforcement.
+	Ownership string `gorm:"default:'company';index" json:"ownership"`
+
+	// A device enrols once. Re-running the installer on a machine that already
+	// has a Device row is refused unless an administrator has explicitly
+	// granted a fresh reconnect — so an employee cannot quietly re-enrol
+	// (creating a second identity, or escaping a policy) on their own.
+	// Consumed on use: granting permission allows exactly one reconnect.
+	ReconnectAllowed bool `gorm:"default:false" json:"reconnect_allowed"`
+	// Audit trail for the grant above, so "who let this device back on" is
+	// answerable after the fact.
+	ReconnectGrantedBy *uuid.UUID `gorm:"type:uuid" json:"reconnect_granted_by,omitempty"`
+	ReconnectGrantedAt *time.Time `json:"reconnect_granted_at,omitempty"`
+
+	// Whether the employee is allowed to uninstall the agent from this device.
+	// Off by default: removal is the company's call, not the employee's.
+	UninstallAllowed bool `gorm:"default:false" json:"uninstall_allowed"`
+
+	LastSeenAt *time.Time `json:"last_seen_at"`
 	PostureScore int            `gorm:"default:100" json:"posture_score"`
 	EnrolledAt   time.Time      `json:"enrolled_at"`
 	Metadata     map[string]any `gorm:"type:jsonb;serializer:json" json:"metadata"`

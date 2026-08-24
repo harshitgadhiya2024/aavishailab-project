@@ -533,10 +533,28 @@ func (h *PortalHandler) EnrollDevice(c *gin.Context) {
 
 // DownloadUninstaller handles GET /api/v1/portal/uninstall/:os
 func (h *PortalHandler) DownloadUninstaller(c *gin.Context) {
-	_, ok := h.portalEmployee(c)
+	emp, ok := h.portalEmployee(c)
 	if !ok {
 		return
 	}
+
+	// Removal is the company's decision. Serving the uninstaller only when at
+	// least one of this employee's devices has been granted permission keeps
+	// the rule enforced at the source — hiding the button in the UI alone
+	// would leave the endpoint open to anyone who knew the URL.
+	var allowed int64
+	h.db.Model(&models.Device{}).
+		Where("org_id = ? AND employee_id = ? AND uninstall_allowed = true", emp.OrgID, emp.ID).
+		Count(&allowed)
+	if allowed == 0 {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "Uninstalling is disabled for your device. Ask your company IT " +
+				"administrator to enable it.",
+			"code": "uninstall_not_allowed",
+		})
+		return
+	}
+
 	osType := strings.ToLower(c.Param("os"))
 
 	switch osType {

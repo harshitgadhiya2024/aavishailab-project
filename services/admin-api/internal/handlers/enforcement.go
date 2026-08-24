@@ -58,8 +58,31 @@ func resolveSchedule(db *gorm.DB, orgID uuid.UUID, deviceID, teamID *uuid.UUID) 
 }
 
 // deviceEnforcement is the answer the agent and the dashboard both need.
+//
+// Company-owned hardware is never paused. Working-hours pausing exists for
+// BYOD — it's the concession that makes monitoring someone's *personal*
+// laptop defensible. On a company machine there is no private time to
+// protect, so a schedule that would otherwise pause it is ignored and the
+// device stays enforcing around the clock.
 func deviceEnforcement(db *gorm.DB, orgID uuid.UUID, deviceID, teamID *uuid.UUID, now time.Time) schedule.State {
-	return schedule.Evaluate(resolveSchedule(db, orgID, deviceID, teamID).Spec(), now)
+	state := schedule.Evaluate(resolveSchedule(db, orgID, deviceID, teamID).Spec(), now)
+	if deviceID == nil || state.Mode == "full" {
+		return state
+	}
+
+	var dev models.Device
+	if err := db.Select("ownership").Where("id = ?", *deviceID).First(&dev).Error; err != nil {
+		return state // unknown device: leave the schedule's verdict alone
+	}
+	if dev.Ownership == models.OwnershipPersonal {
+		return state
+	}
+
+	state.Active = true
+	state.Mode = "full"
+	state.Reason = "Company-owned device — enforced continuously"
+	state.Until = nil
+	return state
 }
 
 // teamIDForDevice looks up the team a device's employee belongs to. Returns nil
