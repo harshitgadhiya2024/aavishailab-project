@@ -62,6 +62,13 @@ CONFIG_PATH = os.path.expanduser("~/.aavishield/config.json")
 LOG_PATH    = os.path.expanduser("~/.aavishield/agent.log")
 LOCAL_PORT  = 6118
 
+# The port the proxy actually ended up on. Usually LOCAL_PORT, but
+# bind_proxy_socket() moves up the range when something else already holds it
+# — so everything that has to *name* the port (the OS proxy settings, the
+# heartbeat, the saved config) must read this rather than LOCAL_PORT, or the
+# system would be pointed at a port nothing is listening on.
+ACTIVE_PROXY_PORT = LOCAL_PORT
+
 # Where a packaged install (.pkg / .msi / .deb) or an MDM profile can drop an
 # enrollment token for an agent that has not enrolled yet. Signed packages are
 # generic and identical for every employee, so the token cannot be baked in at
@@ -2685,7 +2692,7 @@ def send_heartbeat(config: dict):
         "status":     "online",
         "ip_address": get_local_ip(),
         "mac_address": get_mac_address(),
-        "proxy_port": LOCAL_PORT,
+        "proxy_port": ACTIVE_PROXY_PORT,
         "os_type":    platform.system().lower(),
         "os_version": platform.version(),
         # Resent on every beat, not just at enrolment: after an auto-update or
@@ -2742,22 +2749,53 @@ def heartbeat_loop(config: dict):
 
 # ─── Proxy server ─────────────────────────────────────────────────────────────
 
+def bind_proxy_socket() -> Optional[socket.socket]:
+    """Binds the proxy listener, and records which port it actually got.
+
+    Tries the standard port first, then a small range after it. A hard
+    failure on one busy port used to brick the whole install: the process
+    exited, KeepAlive respawned it, and it failed identically forever —
+    and the program holding the port isn't necessarily even ours, so
+    cleaning up our own processes couldn't always fix it.
+
+    Unlike the enrollment listener this can't use an arbitrary ephemeral
+    port, because the OS proxy settings have to name a port and something
+    has to survive a restart to keep matching them. A small fixed range
+    keeps it predictable while still tolerating a conflict.
+    """
+    global ACTIVE_PROXY_PORT
+    for port in range(LOCAL_PORT, LOCAL_PORT + 10):
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            server.bind(("127.0.0.1", port))
+        except OSError as exc:
+            server.close()
+            if exc.errno != errno.EADDRINUSE:
+                raise
+            log.info("proxy port %d is busy — trying the next one", port)
+            continue
+        server.listen(256)
+        ACTIVE_PROXY_PORT = port
+        if port != LOCAL_PORT:
+            log.warning("proxy bound to %d instead of the usual %d (that port was busy)",
+                        port, LOCAL_PORT)
+        log.info("Aavishield agent proxy listening on 127.0.0.1:%d", port)
+        return server
+
+    log.error("no free proxy port in %d-%d", LOCAL_PORT, LOCAL_PORT + 9)
+    return None
+
+
 def run_proxy(cache: PolicyCache, reporter: ActivityReporter, threats: ThreatIntelCache,
-              casb: CASBControlCache, mitm: Optional[MITMEngine] = None):
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    try:
-        server.bind(("127.0.0.1", LOCAL_PORT))
-    except OSError as exc:
-        if exc.errno == errno.EADDRINUSE:
-            log.error(
-                "Port %d is already in use — another aavishield-agent process is likely "
-                "still running. Find it with `lsof -i :%d` and stop it, then retry.",
-                LOCAL_PORT, LOCAL_PORT,
-            )
-        raise
-    server.listen(256)
-    log.info("Aavishield agent proxy listening on 127.0.0.1:%d", LOCAL_PORT)
+              casb: CASBControlCache, mitm: Optional[MITMEngine] = None,
+              server: Optional[socket.socket] = None):
+    # Normally bound ahead of time by main(), so the OS proxy settings can be
+    # pointed at the port we actually got before any traffic is sent to it.
+    if server is None:
+        server = bind_proxy_socket()
+        if server is None:
+            raise OSError(errno.EADDRINUSE, "no free proxy port")
 
     # Bounds the number of concurrent client connections (and therefore threads).
     # When the cap is reached, accept() pauses — new connections queue in the
@@ -2845,7 +2883,7 @@ def _macos_network_services() -> List[str]:
 
 def system_proxy_active() -> bool:
     """True when the OS is currently routing through this agent."""
-    port = str(LOCAL_PORT)
+    port = str(ACTIVE_PROXY_PORT)
     system = platform.system()
     try:
         if system == "Darwin":
@@ -2910,7 +2948,7 @@ def clear_system_proxy() -> bool:
 
 def apply_system_proxy() -> bool:
     """Point the OS at this agent. Returns True if it looks applied."""
-    port = str(LOCAL_PORT)
+    port = str(ACTIVE_PROXY_PORT)
     system = platform.system()
     try:
         if system == "Darwin":
@@ -3053,7 +3091,7 @@ def enroll(token: str, admin_url: str) -> dict:
         "org_id":      body["org_id"],
         "employee_id": body.get("employee_id") or "",
         "admin_url":   admin_url.rstrip("/"),
-        "local_port":  LOCAL_PORT,
+        "local_port":  ACTIVE_PROXY_PORT,
     }
     os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
     with open(CONFIG_PATH, "w") as f:
@@ -3208,8 +3246,14 @@ def _open_in_browser(url: str) -> bool:
 
 
 def _enroll_callback_handler(state: str, portal_origin: str, result: dict,
-                             done: threading.Event, enroll_url: str):
-    """Builds the request handler class for the loopback callback listener."""
+                             done: threading.Event, enroll_url_holder: "List[str]"):
+    """Builds the request handler class for the loopback callback listener.
+
+    enroll_url_holder is a one-element list rather than a plain string because
+    the URL contains the port this listener ends up bound to, which isn't
+    known until after the handler class exists. Read at request time, by which
+    point it's always been filled in.
+    """
     from http.server import BaseHTTPRequestHandler  # noqa: PLC0415
 
     class Handler(BaseHTTPRequestHandler):
@@ -3249,7 +3293,7 @@ def _enroll_callback_handler(state: str, portal_origin: str, result: dict,
             # tab: this listener stays up until enrollment completes, so
             # http://127.0.0.1:6119/ always leads somewhere useful.
             self.send_response(302)
-            self.send_header("Location", enroll_url)
+            self.send_header("Location", enroll_url_holder[0])
             self.send_header("Content-Length", "0")
             self.end_headers()
 
@@ -3306,46 +3350,61 @@ def browser_enroll() -> Optional[dict]:
     portal_origin = f"{parsed.scheme}://{parsed.netloc}"
 
     state = uuid.uuid4().hex + uuid.uuid4().hex
-    callback = f"http://127.0.0.1:{ENROLL_CALLBACK_PORT}/enroll"
-    enroll_url = portal_url + "/enroll?" + urllib.parse.urlencode(
-        {"state": state, "callback": callback})
+
+    # The enrol URL can't be built until the listener is bound, because the
+    # port is only known then (see below) — but the handler needs the URL for
+    # its do_GET redirect. A one-element holder breaks that circle: the
+    # closure reads it at request time, long after it's been filled in.
+    enroll_url_holder: List[str] = [""]
 
     result: dict = {}
     done = threading.Event()
-    handler = _enroll_callback_handler(state, portal_origin, result, done, enroll_url)
+    handler = _enroll_callback_handler(state, portal_origin, result, done, enroll_url_holder)
 
-    # Retried rather than failing on the first attempt: the most common real
-    # cause is a previous instance of this same agent (an old install being
-    # replaced, or KeepAlive restarting it a beat after the old one's port
-    # hasn't been released by the kernel yet) — not a permanently-stuck
-    # conflict. A few seconds is enough for that to clear on its own.
+    # Port 0 = "any free port the OS wants to give us", after one polite try
+    # at the traditional fixed port.
+    #
+    # This used to insist on ENROLL_CALLBACK_PORT and hard-fail if it was
+    # taken, which turned any port conflict into a permanently broken install:
+    # under KeepAlive the process just respawned to fail identically, forever,
+    # and no browser ever opened. And the conflict doesn't have to come from
+    # us — any other program on the machine (including an older/sibling
+    # build of this same agent) can be sitting on that port, in which case
+    # no amount of cleaning up *our* processes would ever have fixed it.
+    #
+    # Nothing actually requires a fixed port: the portal learns where to call
+    # back from the `callback` parameter in the URL we're about to build, and
+    # its loopback check validates the host, not the port. So an ephemeral
+    # port is strictly better — it cannot collide with anything, ever.
     server = None
-    bind_exc: Optional[OSError] = None
-    for attempt in range(5):
+    for port in (ENROLL_CALLBACK_PORT, 0):
         try:
-            server = ThreadingHTTPServer(("127.0.0.1", ENROLL_CALLBACK_PORT), handler)
+            server = ThreadingHTTPServer(("127.0.0.1", port), handler)
             break
         except OSError as exc:
-            bind_exc = exc
-            if attempt < 4:
-                time.sleep(2)
+            log.info("enrollment listener could not bind 127.0.0.1:%s (%s)%s",
+                     port or "<any>", exc,
+                     " — falling back to any free port" if port else "")
 
     if server is None:
-        # Almost always a second copy of the agent already waiting on this
-        # port. Enrolling twice would register two devices for one laptop.
-        # This is a hard stop with nothing on screen yet — under KeepAlive
-        # the process is about to be silently relaunched to fail the exact
-        # same way, forever, so this is the one place a notification the
-        # employee can actually see matters most.
-        log.error("enrollment listener could not bind 127.0.0.1:%d (%s) — "
-                  "is another Aavishield agent already running?",
-                  ENROLL_CALLBACK_PORT, bind_exc)
+        # Both a specific port and "give me literally anything" failed, which
+        # means something is wrong with the machine's networking rather than
+        # with one busy port. Nothing is on screen yet at this point, so a
+        # notification is the only way this reaches the person.
+        log.error("enrollment listener could not bind any loopback port")
         _notify_user(
             "Aavishield setup couldn't start",
-            "Another copy of the agent seems to already be running on this Mac. "
+            "The agent couldn't open a local connection needed for setup. "
             "Restart your computer, or ask IT for help if this keeps happening.",
         )
         return None
+
+    bound_port = server.server_address[1]
+    callback = f"http://127.0.0.1:{bound_port}/enroll"
+    enroll_url_holder[0] = portal_url + "/enroll?" + urllib.parse.urlencode(
+        {"state": state, "callback": callback})
+    enroll_url = enroll_url_holder[0]
+    log.info("enrollment listener bound to 127.0.0.1:%d", bound_port)
 
     threading.Thread(target=server.serve_forever, daemon=True).start()
     log.info("Not enrolled yet — opening the employee portal to finish setup")
@@ -3798,6 +3857,19 @@ def main():
     signal.signal(signal.SIGTERM, _shutdown)
     signal.signal(signal.SIGINT, _shutdown)
 
+    # Bound here, before anything points the OS at it: this is what sets
+    # ACTIVE_PROXY_PORT, and apply_system_proxy() below has to name the port
+    # we actually got. Binding inside the proxy thread instead would race —
+    # the OS could be sent to a port nothing had claimed yet.
+    proxy_socket = bind_proxy_socket()
+    if proxy_socket is None:
+        _notify_user(
+            "Aavishield couldn't start",
+            "The agent couldn't open the local port it needs. Restart your "
+            "computer, or ask IT for help if this keeps happening.",
+        )
+        sys.exit(1)
+
     # Ask the server where we stand before touching the network. Without this
     # a personal laptop rebooted at 9pm would arm the proxy on startup and only
     # stand down at the first heartbeat a minute later — a minute of somebody's
@@ -3843,7 +3915,7 @@ def main():
         non-main thread only unwinds that thread.
         """
         try:
-            run_proxy(cache, reporter, threats, casb, mitm)
+            run_proxy(cache, reporter, threats, casb, mitm, server=proxy_socket)
         except Exception:
             log.exception("Proxy stopped — exiting so the service manager restarts us")
         else:
