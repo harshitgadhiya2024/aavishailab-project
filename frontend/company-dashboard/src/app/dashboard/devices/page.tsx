@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Pagination } from "@/components/ui/Pagination";
 
-import { Monitor, Laptop, Smartphone, Shield, AlertCircle, Loader2, Trash2, Clock } from "lucide-react";
+import { Monitor, Laptop, Smartphone, Shield, AlertCircle, Loader2, Trash2, Clock, KeyRound, Unlock } from "lucide-react";
 import { deviceApi } from "@/lib/api";
 import { EnforcementBadge } from "@/components/enforcement/ScheduleEditor";
 import { DeviceScheduleModal } from "@/components/enforcement/DeviceScheduleModal";
@@ -27,6 +27,8 @@ type Device = {
   last_seen_at?: string | null;
   posture_score?: number;
   ownership?: string;
+  reconnect_allowed?: boolean;
+  uninstall_allowed?: boolean;
   enforcement?: any;
   metadata?: Record<string, any>;
   employee?: { first_name?: string; last_name?: string; email?: string };
@@ -59,6 +61,7 @@ export default function DevicesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [actingId, setActingId] = useState<string | null>(null);
   const [scheduleFor, setScheduleFor] = useState<Device | null>(null);
 
   async function loadDevices() {
@@ -106,6 +109,44 @@ export default function DevicesPage() {
       setError("Could not revoke device. Please try again.");
     } finally {
       setRevokingId(null);
+    }
+  }
+
+  // A device enrols once, so an employee reinstalling — or moving to a new
+  // laptop that reuses a MAC — is refused until an admin authorises one more
+  // enrollment here. The grant is spent by the reconnect it allows.
+  async function allowReconnect(device: Device) {
+    if (!confirm(
+      `Allow ${device.hostname || "this device"} to connect once more?\n\n` +
+      "This authorises a single reconnect. The device is blocked again afterwards."
+    )) return;
+    setActingId(device.id);
+    try {
+      await deviceApi.allowReconnect(device.id);
+      toast.success("Reconnect allowed — the employee can connect this device once more.");
+      await loadDevices();
+    } catch {
+      toast.error("Could not allow reconnect. Please try again.");
+    } finally {
+      setActingId(null);
+    }
+  }
+
+  async function toggleUninstall(device: Device) {
+    const next = !device.uninstall_allowed;
+    if (next && !confirm(
+      `Let the employee uninstall the agent from ${device.hostname || "this device"}?\n\n` +
+      "They will be able to remove protection from this device themselves."
+    )) return;
+    setActingId(device.id);
+    try {
+      await deviceApi.setUninstallAllowed(device.id, next);
+      setDevices(list => list.map(x => (x.id === device.id ? { ...x, uninstall_allowed: next } : x)));
+      toast.success(next ? "Uninstall enabled for this device." : "Uninstall disabled.");
+    } catch {
+      toast.error("Could not update uninstall permission.");
+    } finally {
+      setActingId(null);
     }
   }
 
@@ -244,15 +285,51 @@ export default function DevicesPage() {
                       {geo && <div className="text-subtle">{geo}</div>}
                     </td>
                     <td className="px-5 py-4 text-xs text-subtle">{relativeTime(d.last_seen_at)}</td>
-                    <td className="px-5 py-4 text-right">
-                      <button
-                        onClick={() => revokeDevice(d)}
-                        disabled={revokingId === d.id}
-                        className="inline-flex items-center gap-1 text-xs text-danger hover:text-danger disabled:opacity-50"
-                      >
-                        {revokingId === d.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
-                        Revoke
-                      </button>
+                    <td className="px-5 py-4">
+                      <div className="flex items-center justify-end gap-3 whitespace-nowrap">
+                        {/* Pending grant is worth showing: it's the window in
+                            which this device can re-enrol, and it closes by
+                            itself the moment it's used. */}
+                        {d.reconnect_allowed ? (
+                          <span className="inline-flex items-center gap-1 text-xs text-success" title="One reconnect is authorised. It is consumed when the employee connects.">
+                            <Unlock className="w-3 h-3" />
+                            Reconnect ready
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => allowReconnect(d)}
+                            disabled={actingId === d.id}
+                            title="Authorise one more enrollment for this device"
+                            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-brand-500 disabled:opacity-50"
+                          >
+                            {actingId === d.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <KeyRound className="w-3 h-3" />}
+                            Allow reconnect
+                          </button>
+                        )}
+
+                        <button
+                          onClick={() => toggleUninstall(d)}
+                          disabled={actingId === d.id}
+                          title={d.uninstall_allowed
+                            ? "The employee can remove the agent. Click to disable."
+                            : "The employee cannot remove the agent. Click to allow."}
+                          className={`inline-flex items-center gap-1 text-xs disabled:opacity-50 ${
+                            d.uninstall_allowed ? "text-warning hover:text-warning" : "text-muted-foreground hover:text-brand-500"
+                          }`}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          {d.uninstall_allowed ? "Uninstall allowed" : "Uninstall blocked"}
+                        </button>
+
+                        <button
+                          onClick={() => revokeDevice(d)}
+                          disabled={revokingId === d.id}
+                          className="inline-flex items-center gap-1 text-xs text-danger hover:text-danger disabled:opacity-50"
+                        >
+                          {revokingId === d.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                          Revoke
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );

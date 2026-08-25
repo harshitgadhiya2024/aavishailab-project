@@ -193,6 +193,12 @@ export const deviceApi = {
   revoke: (id: string) => api.delete(`/api/v1/devices/${id}`),
   setOwnership: (id: string, ownership: "company" | "personal") =>
     api.patch(`/api/v1/devices/${id}`, { ownership }),
+  // A device enrols once. This authorises exactly one more enrollment for a
+  // machine that already has an entry — the grant is spent by the reconnect
+  // it allows, so re-blocking is automatic.
+  allowReconnect: (id: string) => api.post(`/api/v1/devices/${id}/allow-reconnect`),
+  setUninstallAllowed: (id: string, allowed: boolean) =>
+    api.put(`/api/v1/devices/${id}/uninstall-allowed`, { allowed }),
   enforcement: (id: string) => api.get(`/api/v1/devices/${id}/enforcement`),
   putSchedule: (id: string, data: Record<string, any>) =>
     api.put(`/api/v1/devices/${id}/schedule`, data),

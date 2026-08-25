@@ -80,25 +80,34 @@ function EnrollFlow() {
       return;
     }
 
+    // The two failures below are genuinely different and used to collapse into
+    // one message: an agent that answered with a reason is not an agent that
+    // couldn't be reached. Telling someone whose device is simply already
+    // registered to "make sure the agent is running" sends them to fix
+    // something that was never broken.
+    let res: Response;
     try {
-      const res = await fetch(callback, {
+      res = await fetch(callback, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ state, token, admin_url: adminUrl }),
       });
-      if (!res.ok) {
-        const detail = await res.json().catch(() => ({}));
-        throw new Error(detail?.error || `agent returned ${res.status}`);
-      }
     } catch {
       setPhase("error");
-      // Reaching the agent is the step most likely to fail for a mundane
-      // reason (it was stopped, or the tab was reopened much later), so say
-      // what to do rather than only what broke.
       setMessage(
         "Could not reach the Aavishield agent on this device. Make sure it is " +
           "running, then reopen this page from the agent."
       );
+      return;
+    }
+
+    if (!res.ok) {
+      const detail = await res.json().catch(() => ({} as { error?: string }));
+      setPhase("error");
+      // The agent forwards the server's own wording — for an already-registered
+      // device that's the line naming who can unblock it, which is the only
+      // useful thing to show here.
+      setMessage(detail?.error || `The agent could not complete setup (${res.status}).`);
       return;
     }
 

@@ -3483,13 +3483,18 @@ def _enroll_callback_handler(state: str, portal_origin: str, result: dict,
     return Handler
 
 
-def browser_enroll(state: "Optional[AgentState]" = None,
+def browser_enroll(ui_state: "Optional[AgentState]" = None,
                    cancel: Optional[threading.Event] = None) -> Optional[dict]:
     """Opens the employee portal and blocks until it enrolls this device.
 
-    `state`, when given, receives the outcome so the desktop UI can show it;
-    `cancel` lets that UI stop waiting. Both are optional so the headless
+    `ui_state`, when given, receives the outcome so the desktop UI can show
+    it; `cancel` lets that UI stop waiting. Both are optional so the headless
     path (no GUI toolkit available) still works exactly as before.
+
+    Named ui_state, not state: `state` is already taken here by the one-time
+    nonce below, and a parameter by that name is silently shadowed by it —
+    which is exactly the bug this once shipped with, crashing the enrollment
+    thread on AttributeError the moment the server refused a reconnect.
 
     Blocks rather than exiting so KeepAlive doesn't respawn the agent — and
     with it a fresh browser tab — every few seconds while the employee is
@@ -3578,15 +3583,15 @@ def browser_enroll(state: "Optional[AgentState]" = None,
     # Refused because the machine already has a device entry. Terminal until
     # an administrator grants a reconnect, so this reports rather than retries.
     if result.get("blocked"):
-        if state is not None:
-            state.set_blocked(result["blocked"])
+        if ui_state is not None:
+            ui_state.set_blocked(result["blocked"])
         return None
 
     config = result.get("config")
     if not config:
         # Cancelled from the UI, or the listener stopped without a result.
-        if state is not None:
-            state.set_disconnected()
+        if ui_state is not None:
+            ui_state.set_disconnected()
         return None
 
     _discard_enroll_drops()
@@ -3988,7 +3993,7 @@ class DesktopUI:
         self.state.set_connecting()
 
         def worker():
-            config = browser_enroll(state=self.state, cancel=self._cancel)
+            config = browser_enroll(ui_state=self.state, cancel=self._cancel)
             if config:
                 self.state.set_connected()
                 self._on_enrolled(config)
@@ -4194,7 +4199,7 @@ def main():
         ui.run_blocking()   # Connect is driven from the window from here on
         return
     else:
-        config = browser_enroll(state=state)
+        config = browser_enroll(ui_state=state)
 
     if config is None:
         print(f"Config not found at {CONFIG_PATH}")
