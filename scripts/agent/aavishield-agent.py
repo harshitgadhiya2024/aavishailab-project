@@ -4299,8 +4299,17 @@ def run_agent(config: dict, state: AgentState, block: bool = True):
         report_offline(config)
         sys.exit(0)
 
-    signal.signal(signal.SIGTERM, _shutdown)
-    signal.signal(signal.SIGINT, _shutdown)
+    # signal.signal() only works on the main thread. With a desktop UI, that
+    # thread is the Cocoa/webview loop and run_agent() runs in a background
+    # thread — so calling this here raised ValueError and killed the whole
+    # thread on its very first line, before the proxy was ever applied or a
+    # single heartbeat sent. The device then showed "Protected" in the window
+    # (set optimistically on connect) while the server marked it offline and
+    # nothing was actually enforced. Only the main-thread (headless) path
+    # installs the handlers; the UI path shuts down through the window.
+    if threading.current_thread() is threading.main_thread():
+        signal.signal(signal.SIGTERM, _shutdown)
+        signal.signal(signal.SIGINT, _shutdown)
 
     # Bound here, before anything points the OS at it: this is what sets
     # ACTIVE_PROXY_PORT, and apply_system_proxy() below has to name the port
