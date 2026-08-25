@@ -63,7 +63,11 @@ for name, value in (("DEFAULT_ADMIN_URL", admin), ("DEFAULT_PORTAL_URL", portal)
 open(path, "w").write(src)
 STAMP
 
+# AAVISHIELD_VERSION feeds CFBundleShortVersionString. Without it the bundle
+# reports the spec's 1.0.0 fallback, so Finder's Get Info and the installer's
+# upgrade check both disagree with the version the agent actually reports.
 AAVISHIELD_AGENT_SRC="$STAMPED_SRC/aavishield-agent.py" \
+AAVISHIELD_VERSION="$VERSION" \
 python3 -m PyInstaller --clean --noconfirm --distpath "$BUILD_DIR/dist" \
     --workpath "$BUILD_DIR/work" packaging/aavishield-agent.spec
 

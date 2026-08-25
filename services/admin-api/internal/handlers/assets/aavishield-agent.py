@@ -3239,11 +3239,15 @@ def acquire_single_instance_lock() -> bool:
     the same "can't bind" error and notification every few seconds for good.
     """
     global _INSTANCE_LOCK_FILE
-    lock_dir = os.path.dirname(CONFIG_PATH)
-    os.makedirs(lock_dir, exist_ok=True)
-    lock_path = os.path.join(lock_dir, "agent.lock")
+    os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+    lock_path = _lock_path()
     try:
-        _INSTANCE_LOCK_FILE = open(lock_path, "w")
+        # "a+", never "w": opening for write truncates immediately, before the
+        # lock is even attempted — so a losing instance would wipe the winner's
+        # PID out of the file on its way to failing, and
+        # _signal_running_instance_to_show() would then have nobody to signal.
+        # The file is only truncated below, once this process owns the lock.
+        _INSTANCE_LOCK_FILE = open(lock_path, "a+")
         if platform.system() == "Windows":
             import msvcrt  # noqa: PLC0415 - Windows-only stdlib module
 
@@ -3252,6 +3256,8 @@ def acquire_single_instance_lock() -> bool:
             import fcntl  # noqa: PLC0415 - POSIX-only stdlib module
 
             fcntl.flock(_INSTANCE_LOCK_FILE.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _INSTANCE_LOCK_FILE.seek(0)
+        _INSTANCE_LOCK_FILE.truncate()
         _INSTANCE_LOCK_FILE.write(str(os.getpid()))
         _INSTANCE_LOCK_FILE.flush()
         return True
@@ -3260,6 +3266,34 @@ def acquire_single_instance_lock() -> bool:
             _INSTANCE_LOCK_FILE.close()
             _INSTANCE_LOCK_FILE = None
         return False
+
+
+def _lock_path() -> str:
+    return os.path.join(os.path.dirname(CONFIG_PATH), "agent.lock")
+
+
+def _signal_running_instance_to_show():
+    """Asks the instance holding the lock to bring its window up.
+
+    SIGUSR1 rather than a socket: the PID is already in the lock file, and
+    this needs no port, no listener and no new attack surface. Windows has no
+    SIGUSR1 — there the taskbar/tray is how people get the window back, so
+    this is simply a no-op rather than a missing feature.
+    """
+    if platform.system() == "Windows":
+        return
+    try:
+        with open(_lock_path()) as f:
+            pid = int((f.read() or "").strip())
+    except (OSError, ValueError):
+        return  # no readable PID (or we caught the holder mid-write) — nothing to do
+    if pid <= 0 or pid == os.getpid():
+        return
+    try:
+        os.kill(pid, signal.SIGUSR1)
+        log.debug("asked running instance %d to show its window", pid)
+    except OSError as exc:
+        log.debug("could not signal running instance %d: %s", pid, exc)
 
 
 def ensure_enrolled() -> Optional[dict]:
@@ -4103,6 +4137,12 @@ def main():
         sys.exit(ca_trust_daemon())
 
     if not acquire_single_instance_lock():
+        # Now that the app lives in /Applications, opening it from Spotlight,
+        # Launchpad or the Dock starts a second copy while the LaunchAgent's
+        # is already running. Exiting silently would make clicking the icon
+        # look broken, so hand the request to the instance that owns the lock
+        # and let it raise its window instead.
+        _signal_running_instance_to_show()
         # Not an error — see acquire_single_instance_lock()'s docstring for
         # the exact startup race this guards against. The other instance
         # already holds the lock and is doing the real work; this one has
@@ -4123,6 +4163,23 @@ def main():
     ui = DesktopUI(state, on_enrolled=lambda cfg: _start_agent_thread(cfg, state),
                    has_tray=True)
     ui_ready = ui.start()
+
+    if ui_ready and platform.system() != "Windows":
+        # Someone opened the app from Spotlight/Launchpad/the Dock while this
+        # instance was already running (see _signal_running_instance_to_show).
+        # The handler only sets an event — showing a window from inside a
+        # signal handler runs on whatever the interpreter was doing, which is
+        # not somewhere to be touching the GUI toolkit.
+        show_requested = threading.Event()
+        signal.signal(signal.SIGUSR1, lambda *_: show_requested.set())
+
+        def _serve_show_requests():
+            while True:
+                show_requested.wait()
+                show_requested.clear()
+                ui.show_main()
+
+        threading.Thread(target=_serve_show_requests, daemon=True).start()
 
     if config is not None:
         state.set_connected()
