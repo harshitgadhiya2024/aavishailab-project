@@ -309,14 +309,21 @@ func (h *SWGHandler) evaluateURL(orgID, domain, category string) gin.H {
 		Find(&policies)
 
 	for _, p := range policies {
-		categories, _ := p.Rules["categories"].([]any)
-		for _, cat := range categories {
-			if cat == category {
-				return gin.H{
-					"action":      p.Action,
-					"policy_id":   p.ID,
-					"policy_name": p.Name,
-					"reason":      "Category blocked: " + category,
+		// A category policy lists slugs like "dating", not domains. The tester
+		// used to compare those slugs against a `category` argument that its
+		// only caller passes empty — so a category policy never matched here,
+		// and the tester reported "allowed" for a domain the agent was in fact
+		// blocking (the agent path expands categories via resolvePolicyDomains).
+		// Expand the same way so the tester agrees with real enforcement.
+		if hasCat, _ := p.Rules["categories"].([]any); len(hasCat) > 0 {
+			for _, d := range ResolvePolicyDomains(h.db, p) {
+				if strings.EqualFold(domain, strings.TrimSpace(d)) {
+					return gin.H{
+						"action":      p.Action,
+						"policy_id":   p.ID,
+						"policy_name": p.Name,
+						"reason":      "Blocked by category policy: " + p.Name,
+					}
 				}
 			}
 		}
