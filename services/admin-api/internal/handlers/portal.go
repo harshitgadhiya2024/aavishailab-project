@@ -1517,7 +1517,9 @@ if sudo -v 2>/dev/null; then
     sudo launchctl bootout "gui/$(id -u)" /Library/LaunchAgents/com.aavishield.agent.plist 2>/dev/null || true
     sudo rm -f /Library/LaunchDaemons/com.aavishield.catrust.plist \
                /Library/LaunchAgents/com.aavishield.agent.plist
-    sudo rm -rf /etc/aavishield /usr/local/aavishield
+    # /Applications is where the app lives; /usr/local/aavishield is older
+    # installs plus the CA-trust marker, so both go.
+    sudo rm -rf /etc/aavishield /usr/local/aavishield "/Applications/Aavishield.app"
     sudo pkgutil --forget com.aavishield.agent 2>/dev/null || true
 fi
 ok "Agent stopped"

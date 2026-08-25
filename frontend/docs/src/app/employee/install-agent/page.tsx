@@ -27,7 +27,7 @@ export default function Page() {
           scroll down, and click <strong>Open Anyway</strong> next to the Aavishield message.
         </Step>
         <Step n={3} title="Run the installer">
-          Follow the on-screen steps. It installs to <code>/usr/local/aavishield</code> and starts
+          Follow the on-screen steps. It installs to <code>/Applications/Aavishield.app</code> and starts
           automatically — no reboot needed.
         </Step>
         <Step n={4} title="Finish enrolling in the browser">

@@ -23,7 +23,11 @@ BUILD_DIR="$REPO_ROOT/build/macos"
 ROOT_DIR="$BUILD_DIR/root"
 OUT_DIR="$REPO_ROOT/dist"
 
-INSTALL_PREFIX="/usr/local/aavishield"
+# /Applications, not /usr/local: Spotlight and Launchpad only index the former.
+# An app under /usr/local can't be searched for and isn't in Launchpad, so it
+# reads as a stray background process rather than software the company
+# installed. /usr/local keeps only non-app state (the CA-trust marker).
+INSTALL_PREFIX="/Applications"
 
 # Which deployment this build belongs to. Baked into the binary because the
 # package is generic — with no employee-specific token to carry an admin URL,
@@ -37,7 +41,7 @@ echo "    portal: $PORTAL_URL"
 
 rm -rf "$BUILD_DIR"
 mkdir -p "$ROOT_DIR$INSTALL_PREFIX" "$ROOT_DIR/Library/LaunchAgents" \
-         "$ROOT_DIR/Library/LaunchDaemons" "$ROOT_DIR/Applications" "$OUT_DIR"
+         "$ROOT_DIR/Library/LaunchDaemons" "$OUT_DIR"
 
 # ─── 1. Freeze the agent ──────────────────────────────────────────────────────
 # The deployment URLs are stamped into a scratch copy rather than the tracked
@@ -129,78 +133,12 @@ cat > "$ROOT_DIR/Library/LaunchDaemons/$CATRUST_IDENTIFIER.plist" <<PLIST
 </plist>
 PLIST
 
-# ─── 3c. On-disk uninstaller ──────────────────────────────────────────────────
-# A .pkg install has no Add/Remove-Programs equivalent on macOS — nothing shows
-# up in Launchpad or Finder to remove it. Dropping a double-clickable uninstaller
-# in /Applications (the one place every Mac user already looks to remove
-# software) is what makes "how do I uninstall this" answerable without going
-# back to the portal or a terminal one-liner from IT.
-cat > "$ROOT_DIR/Applications/Aavishield Uninstaller.command" <<'UNINSTALL'
-#!/usr/bin/env bash
-set -euo pipefail
-
-INSTALL_PREFIX="/usr/local/aavishield"
-CONFIG_FILE="$HOME/.aavishield/config.json"
-
-GREEN='\033[0;32m'; BLUE='\033[0;34m'; BOLD='\033[1m'; NC='\033[0m'
-info() { echo -e "${BLUE}→${NC} $*"; }
-ok()   { echo -e "${GREEN}✓${NC} $*"; }
-
-clear
-echo -e "${BOLD}${BLUE}🛡️  Aavishield Agent Uninstaller — macOS${NC}"
-echo "────────────────────────────────────────"
-echo
-read -p "This will remove the Aavishield agent from this Mac. Continue? [y/N] " CONFIRM
-[[ "$CONFIRM" =~ ^[Yy]$ ]] || { echo "Cancelled."; exit 0; }
-
-if [[ -f "$CONFIG_FILE" ]]; then
-    DEVICE_ID=$(python3 -c "import json; c=json.load(open('$CONFIG_FILE')); print(c.get('device_id',''))" 2>/dev/null || echo "")
-    AGENT_KEY=$(python3  -c "import json; c=json.load(open('$CONFIG_FILE')); print(c.get('agent_key',''))"  2>/dev/null || echo "")
-    ADMIN_URL=$(python3  -c "import json; c=json.load(open('$CONFIG_FILE')); print(c.get('admin_url',''))"  2>/dev/null || echo "")
-    if [[ -n "$DEVICE_ID" && -n "$AGENT_KEY" && -n "$ADMIN_URL" ]]; then
-        info "Notifying Aavishield server..."
-        curl -s -X POST "$ADMIN_URL/internal/agent/offline" \
-            -H "Authorization: Bearer $DEVICE_ID:$AGENT_KEY" \
-            -H "Content-Type: application/json" -d '{}' 2>/dev/null || true
-        ok "Server notified"
-    fi
-fi
-
-info "This needs your Mac login password to remove system files."
-if sudo -v; then
-    sudo launchctl bootout system /Library/LaunchDaemons/com.aavishield.catrust.plist 2>/dev/null || true
-    sudo launchctl bootout "gui/$(id -u)" /Library/LaunchAgents/com.aavishield.agent.plist 2>/dev/null || true
-    sudo rm -f /Library/LaunchDaemons/com.aavishield.catrust.plist \
-               /Library/LaunchAgents/com.aavishield.agent.plist
-    sudo rm -rf /etc/aavishield "$INSTALL_PREFIX"
-    sudo pkgutil --forget com.aavishield.agent 2>/dev/null || true
-    ok "Agent stopped and files removed"
-
-    info "Removing system proxy settings..."
-    while IFS= read -r SERVICE; do
-        [[ -z "$SERVICE" || "$SERVICE" == "An asterisk"* ]] && continue
-        networksetup -setwebproxystate       "$SERVICE" off 2>/dev/null || true
-        networksetup -setsecurewebproxystate "$SERVICE" off 2>/dev/null || true
-        networksetup -setproxybypassdomains  "$SERVICE" "" 2>/dev/null || true
-    done < <(networksetup -listallnetworkservices 2>/dev/null | tail -n +2)
-    ok "Proxy cleared"
-
-    info "Removing SSL Inspection certificate..."
-    sudo security delete-certificate -c "Aavishield SSL Inspection CA" /Library/Keychains/System.keychain 2>/dev/null \
-        && ok "Certificate removed" || info "No certificate found (nothing to remove)"
-else
-    echo "Admin password required — uninstall cancelled."
-    exit 1
-fi
-
-rm -rf "$HOME/.aavishield"
-
-echo
-echo -e "${BOLD}${GREEN}✅  Aavishield Agent removed successfully!${NC}"
-echo
-read -p "Press Enter to close..."
-UNINSTALL
-chmod +x "$ROOT_DIR/Applications/Aavishield Uninstaller.command"
+# ─── 3c. No on-disk uninstaller ───────────────────────────────────────────────
+# Deliberately absent. Removal is company-controlled now: the portal only
+# serves an uninstaller once an administrator sets uninstall_allowed on the
+# device (see DownloadUninstaller in admin-api). Shipping a self-service
+# uninstaller in /Applications would hand every employee the exact bypass that
+# policy exists to prevent.
 
 # ─── 4. postinstall ───────────────────────────────────────────────────────────
 mkdir -p "$BUILD_DIR/scripts"
@@ -222,7 +160,7 @@ CATRUST_PLIST="/Library/LaunchDaemons/com.aavishield.catrust.plist"
 # a permission error nobody sees (the update loop only logs at debug), so
 # the agent can build/publish new versions forever and never actually
 # self-update on a real Mac.
-chown -R "$CONSOLE_USER" /usr/local/aavishield 2>/dev/null || true
+chown -R "$CONSOLE_USER" /Applications/Aavishield.app 2>/dev/null || true
 
 launchctl bootout   "gui/$CONSOLE_UID/com.aavishield.agent" 2>/dev/null || true
 launchctl bootstrap "gui/$CONSOLE_UID" "$PLIST" 2>/dev/null || true
