@@ -40,11 +40,14 @@ cd "$REPO_ROOT"
 STAMPED_SRC="$BUILD_DIR/src"
 mkdir -p "$STAMPED_SRC"
 cp scripts/agent/aavishield-agent.py "$STAMPED_SRC/aavishield-agent.py"
-python3 - "$STAMPED_SRC/aavishield-agent.py" "$ADMIN_URL" "$PORTAL_URL" <<'STAMP'
+# AGENT_VERSION is stamped too — see the macOS build script for why (it's what
+# the app and the device record report, and was stuck at the source default).
+python3 - "$STAMPED_SRC/aavishield-agent.py" "$ADMIN_URL" "$PORTAL_URL" "$VERSION" <<'STAMP'
 import re, sys
-path, admin, portal = sys.argv[1], sys.argv[2], sys.argv[3]
+path, admin, portal, version = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 src = open(path).read()
-for name, value in (("DEFAULT_ADMIN_URL", admin), ("DEFAULT_PORTAL_URL", portal)):
+for name, value in (("DEFAULT_ADMIN_URL", admin), ("DEFAULT_PORTAL_URL", portal),
+                    ("AGENT_VERSION", version)):
     src, n = re.subn(rf'^{name}\s*=\s*".*"\r?$', f'{name}  = "{value}"',
                      src, count=1, flags=re.M)
     if n != 1:

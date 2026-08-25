@@ -51,11 +51,16 @@ cd "$REPO_ROOT"
 STAMPED_SRC="$BUILD_DIR/src"
 mkdir -p "$STAMPED_SRC"
 cp scripts/agent/aavishield-agent.py "$STAMPED_SRC/aavishield-agent.py"
-python3 - "$STAMPED_SRC/aavishield-agent.py" "$ADMIN_URL" "$PORTAL_URL" <<'STAMP'
+# AGENT_VERSION is stamped too, not just the URLs: it's what the app window,
+# the tray, and the device record all report, and leaving it at the source's
+# hardcoded value made every release show that old number regardless of the
+# .pkg it shipped in (v1.5.0 on a 2.1.x build).
+python3 - "$STAMPED_SRC/aavishield-agent.py" "$ADMIN_URL" "$PORTAL_URL" "$VERSION" <<'STAMP'
 import re, sys
-path, admin, portal = sys.argv[1], sys.argv[2], sys.argv[3]
+path, admin, portal, version = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 src = open(path).read()
-for name, value in (("DEFAULT_ADMIN_URL", admin), ("DEFAULT_PORTAL_URL", portal)):
+for name, value in (("DEFAULT_ADMIN_URL", admin), ("DEFAULT_PORTAL_URL", portal),
+                    ("AGENT_VERSION", version)):
     src, n = re.subn(rf'^{name}\s*=\s*".*"\r?$', f'{name}  = "{value}"',
                      src, count=1, flags=re.M)
     if n != 1:

@@ -43,7 +43,9 @@ $StampedSrc = "$BuildDir\src\aavishield-agent.py"
 Copy-Item "$RepoRoot\scripts\agent\aavishield-agent.py" $StampedSrc
 
 $Source = Get-Content $StampedSrc -Raw
-foreach ($pair in @(@("DEFAULT_ADMIN_URL", $AdminUrl), @("DEFAULT_PORTAL_URL", $PortalUrl))) {
+# AGENT_VERSION is stamped too — see the macOS build script for why (it's what
+# the app and the device record report, and was stuck at the source default).
+foreach ($pair in @(@("DEFAULT_ADMIN_URL", $AdminUrl), @("DEFAULT_PORTAL_URL", $PortalUrl), @("AGENT_VERSION", $Version))) {
     # Anchored to the constant's own name at the start of a line, so exactly
     # one line can match and no occurrence count is needed. (The static
     # Regex.Replace has no count overload — a 4th argument would be read as

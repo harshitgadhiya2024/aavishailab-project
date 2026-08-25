@@ -3907,10 +3907,13 @@ class DesktopUI:
     BAR_W, BAR_H = 400, 44
     WIN_W, WIN_H = 340, 420
 
-    def __init__(self, state: AgentState, on_enrolled, has_tray: bool = False):
+    def __init__(self, state: AgentState, on_enrolled):
         self.state = state
         self._on_enrolled = on_enrolled
-        self._has_tray = has_tray
+        # Set by _build_tray() once the menu-bar icon actually exists. Until
+        # then Hide has nowhere to hide *to*, so it degrades to the bar.
+        self._has_tray = False
+        self._tray_icon = None
         self._webview = None
         self._main = None
         self._bar = None
@@ -3946,17 +3949,65 @@ class DesktopUI:
                 on_top=True, hidden=True, background_color="#141414",
             )
             self._webview = webview
+            self._build_tray()
             log.info("desktop UI ready")
             return True
         except Exception as exc:  # noqa: BLE001 - a UI failure must never stop enforcement
             log.warning("desktop UI failed to start: %s", exc)
             return False
 
+    def _build_tray(self):
+        """Prepares the menu-bar icon. Best effort: if pystray/Pillow aren't
+        there, this is a no-op and Hide falls back to the bar. The icon itself
+        is displayed from run_blocking(), which is on the main thread."""
+        try:
+            import pystray  # noqa: PLC0415
+            from PIL import Image, ImageDraw  # noqa: PLC0415
+        except ImportError:
+            log.info("menu-bar icon unavailable (pystray/Pillow missing)")
+            return
+        try:
+            # Brand-orange shield, readable on both a light and a dark menu bar.
+            img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+            d = ImageDraw.Draw(img)
+            d.polygon(
+                [(32, 6), (54, 15), (54, 34), (32, 58), (10, 34), (10, 15)],
+                fill=(255, 112, 0, 255),
+            )
+            menu = pystray.Menu(
+                pystray.MenuItem("Open Aavishield", lambda *_: self.show_main(), default=True),
+                pystray.MenuItem(lambda _: self._tray_status(), None, enabled=False),
+            )
+            self._tray_icon = pystray.Icon("aavishield", img, "Aavishield", menu)
+            log.info("menu-bar icon prepared")
+        except Exception as exc:  # noqa: BLE001
+            log.warning("could not prepare the menu-bar icon: %s", exc)
+            self._tray_icon = None
+
+    def _tray_status(self) -> str:
+        s = self.state.snapshot()["state"]
+        return {
+            "connected": "Protected",
+            "paused": "Paused — personal time",
+            "connecting": "Signing in…",
+            "blocked": "Needs IT approval",
+        }.get(s, "Not connected")
+
     def run_blocking(self):
         """Runs the GUI loop. MUST be the main thread — same AppKit constraint
         the tray has (see TrayUI.run_blocking)."""
         if self._webview is None:
             return
+        # run_detached prepares the status item and returns without blocking,
+        # so webview.start()'s Cocoa loop below drives both. If it fails, Hide
+        # stays degraded to the bar (self._has_tray is left False).
+        if self._tray_icon is not None:
+            try:
+                self._tray_icon.run_detached()
+                self._has_tray = True
+                log.info("menu-bar icon shown")
+            except Exception as exc:  # noqa: BLE001
+                log.warning("menu-bar icon could not be shown: %s", exc)
         try:
             self._webview.start()
         except Exception as exc:  # noqa: BLE001 - cosmetic; enforcement continues
@@ -4165,8 +4216,7 @@ def main():
     # the person clicks Connect — so an unenrolled agent shows "Not connected"
     # rather than silently waiting on a browser tab. Headless keeps the old
     # behaviour: block in browser_enroll() until it succeeds.
-    ui = DesktopUI(state, on_enrolled=lambda cfg: _start_agent_thread(cfg, state),
-                   has_tray=True)
+    ui = DesktopUI(state, on_enrolled=lambda cfg: _start_agent_thread(cfg, state))
     ui_ready = ui.start()
 
     if ui_ready and platform.system() != "Windows":
