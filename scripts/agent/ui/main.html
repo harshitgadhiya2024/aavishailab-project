@@ -145,7 +145,7 @@
     <p class="sub" id="subline">Sign in to protect this device</p>
 
     <div class="notice hidden" id="notice">
-      <div class="nt">Device already registered</div>
+      <div class="nt" id="notice-title">Device already registered</div>
       <div class="nd" id="notice-body"></div>
     </div>
 
@@ -243,6 +243,7 @@
       ring.style.cssText = "--ring-c: rgba(248,113,113,.4); --ring-bg: rgba(248,113,113,.05)";
       el("headline").textContent = "Can't connect";
       el("subline").textContent = "";
+      el("notice-title").textContent = "Device already registered";
       el("notice-body").textContent = s.message ||
         "Your device entry already exists so ask to company IT administrator to give permission to again connect";
       notice.classList.remove("hidden");
@@ -250,6 +251,23 @@
       cta.className = "btn btn-busy";
       cta.textContent = "Waiting for permission";
       cta.disabled = true;
+
+    } else if (s.state === "revoked") {
+      // The device's registration was removed on the server, so the agent
+      // stopped enforcing. Say so plainly instead of a false "Protected", and
+      // offer Connect so a re-enroll is one click away.
+      shield("#FACC15");
+      ring.style.cssText = "--ring-c: rgba(250,204,21,.45); --ring-bg: rgba(250,204,21,.06)";
+      el("headline").textContent = "Not protected";
+      el("subline").textContent = "";
+      el("notice-title").textContent = "Device not registered";
+      el("notice-body").textContent = s.message ||
+        "This device is no longer registered. Reconnect it, or ask your company IT administrator.";
+      notice.classList.remove("hidden");
+      el("who").textContent = "Work profile";
+      cta.className = "btn btn-primary";
+      cta.textContent = "Reconnect";
+      cta.disabled = false;
 
     } else {
       shield("#6B6B6B");

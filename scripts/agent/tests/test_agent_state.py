@@ -77,3 +77,22 @@ def test_uptime_only_shows_once_connected():
     assert s.snapshot()["uptime"] == ""
     s.set_connected()
     assert s.snapshot()["uptime"] == "0m"
+
+
+def test_revoked_state_replaces_protected():
+    # After the server rejects the device (deleted/revoked), the agent stops
+    # enforcing; the UI must not keep claiming "Protected".
+    s = agent.AgentState()
+    s.set_connected()
+    assert s.snapshot()["state"] == "connected"
+    s.set_revoked()
+    snap = s.snapshot()
+    assert snap["state"] == "revoked"
+    assert "no longer registered" in snap["message"]
+
+
+def test_revoked_does_not_override_a_pre_enroll_block():
+    s = agent.AgentState()
+    s.set_blocked("already registered")
+    s.set_revoked()
+    assert s.snapshot()["state"] == "blocked"

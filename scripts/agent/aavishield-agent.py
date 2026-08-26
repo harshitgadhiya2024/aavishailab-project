@@ -3127,6 +3127,19 @@ class AgentState:
             self._state = "paused" if mode == "paused" else "connected"
             self._message = reason if mode == "paused" else ""
 
+    def set_revoked(self):
+        """The server rejected this device's credentials (revoked, or its
+        record was deleted), so the agent has stopped enforcing and is passing
+        traffic through untouched. The window must not keep saying "Protected"
+        while nothing is actually being enforced — that's the exact confusion
+        a fail-open state creates."""
+        with self._lock:
+            if self._state == "blocked":
+                return  # a not-yet-enrolled block is a different, earlier state
+            self._state = "revoked"
+            self._message = ("This device is no longer registered. Reconnect it, "
+                             "or ask your company IT administrator.")
+
     def set_org_info(self, org_name: str, employee_name: str, uninstall_allowed: bool):
         self._set(org_name=org_name, employee_name=employee_name,
                   uninstall_allowed=uninstall_allowed)
@@ -3202,6 +3215,11 @@ def enroll(token: str, admin_url: str) -> dict:
     with open(CONFIG_PATH, "w") as f:
         json.dump(config, f, indent=2)
     os.chmod(CONFIG_PATH, 0o600)
+    # A successful (re-)enrollment means these credentials are valid again, so
+    # clear any earlier revoked state — otherwise the fresh run_agent would see
+    # the stale flag and refuse to enforce, and the Reconnect button would
+    # appear to do nothing.
+    AGENT_REVOKED.clear()
     log.info("Enrolled successfully as device %s", config["device_id"])
     return config
 
@@ -3991,6 +4009,7 @@ class DesktopUI:
             "paused": "Paused — personal time",
             "connecting": "Signing in…",
             "blocked": "Needs IT approval",
+            "revoked": "Not protected — reconnect needed",
         }.get(s, "Not connected")
 
     def run_blocking(self):
@@ -4383,7 +4402,12 @@ def run_agent(config: dict, state: AgentState, block: bool = True):
     # only place "paused" can come from, and only ever on a personal device.
     def _mirror_enforcement():
         while True:
-            state.set_enforcement(GATE.mode, GATE.reason)
+            # A revoked device has stopped enforcing (blind-tunnel); the window
+            # must reflect that rather than a stale "Protected".
+            if AGENT_REVOKED.is_set():
+                state.set_revoked()
+            else:
+                state.set_enforcement(GATE.mode, GATE.reason)
             time.sleep(5)
 
     threading.Thread(target=_mirror_enforcement, daemon=True).start()
