@@ -1530,6 +1530,9 @@ ok "Removed $INSTALL_DIR"
 
 info "Removing SSL Inspection certificate..."
 if sudo -v 2>/dev/null; then
+    # The CA is trusted in the user's own keychain (see _install_ca_darwin);
+    # the System copy only exists on machines an older build touched.
+    security delete-certificate -c "Aavishield SSL Inspection CA" 2>/dev/null || true
     sudo security delete-certificate -c "Aavishield SSL Inspection CA" /Library/Keychains/System.keychain 2>/dev/null \
         && ok "SSL Inspection certificate removed" \
         || info "No SSL Inspection certificate found (nothing to remove)"

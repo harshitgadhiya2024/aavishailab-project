@@ -165,8 +165,15 @@ MITM_CERT_DIR = os.path.expanduser("~/.aavishield/certs")
 # employee's session and so can neither install that CA nor honestly answer
 # "is it trusted?" on its own — this marker is the privileged half of the
 # install telling it the answer. Root-owned and world-readable by design.
-MITM_TRUST_MARKER = (r"C:\ProgramData\Aavishield\ca-trusted"
-                     if platform.system() == "Windows" else "/etc/aavishield/ca-trusted")
+# Where the "org CA is trusted" marker lives — alongside the trust itself, so
+# the two can never disagree. macOS trusts the CA in the *user's* domain (see
+# _install_ca_darwin for why the admin domain is unusable from a background
+# app), so its marker is user-owned too; Linux and Windows trust system-wide
+# from a privileged helper, so theirs stay system-wide.
+MITM_TRUST_MARKER = (
+    r"C:\ProgramData\Aavishield\ca-trusted" if platform.system() == "Windows"
+    else os.path.expanduser("~/.aavishield/ca-trusted") if platform.system() == "Darwin"
+    else "/etc/aavishield/ca-trusted")
 MITM_CA_COMMON_NAME = "Aavishield SSL Inspection CA"
 CA_TRUST_POLL_INTERVAL = 60  # seconds the root helper waits between attempts
 MITM_CONFIG_REFRESH_INTERVAL = 300  # seconds — how often the enabled/bypass list reloads
@@ -3689,45 +3696,44 @@ def _console_user_configs() -> List[str]:
 
 
 def _install_ca_darwin(pem_path: str) -> bool:
-    # macOS (Catalina and later) will not let a background process silently
-    # trust a root CA: setting trust settings on the System keychain requires
-    # GUI authorization, which a LaunchDaemon can't provide — it fails with
-    # "the authorization was denied since no user interaction was possible"
-    # (exactly what the ca-trust helper's log showed). So the trust step runs
-    # from the user's session through osascript, which puts up the native
-    # admin-password prompt once. The same `security add-trusted-cert` runs;
-    # osascript is only supplying the authorization the daemon couldn't. The
-    # root-owned marker is written in the same privileged shell so a
-    # non-root agent never has to touch /etc itself.
-    #
-    # Called from the user session (run_agent), never the root daemon: a root
-    # LaunchDaemon has no GUI to show the prompt in.
-    marker = MITM_TRUST_MARKER
-    inner = (
-        "/usr/bin/security add-trusted-cert -d -r trustRoot "
-        "-k /Library/Keychains/System.keychain " + shlex.quote(pem_path) + " && "
-        "/bin/mkdir -p " + shlex.quote(os.path.dirname(marker)) + " && "
-        "/usr/bin/touch " + shlex.quote(marker) + " && "
-        "/bin/chmod 644 " + shlex.quote(marker)
-    )
-    # AppleScript string: escape backslashes and double quotes for the literal.
-    esc = inner.replace("\\", "\\\\").replace('"', '\\"')
-    script = (
-        'do shell script "' + esc + '" with administrator privileges '
-        'with prompt "Aavishield needs your permission to install a security '
-        'certificate so your company\'s web protection can work on encrypted '
-        'sites."'
-    )
-    result = subprocess.run(["/usr/bin/osascript", "-e", script],
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    """Trusts the org CA for the logged-in user.
+
+    Deliberately the *user* trust domain, not the admin/System one. Admin-domain
+    trust settings go through SecTrustSettingsSetTrustSettings, which needs an
+    authorization session attached to the window server; a process elevated by
+    `do shell script ... with administrator privileges` is detached from it, so
+    that call fails with "the authorization was denied since no user
+    interaction was possible" even after the password prompt is answered
+    correctly — which is exactly what happened, first from the root daemon and
+    then again through the prompt.
+
+    The user domain has no such requirement, needs no password, and is honoured
+    by the system trust evaluation that Safari and Chrome both use — so the
+    block page works for the person actually using the machine. Firefox keeps
+    its own store and is unaffected either way.
+    """
+    login_keychain = os.path.expanduser("~/Library/Keychains/login.keychain-db")
+    if not os.path.exists(login_keychain):
+        # Older layouts (and some migrated accounts) use the un-suffixed name.
+        alt = os.path.expanduser("~/Library/Keychains/login.keychain")
+        login_keychain = alt if os.path.exists(alt) else ""
+
+    cmd = ["/usr/bin/security", "add-trusted-cert", "-r", "trustRoot"]
+    if login_keychain:
+        cmd += ["-k", login_keychain]
+    cmd.append(pem_path)
+
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, timeout=120)
     if result.returncode != 0:
-        # -128 is "user cancelled" — expected, not an error to shout about.
-        out = result.stdout.strip()
-        if "-128" in out or "User canceled" in out:
-            log.info("CA trust prompt was dismissed — will ask again next start")
+        out = (result.stdout or "").strip()
+        if "-128" in out or "User canceled" in out or "userCanceled" in out:
+            log.info("CA trust was declined — HTTPS block pages stay off until it's allowed")
         else:
-            log.error("CA trust prompt failed: %s", out)
+            log.error("could not trust the org CA: %s", out)
         return False
+
+    log.info("Org CA trusted for this user — HTTPS block pages can now render")
     return True
 
 
@@ -3802,18 +3808,16 @@ def _trust_ca_once(config: dict) -> bool:
     # treats this file as proof, so an optimistic marker would have it
     # decrypting HTTPS that browsers then refuse.
     #
-    # On macOS the marker was already created (root-owned) inside the same
-    # osascript-privileged shell that trusted the CA — see _install_ca_darwin.
-    # A non-root user-session agent can't overwrite it, so don't try; its
-    # existence is exactly the success signal we want.
-    if platform.system() != "Darwin":
-        try:
-            with open(MITM_TRUST_MARKER, "w") as f:
-                f.write(f"{MITM_CA_COMMON_NAME}\ninstalled={datetime.datetime.now().isoformat()}\n")
-            os.chmod(MITM_TRUST_MARKER, 0o644)
-        except OSError as exc:
-            log.error("could not write the trust marker %s: %s", MITM_TRUST_MARKER, exc)
-            return False
+    # MITM_TRUST_MARKER sits in the same domain as the trust itself (user dir
+    # on macOS, system-wide elsewhere), so whoever just did the trusting can
+    # always write it.
+    try:
+        os.makedirs(os.path.dirname(MITM_TRUST_MARKER), exist_ok=True)
+        with open(MITM_TRUST_MARKER, "w") as f:
+            f.write(f"{MITM_CA_COMMON_NAME}\ninstalled={datetime.datetime.now().isoformat()}\n")
+    except OSError as exc:
+        log.error("could not write the trust marker %s: %s", MITM_TRUST_MARKER, exc)
+        return False
 
     log.info("Org CA installed in the system trust store — SSL Inspection can now run")
     return True
@@ -4017,6 +4021,8 @@ def _uninstall_darwin():
         "/Library/LaunchAgents/com.aavishield.agent.plist",
         "/bin/rm -rf /Applications/Aavishield.app /etc/aavishield /usr/local/aavishield",
         "/usr/sbin/pkgutil --forget com.aavishield.agent 2>/dev/null",
+        # The System keychain copy only exists on machines that were trusted
+        # by an older build; harmless when absent.
         f"/usr/bin/security delete-certificate -c {shlex.quote(MITM_CA_COMMON_NAME)} "
         "/Library/Keychains/System.keychain 2>/dev/null",
         "true",  # keep the whole chain's exit status 0 so osascript doesn't error
@@ -4030,6 +4036,14 @@ def _uninstall_darwin():
     except Exception as exc:  # noqa: BLE001
         log.warning("uninstall command failed: %s", exc)
         return
+    # The CA now lives in the user's own keychain, which needs no elevation
+    # to clean up — and wouldn't be reachable from the root shell above.
+    try:
+        subprocess.run(["/usr/bin/security", "delete-certificate",
+                        "-c", MITM_CA_COMMON_NAME],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
+    except Exception:  # noqa: BLE001
+        pass
     try:
         shutil.rmtree(os.path.dirname(CONFIG_PATH), ignore_errors=True)
     except Exception:  # noqa: BLE001
