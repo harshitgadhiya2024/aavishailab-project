@@ -25,6 +25,7 @@ import platform
 import plistlib
 import random
 import signal
+import shlex
 import socket
 import ssl
 import subprocess
@@ -3653,12 +3654,44 @@ def _console_user_configs() -> List[str]:
 
 
 def _install_ca_darwin(pem_path: str) -> bool:
-    result = subprocess.run(
-        ["/usr/bin/security", "add-trusted-cert", "-d", "-r", "trustRoot",
-         "-k", "/Library/Keychains/System.keychain", pem_path],
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    # macOS (Catalina and later) will not let a background process silently
+    # trust a root CA: setting trust settings on the System keychain requires
+    # GUI authorization, which a LaunchDaemon can't provide — it fails with
+    # "the authorization was denied since no user interaction was possible"
+    # (exactly what the ca-trust helper's log showed). So the trust step runs
+    # from the user's session through osascript, which puts up the native
+    # admin-password prompt once. The same `security add-trusted-cert` runs;
+    # osascript is only supplying the authorization the daemon couldn't. The
+    # root-owned marker is written in the same privileged shell so a
+    # non-root agent never has to touch /etc itself.
+    #
+    # Called from the user session (run_agent), never the root daemon: a root
+    # LaunchDaemon has no GUI to show the prompt in.
+    marker = MITM_TRUST_MARKER
+    inner = (
+        "/usr/bin/security add-trusted-cert -d -r trustRoot "
+        "-k /Library/Keychains/System.keychain " + shlex.quote(pem_path) + " && "
+        "/bin/mkdir -p " + shlex.quote(os.path.dirname(marker)) + " && "
+        "/usr/bin/touch " + shlex.quote(marker) + " && "
+        "/bin/chmod 644 " + shlex.quote(marker)
+    )
+    # AppleScript string: escape backslashes and double quotes for the literal.
+    esc = inner.replace("\\", "\\\\").replace('"', '\\"')
+    script = (
+        'do shell script "' + esc + '" with administrator privileges '
+        'with prompt "Aavishield needs your permission to install a security '
+        'certificate so your company\'s web protection can work on encrypted '
+        'sites."'
+    )
+    result = subprocess.run(["/usr/bin/osascript", "-e", script],
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     if result.returncode != 0:
-        log.error("security add-trusted-cert failed: %s", result.stdout.strip())
+        # -128 is "user cancelled" — expected, not an error to shout about.
+        out = result.stdout.strip()
+        if "-128" in out or "User canceled" in out:
+            log.info("CA trust prompt was dismissed — will ask again next start")
+        else:
+            log.error("CA trust prompt failed: %s", out)
         return False
     return True
 
@@ -3727,20 +3760,58 @@ def _trust_ca_once(config: dict) -> bool:
     # Written only after the trust store actually accepted the CA — the agent
     # treats this file as proof, so an optimistic marker would have it
     # decrypting HTTPS that browsers then refuse.
-    try:
-        with open(MITM_TRUST_MARKER, "w") as f:
-            f.write(f"{MITM_CA_COMMON_NAME}\ninstalled={datetime.datetime.now().isoformat()}\n")
-        os.chmod(MITM_TRUST_MARKER, 0o644)
-    except OSError as exc:
-        log.error("could not write the trust marker %s: %s", MITM_TRUST_MARKER, exc)
-        return False
+    #
+    # On macOS the marker was already created (root-owned) inside the same
+    # osascript-privileged shell that trusted the CA — see _install_ca_darwin.
+    # A non-root user-session agent can't overwrite it, so don't try; its
+    # existence is exactly the success signal we want.
+    if platform.system() != "Darwin":
+        try:
+            with open(MITM_TRUST_MARKER, "w") as f:
+                f.write(f"{MITM_CA_COMMON_NAME}\ninstalled={datetime.datetime.now().isoformat()}\n")
+            os.chmod(MITM_TRUST_MARKER, 0o644)
+        except OSError as exc:
+            log.error("could not write the trust marker %s: %s", MITM_TRUST_MARKER, exc)
+            return False
 
     log.info("Org CA installed in the system trust store — SSL Inspection can now run")
     return True
 
 
+def ensure_ca_trusted_darwin(config: dict):
+    """One GUI-prompted attempt to trust the org CA, from the user session.
+
+    macOS won't let the root daemon trust a CA without interaction, so the
+    prompt has to come from here (the LaunchAgent has a GUI session). Runs once
+    per agent start: if the person dismisses it, they get asked again next time
+    rather than being nagged in a loop. Domain blocking already works without
+    this — only the custom block *page* on HTTPS needs the CA trusted, so a
+    dismissed prompt degrades gracefully."""
+    if os.path.exists(MITM_TRUST_MARKER):
+        return
+    # Only bother if SSL Inspection is actually on for this org — no point
+    # prompting for a certificate the deployment will never use.
+    try:
+        req = _agent_request(config, "/internal/agent/mitm-config")
+        with _DIRECT_OPENER.open(req, timeout=MITM_CONFIG_FETCH_TIMEOUT) as resp:
+            if not json.loads(resp.read() or b"{}").get("enabled"):
+                return
+    except Exception as exc:  # noqa: BLE001 - best effort; try the trust anyway on error
+        log.debug("could not check SSL-inspection state before CA prompt: %s", exc)
+    if _trust_ca_once(config):
+        log.info("Org CA trusted via the setup prompt — HTTPS block pages will now show")
+
+
 def ca_trust_daemon():
-    """Entry point for `aavishield-agent --ca-trust-daemon` (root)."""
+    """Entry point for `aavishield-agent --ca-trust-daemon` (root).
+
+    macOS is handled from the user session instead (ensure_ca_trusted_darwin):
+    trusting a CA there needs a GUI authorization prompt this root daemon can't
+    show, so it would only fail on a loop. Linux/Windows keep the daemon."""
+    if platform.system() == "Darwin":
+        log.info("CA trust on macOS is handled from the user session — daemon idle")
+        return 0
+
     log.info("CA trust helper starting")
     while True:
         if os.path.exists(MITM_TRUST_MARKER):
@@ -4364,6 +4435,18 @@ def run_agent(config: dict, state: AgentState, block: bool = True):
     threading.Thread(target=ProxyWatchdog(config, reporter).loop, daemon=True).start()
     threading.Thread(target=AutoUpdater(config).loop, daemon=True).start()
     threading.Thread(target=AppControlWatcher(config).loop, daemon=True).start()
+
+    # macOS: trust the org CA from here (the user session) because the root
+    # daemon can't show the required GUI prompt. One-shot and slightly delayed
+    # so it doesn't collide with the enrollment browser tab still closing.
+    if platform.system() == "Darwin":
+        def _ca_trust_once():
+            time.sleep(3)
+            try:
+                ensure_ca_trusted_darwin(config)
+            except Exception as exc:  # noqa: BLE001 - never let this affect enforcement
+                log.debug("CA trust attempt failed: %s", exc)
+        threading.Thread(target=_ca_trust_once, daemon=True).start()
 
     # Time-and-activity monitoring: an input counter and the screenshot loop.
     # Both stay dormant until the org enables screenshots and enforcement is
