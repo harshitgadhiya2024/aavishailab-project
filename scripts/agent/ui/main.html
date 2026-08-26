@@ -178,9 +178,9 @@
       <div class="pstate" id="uptime"></div>
     </div>
 
-    <!-- HTTPS block pages need the company CA trusted, which macOS only allows
-         behind a password prompt. Offered as an explicit action instead of
-         firing that prompt unannounced. -->
+    <!-- HTTPS block pages need the company CA trusted. Offered as an explicit
+         action instead of installing it unannounced, which would read as
+         malware even though no password is actually required. -->
     <div class="https-note hidden" id="https-note">
       <p class="hn-title">Finish setup for encrypted sites</p>
       <p class="hn-desc" id="hn-desc">Blocked HTTPS sites will show a browser error until you

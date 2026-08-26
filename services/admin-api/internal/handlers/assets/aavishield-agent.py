@@ -4096,10 +4096,10 @@ class _UIBridge:
     def enable_https(self) -> dict:
         """Trusts the org CA so HTTPS sites can show the company's block page.
 
-        Explicitly user-initiated: macOS puts up an admin-password prompt, and
-        one that appears unasked reads as malware. Returns {ok} or {error} so
-        the window can say what happened — a dismissed prompt used to leave no
-        trace at all."""
+        Explicitly user-initiated: a certificate silently installing itself
+        reads as malware, even though this one needs no password (see
+        _install_ca_darwin). Returns {ok} or {error} so the window can say
+        what happened."""
         return self._ui.enable_https()
 
     def uninstall(self, email: str, password: str) -> dict:
@@ -4317,8 +4317,8 @@ class DesktopUI:
         self.state.set_https_ready(ok)
         if ok:
             return {"ok": True}
-        return {"error": "The certificate was not installed. You need to approve "
-                         "the macOS password prompt."}
+        return {"error": "The certificate could not be installed. Try again, "
+                         "or ask IT for help if this keeps happening."}
 
     # ── disconnect / uninstall ────────────────────────────────────────────
     def begin_disconnect(self):
@@ -4692,12 +4692,12 @@ def run_agent(config: dict, state: AgentState, block: bool = True):
     threading.Thread(target=AppControlWatcher(config).loop, daemon=True).start()
 
     # macOS: whether HTTPS block pages can be shown depends on the org CA
-    # being trusted, which needs a GUI prompt. Rather than firing that prompt
-    # unannounced (it looks like malware, and a dismissed one left no trace),
-    # publish the state and let the window offer it as an explicit action.
-    # Gated on mitm.policy_enabled(): without this, every Mac nagged to
-    # install a certificate — and put up a real admin-password prompt if
-    # clicked — even for orgs that never turned SSL Inspection on at all.
+    # being trusted. Rather than installing it unannounced (a certificate
+    # appearing with no explanation reads as malware), publish the state and
+    # let the window offer it as an explicit action.
+    # Gated on mitm.policy_enabled(): without this, every Mac was nagged to
+    # install a certificate it had no use for, even at orgs that never
+    # turned SSL Inspection on at all.
     if platform.system() == "Darwin":
         def _watch_ca_state():
             while True:
