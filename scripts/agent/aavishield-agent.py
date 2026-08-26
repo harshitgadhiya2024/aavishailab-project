@@ -160,16 +160,13 @@ CASB_LOOKUP_TIMEOUT = 5
 CASB_CACHE_TTL = 2 * 60
 
 MITM_CERT_DIR = os.path.expanduser("~/.aavishield/certs")
-# Written by the root CA-trust helper (--ca-trust-daemon) once the org CA is
-# actually in the system trust store. The agent runs unprivileged in the
-# employee's session and so can neither install that CA nor honestly answer
-# "is it trusted?" on its own — this marker is the privileged half of the
-# install telling it the answer. Root-owned and world-readable by design.
 # Where the "org CA is trusted" marker lives — alongside the trust itself, so
 # the two can never disagree. macOS trusts the CA in the *user's* domain (see
 # _install_ca_darwin for why the admin domain is unusable from a background
-# app), so its marker is user-owned too; Linux and Windows trust system-wide
-# from a privileged helper, so theirs stay system-wide.
+# app), so its marker is user-owned too. Linux and Windows trust system-wide
+# from a privileged root helper (--ca-trust-daemon) instead, since a
+# background daemon there faces no such GUI-authorization restriction — so
+# theirs stay root-owned and world-readable in a system directory.
 MITM_TRUST_MARKER = (
     r"C:\ProgramData\Aavishield\ca-trusted" if platform.system() == "Windows"
     else os.path.expanduser("~/.aavishield/ca-trusted") if platform.system() == "Darwin"
@@ -1179,6 +1176,12 @@ class MITMEngine:
         self.config = config
         self._lock = threading.Lock()
         self._enabled = False
+        # Raw org policy ("is SSL Inspection turned on at all"), kept apart
+        # from _enabled (which also requires the CA to already be trusted).
+        # The desktop UI's "install the certificate" nag needs this one: it
+        # should only ever appear for an org that actually wants SSL
+        # Inspection, never for one that has it off — see policy_enabled().
+        self._policy_enabled = False
         self._bypass: set = set()
         self._leaf_cache: Dict[str, Tuple[str, str, float]] = {}  # host -> (certfile, keyfile, expiry)
         os.makedirs(MITM_CERT_DIR, mode=0o700, exist_ok=True)
@@ -1187,6 +1190,7 @@ class MITMEngine:
         if AGENT_REVOKED.is_set():
             with self._lock:
                 self._enabled = False
+                self._policy_enabled = False
             return
         try:
             req = _agent_request(self.config, "/internal/agent/mitm-config")
@@ -1198,12 +1202,23 @@ class MITMEngine:
             return
 
         bypass = {str(d).lower().lstrip("www.") for d in (body.get("bypass_domains") or [])}
-        enabled = bool(body.get("enabled")) and mitm_ca_trusted(self.config)
-        if body.get("enabled") and not enabled:
+        policy_enabled = bool(body.get("enabled"))
+        enabled = policy_enabled and mitm_ca_trusted(self.config)
+        if policy_enabled and not enabled:
             log.warning("SSL Inspection is enabled by policy, but the local CA is not trusted; using blind HTTPS tunnels")
         with self._lock:
             self._enabled = enabled
+            self._policy_enabled = policy_enabled
             self._bypass = bypass
+
+    def policy_enabled(self) -> bool:
+        """Whether the org wants SSL Inspection on, independent of whether the
+        CA happens to be trusted yet. Drives whether the desktop UI's "enable
+        HTTPS protection" prompt is even relevant: _enabled is already False
+        while the CA still needs trusting, so gating the prompt on _enabled
+        instead would hide it exactly when it's needed."""
+        with self._lock:
+            return self._policy_enabled
 
     def loop_refresh(self):
         while True:
@@ -3177,9 +3192,11 @@ class AgentState:
             self._message = ("This device is no longer registered. Reconnect it, "
                              "or ask your company IT administrator.")
 
-    def set_https_ready(self, ready: bool):
-        """Whether the org CA is trusted. Drives the window's one-time
-        "Enable HTTPS protection" action — see ensure_ca_trusted_darwin."""
+    def set_https_ready(self, ready: Optional[bool]):
+        """Whether the org CA is trusted (None when SSL Inspection isn't even
+        enabled for this org, i.e. not applicable). Drives the window's
+        "Enable HTTPS protection" action — see run_agent's _watch_ca_state
+        and DesktopUI.enable_https."""
         self._set(https_ready=ready)
 
     def set_org_info(self, org_name: str, employee_name: str, uninstall_allowed: bool):
@@ -3711,6 +3728,10 @@ def _install_ca_darwin(pem_path: str) -> bool:
     by the system trust evaluation that Safari and Chrome both use — so the
     block page works for the person actually using the machine. Firefox keeps
     its own store and is unaffected either way.
+
+    Called from the user session (DesktopUI.enable_https, the "Enable HTTPS
+    protection" button), never the root daemon: a root LaunchDaemon has no
+    GUI to show the prompt in, and this domain needs none anyway.
     """
     login_keychain = os.path.expanduser("~/Library/Keychains/login.keychain-db")
     if not os.path.exists(login_keychain):
@@ -3823,36 +3844,16 @@ def _trust_ca_once(config: dict) -> bool:
     return True
 
 
-def ensure_ca_trusted_darwin(config: dict):
-    """One GUI-prompted attempt to trust the org CA, from the user session.
-
-    macOS won't let the root daemon trust a CA without interaction, so the
-    prompt has to come from here (the LaunchAgent has a GUI session). Runs once
-    per agent start: if the person dismisses it, they get asked again next time
-    rather than being nagged in a loop. Domain blocking already works without
-    this — only the custom block *page* on HTTPS needs the CA trusted, so a
-    dismissed prompt degrades gracefully."""
-    if os.path.exists(MITM_TRUST_MARKER):
-        return
-    # Only bother if SSL Inspection is actually on for this org — no point
-    # prompting for a certificate the deployment will never use.
-    try:
-        req = _agent_request(config, "/internal/agent/mitm-config")
-        with _DIRECT_OPENER.open(req, timeout=MITM_CONFIG_FETCH_TIMEOUT) as resp:
-            if not json.loads(resp.read() or b"{}").get("enabled"):
-                return
-    except Exception as exc:  # noqa: BLE001 - best effort; try the trust anyway on error
-        log.debug("could not check SSL-inspection state before CA prompt: %s", exc)
-    if _trust_ca_once(config):
-        log.info("Org CA trusted via the setup prompt — HTTPS block pages will now show")
-
-
 def ca_trust_daemon():
     """Entry point for `aavishield-agent --ca-trust-daemon` (root).
 
-    macOS is handled from the user session instead (ensure_ca_trusted_darwin):
-    trusting a CA there needs a GUI authorization prompt this root daemon can't
-    show, so it would only fail on a loop. Linux/Windows keep the daemon."""
+    macOS is handled from the user session instead: trusting a CA in the
+    admin/System domain needs a GUI authorization prompt this root daemon
+    can't show, so it would only fail on a loop. See DesktopUI.enable_https,
+    the "Enable HTTPS protection" button's handler, which runs
+    _trust_ca_once from the user's own session and trusts the CA in the
+    user keychain instead (see _install_ca_darwin). Linux/Windows keep this
+    daemon."""
     if platform.system() == "Darwin":
         log.info("CA trust on macOS is handled from the user session — daemon idle")
         return 0
@@ -4694,10 +4695,16 @@ def run_agent(config: dict, state: AgentState, block: bool = True):
     # being trusted, which needs a GUI prompt. Rather than firing that prompt
     # unannounced (it looks like malware, and a dismissed one left no trace),
     # publish the state and let the window offer it as an explicit action.
+    # Gated on mitm.policy_enabled(): without this, every Mac nagged to
+    # install a certificate — and put up a real admin-password prompt if
+    # clicked — even for orgs that never turned SSL Inspection on at all.
     if platform.system() == "Darwin":
         def _watch_ca_state():
             while True:
-                state.set_https_ready(os.path.exists(MITM_TRUST_MARKER))
+                if mitm.policy_enabled():
+                    state.set_https_ready(os.path.exists(MITM_TRUST_MARKER))
+                else:
+                    state.set_https_ready(None)
                 time.sleep(10)
         threading.Thread(target=_watch_ca_state, daemon=True).start()
 

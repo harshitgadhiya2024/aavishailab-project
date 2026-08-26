@@ -110,3 +110,13 @@ def test_https_ready_tracks_the_ca_marker():
     assert s.snapshot()["https_ready"] is False
     s.set_https_ready(True)
     assert s.snapshot()["https_ready"] is True
+
+
+def test_https_ready_can_return_to_not_applicable():
+    # An org can turn SSL Inspection off after a device already saw it on —
+    # the "finish setup" banner must go away again, not get stuck showing
+    # True/False from before.
+    s = agent.AgentState()
+    s.set_https_ready(False)
+    s.set_https_ready(None)
+    assert s.snapshot()["https_ready"] is None
