@@ -2364,6 +2364,19 @@ class ActivityMonitor:
         self._available = False
 
     def start(self):
+        """Starts the input listeners. Call only when monitoring is actually
+        on — see start_when_enabled(), which is what run_agent uses.
+
+        Not started at boot on purpose. pynput's macOS backend installs a
+        Quartz event tap and spins a CoreFoundation run loop, and doing that
+        from a background thread while the app's own Cocoa loop owns main —
+        in a bundle that has not been granted Input Monitoring — is what made
+        the app hang on launch and abort with SIGTRAP right after enrolment.
+        An org with monitoring switched off should never pay that cost, and
+        never did need to: nothing reads these counters until a screenshot is
+        captured."""
+        if self._listeners:
+            return
         try:
             from pynput import keyboard, mouse  # noqa: PLC0415
         except Exception as exc:  # noqa: BLE001 - missing dep or backend
@@ -2418,6 +2431,18 @@ class ActivityMonitor:
             log.info("activity monitoring started")
         except Exception as exc:  # noqa: BLE001
             log.info("activity monitoring could not start: %s", exc)
+
+    def start_when_enabled(self):
+        """Waits until the org turns monitoring on, then starts listening.
+
+        Polls rather than starting eagerly so a device that is never monitored
+        never touches the input APIs at all."""
+        while True:
+            if SCREENSHOT.enabled and GATE.captures_screenshots():
+                self.start()
+                if self._listeners:
+                    return
+            time.sleep(30)
 
     def snapshot(self, since_ts: float, until_ts: float) -> dict:
         """Activity over [since_ts, until_ts]. active_seconds is how many whole
@@ -3746,14 +3771,20 @@ def _trust_ca_once(config: dict) -> bool:
         log.error("the CA endpoint returned something that is not a certificate")
         return False
 
-    marker_dir = os.path.dirname(MITM_TRUST_MARKER)
+    # Staged somewhere this process can actually write. The marker's directory
+    # (/etc/aavishield) is root-owned, and on macOS the trust step runs as the
+    # unprivileged user — writing the PEM there failed every time, which is
+    # what surfaced as "the certificate was not installed" no matter how the
+    # password prompt was answered. Only the privileged step below touches
+    # /etc; the certificate itself is read from the user's own directory.
+    pem_dir = MITM_CERT_DIR if platform.system() == "Darwin" else os.path.dirname(MITM_TRUST_MARKER)
     try:
-        os.makedirs(marker_dir, exist_ok=True)
+        os.makedirs(pem_dir, mode=0o700, exist_ok=True)
     except OSError as exc:
-        log.error("could not create %s: %s", marker_dir, exc)
+        log.error("could not create %s: %s", pem_dir, exc)
         return False
 
-    pem_path = os.path.join(marker_dir, "ca.pem")
+    pem_path = os.path.join(pem_dir, "org-ca.pem")
     try:
         with open(pem_path, "wb") as f:
             f.write(pem)
@@ -4660,7 +4691,7 @@ def run_agent(config: dict, state: AgentState, block: bool = True):
     # Both stay dormant until the org enables screenshots and enforcement is
     # full, so they cost nothing on a device that isn't being monitored.
     activity_monitor = ActivityMonitor()
-    activity_monitor.start()
+    threading.Thread(target=activity_monitor.start_when_enabled, daemon=True).start()
     threading.Thread(target=ScreenshotCapturer(config, activity_monitor).loop, daemon=True).start()
 
     # The tray owns the main thread (AppKit's requirement on macOS), so the
