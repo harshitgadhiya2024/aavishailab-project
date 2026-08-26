@@ -217,23 +217,11 @@ func (h *AgentHandler) Enroll(c *gin.Context) {
 	}
 	isNewDevice := lookup.First(&device).Error != nil
 
-	// A device enrols once. Re-running the installer on a machine that already
-	// has a row is refused unless an administrator granted a reconnect, so an
-	// employee can't re-enrol themselves to shake off a policy, land a second
-	// identity in the dashboard, or quietly move the device to another person.
-	// Note this is deliberately checked *before* the enrollment token is
-	// consumed: a refused attempt must not burn the employee's token.
-	if !isNewDevice && !device.ReconnectAllowed {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": "Your device entry already exists so ask to company IT administrator " +
-				"to give permission to again connect",
-			"code":      "device_already_enrolled",
-			"device_id": device.ID,
-			"hostname":  device.Hostname,
-		})
-		return
-	}
-
+	// Re-enrolling is allowed. Protection is now accountability rather than
+	// prevention: an employee may disconnect and reconnect their own machine,
+	// and each transition is written to activity_events and emailed to the
+	// company's admins (see device_lifecycle.go). Blocking re-enrollment would
+	// make disconnect a one-way door with no way back.
 	device.OrgID = enrollToken.OrgID
 	device.EmployeeID = enrollToken.EmployeeID
 	device.Hostname = req.Hostname
@@ -252,12 +240,6 @@ func (h *AgentHandler) Enroll(c *gin.Context) {
 			return
 		}
 	} else {
-		// The grant is spent by the reconnect it just authorised — one grant,
-		// one reconnect. Leaving it set would turn a single approval into
-		// standing permission to re-enrol forever.
-		device.ReconnectAllowed = false
-		device.ReconnectGrantedBy = nil
-		device.ReconnectGrantedAt = nil
 		if err := h.db.Save(&device).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update device"})
 			return
@@ -489,7 +471,7 @@ func (h *AgentHandler) GetConfig(c *gin.Context) {
 	// offer: a pause state is only meaningful on a personal device, and the
 	// uninstall entry only appears where the company has enabled it.
 	var dev models.Device
-	h.db.Select("ownership", "uninstall_allowed").Where("id = ?", deviceID).First(&dev)
+	h.db.Select("ownership").Where("id = ?", deviceID).First(&dev)
 
 	// Names for the desktop UI's profile card — it has no other source for
 	// them, and showing an employee a bare UUID would be worse than nothing.
@@ -508,7 +490,6 @@ func (h *AgentHandler) GetConfig(c *gin.Context) {
 		"device_id":          deviceID,
 		"org_id":             orgID,
 		"ownership":          dev.Ownership,
-		"uninstall_allowed":  dev.UninstallAllowed,
 		"org_name":           orgName,
 		"employee_name":      empName,
 		"rules_count":        ruleCount,
@@ -1651,74 +1632,6 @@ func (h *AgentHandler) RevokeDevice(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Device revoked. The agent will stop reporting on next heartbeat."})
-}
-
-// AllowDeviceReconnect handles POST /devices/:id/allow-reconnect — an
-// administrator authorising ONE more enrollment for a machine that already has
-// a Device row. Without this an employee who reinstalls (or tries to re-enrol
-// to shed a policy) is refused by Enroll; this is the sanctioned way back.
-//
-// The grant is consumed by the reconnect it authorises, so this has to be
-// called again for any subsequent one.
-func (h *AgentHandler) AllowDeviceReconnect(c *gin.Context) {
-	orgID := c.GetString("scoped_org_id")
-
-	var device models.Device
-	if err := h.db.Where("id = ? AND org_id = ?", c.Param("id"), orgID).First(&device).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Device not found"})
-		return
-	}
-
-	now := time.Now()
-	grantedBy, _ := uuid.Parse(c.GetString("user_id"))
-	updates := map[string]any{
-		"reconnect_allowed":    true,
-		"reconnect_granted_at": &now,
-	}
-	if grantedBy != uuid.Nil {
-		updates["reconnect_granted_by"] = &grantedBy
-	}
-	if err := h.db.Model(&device).Updates(updates).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to grant reconnect"})
-		return
-	}
-
-	writeAudit(h.db, c, &device.OrgID, "device.reconnect_allowed", "device", &device.ID,
-		map[string]any{"hostname": device.Hostname})
-	c.JSON(http.StatusOK, gin.H{
-		"message":           "Reconnect allowed. The employee can connect this device once more.",
-		"reconnect_allowed": true,
-	})
-}
-
-// SetDeviceUninstallAllowed handles PUT /devices/:id/uninstall-allowed — whether
-// the employee may remove the agent from this device. Off by default: removal
-// is the company's decision, and the desktop app hides the option entirely
-// until this is turned on.
-func (h *AgentHandler) SetDeviceUninstallAllowed(c *gin.Context) {
-	orgID := c.GetString("scoped_org_id")
-
-	var in struct {
-		Allowed *bool `json:"allowed" binding:"required"`
-	}
-	if err := c.ShouldBindJSON(&in); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "allowed must be true or false"})
-		return
-	}
-
-	var device models.Device
-	if err := h.db.Where("id = ? AND org_id = ?", c.Param("id"), orgID).First(&device).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Device not found"})
-		return
-	}
-	if err := h.db.Model(&device).Update("uninstall_allowed", *in.Allowed).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update device"})
-		return
-	}
-
-	writeAudit(h.db, c, &device.OrgID, "device.uninstall_allowed", "device", &device.ID,
-		map[string]any{"hostname": device.Hostname, "allowed": *in.Allowed})
-	c.JSON(http.StatusOK, gin.H{"uninstall_allowed": *in.Allowed})
 }
 
 // ─── Offline sweep ─────────────────────────────────────────────────────────────

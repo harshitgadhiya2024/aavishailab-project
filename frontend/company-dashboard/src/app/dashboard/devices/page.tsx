@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Pagination } from "@/components/ui/Pagination";
 
-import { Monitor, Laptop, Smartphone, Shield, AlertCircle, Loader2, Trash2, Clock, KeyRound, Unlock } from "lucide-react";
+import { Monitor, Laptop, Smartphone, Shield, AlertCircle, Loader2, Trash2, Clock } from "lucide-react";
 import { deviceApi } from "@/lib/api";
 import { EnforcementBadge } from "@/components/enforcement/ScheduleEditor";
 import { DeviceScheduleModal } from "@/components/enforcement/DeviceScheduleModal";
@@ -13,6 +13,17 @@ const STATUS_COLORS: Record<string, string> = {
   online: "bg-green-500/10 text-success",
   offline: "bg-elevated text-body",
   warning: "bg-yellow-500/10 text-warning",
+};
+
+/** One connect / disconnect / uninstall, as the company sees it. */
+type LifecycleEvent = {
+  id: string;
+  employee: string;
+  event: string;
+  event_type: string;
+  hostname?: string;
+  detail?: string;
+  timestamp?: string;
 };
 
 type Device = {
@@ -27,8 +38,6 @@ type Device = {
   last_seen_at?: string | null;
   posture_score?: number;
   ownership?: string;
-  reconnect_allowed?: boolean;
-  uninstall_allowed?: boolean;
   enforcement?: any;
   metadata?: Record<string, any>;
   employee?: { first_name?: string; last_name?: string; email?: string };
@@ -61,8 +70,8 @@ export default function DevicesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [revokingId, setRevokingId] = useState<string | null>(null);
-  const [actingId, setActingId] = useState<string | null>(null);
   const [scheduleFor, setScheduleFor] = useState<Device | null>(null);
+  const [lifecycle, setLifecycle] = useState<LifecycleEvent[]>([]);
 
   async function loadDevices() {
     setError("");
@@ -81,9 +90,19 @@ export default function DevicesPage() {
     }
   }
 
+  async function loadLifecycle() {
+    try {
+      const res = await deviceApi.activity({ limit: 25 });
+      setLifecycle(res.data?.data || []);
+    } catch {
+      // A missing trail shouldn't blank the page the devices are on.
+    }
+  }
+
   useEffect(() => {
     loadDevices();
-    const t = setInterval(loadDevices, 30000);
+    loadLifecycle();
+    const t = setInterval(() => { loadDevices(); loadLifecycle(); }, 30000);
     return () => clearInterval(t);
   }, []);
 
@@ -109,44 +128,6 @@ export default function DevicesPage() {
       setError("Could not revoke device. Please try again.");
     } finally {
       setRevokingId(null);
-    }
-  }
-
-  // A device enrols once, so an employee reinstalling — or moving to a new
-  // laptop that reuses a MAC — is refused until an admin authorises one more
-  // enrollment here. The grant is spent by the reconnect it allows.
-  async function allowReconnect(device: Device) {
-    if (!confirm(
-      `Allow ${device.hostname || "this device"} to connect once more?\n\n` +
-      "This authorises a single reconnect. The device is blocked again afterwards."
-    )) return;
-    setActingId(device.id);
-    try {
-      await deviceApi.allowReconnect(device.id);
-      toast.success("Reconnect allowed — the employee can connect this device once more.");
-      await loadDevices();
-    } catch {
-      toast.error("Could not allow reconnect. Please try again.");
-    } finally {
-      setActingId(null);
-    }
-  }
-
-  async function toggleUninstall(device: Device) {
-    const next = !device.uninstall_allowed;
-    if (next && !confirm(
-      `Let the employee uninstall the agent from ${device.hostname || "this device"}?\n\n` +
-      "They will be able to remove protection from this device themselves."
-    )) return;
-    setActingId(device.id);
-    try {
-      await deviceApi.setUninstallAllowed(device.id, next);
-      setDevices(list => list.map(x => (x.id === device.id ? { ...x, uninstall_allowed: next } : x)));
-      toast.success(next ? "Uninstall enabled for this device." : "Uninstall disabled.");
-    } catch {
-      toast.error("Could not update uninstall permission.");
-    } finally {
-      setActingId(null);
     }
   }
 
@@ -287,40 +268,6 @@ export default function DevicesPage() {
                     <td className="px-5 py-4 text-xs text-subtle">{relativeTime(d.last_seen_at)}</td>
                     <td className="px-5 py-4">
                       <div className="flex items-center justify-end gap-3 whitespace-nowrap">
-                        {/* Pending grant is worth showing: it's the window in
-                            which this device can re-enrol, and it closes by
-                            itself the moment it's used. */}
-                        {d.reconnect_allowed ? (
-                          <span className="inline-flex items-center gap-1 text-xs text-success" title="One reconnect is authorised. It is consumed when the employee connects.">
-                            <Unlock className="w-3 h-3" />
-                            Reconnect ready
-                          </span>
-                        ) : (
-                          <button
-                            onClick={() => allowReconnect(d)}
-                            disabled={actingId === d.id}
-                            title="Authorise one more enrollment for this device"
-                            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-brand-500 disabled:opacity-50"
-                          >
-                            {actingId === d.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <KeyRound className="w-3 h-3" />}
-                            Allow reconnect
-                          </button>
-                        )}
-
-                        <button
-                          onClick={() => toggleUninstall(d)}
-                          disabled={actingId === d.id}
-                          title={d.uninstall_allowed
-                            ? "The employee can remove the agent. Click to disable."
-                            : "The employee cannot remove the agent. Click to allow."}
-                          className={`inline-flex items-center gap-1 text-xs disabled:opacity-50 ${
-                            d.uninstall_allowed ? "text-warning hover:text-warning" : "text-muted-foreground hover:text-brand-500"
-                          }`}
-                        >
-                          <Trash2 className="w-3 h-3" />
-                          {d.uninstall_allowed ? "Uninstall allowed" : "Uninstall blocked"}
-                        </button>
-
                         <button
                           onClick={() => revokeDevice(d)}
                           disabled={revokingId === d.id}
@@ -346,6 +293,59 @@ export default function DevicesPage() {
           onPageChange={setPage}
           onLimitChange={n => { setLimit(n); setPage(1); }}
         />
+      </div>
+
+      {/* Connector activity — who connected, disconnected or removed the
+          connector, and when. Kept apart from the web-traffic activity feed:
+          these events have no domain or risk score, only who/what/when. */}
+      <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-border">
+          <h3 className="font-semibold text-foreground">Connector Activity</h3>
+          <p className="text-xs text-subtle mt-0.5">
+            Connect, disconnect and uninstall events per employee
+          </p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-xs uppercase tracking-wide text-muted-foreground">
+                <th className="px-5 py-3 text-left font-medium">Employee</th>
+                <th className="px-5 py-3 text-left font-medium">Event</th>
+                <th className="px-5 py-3 text-left font-medium">Device</th>
+                <th className="px-5 py-3 text-left font-medium">Details</th>
+                <th className="px-5 py-3 text-left font-medium">Date &amp; Time</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-elevated">
+              {lifecycle.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-5 py-8 text-center text-muted-foreground">
+                    No connector activity yet.
+                  </td>
+                </tr>
+              )}
+              {lifecycle.map(ev => (
+                <tr key={ev.id} className="hover:bg-elevated/50">
+                  <td className="px-5 py-3 text-foreground">{ev.employee}</td>
+                  <td className="px-5 py-3">
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                      ev.event_type === "device_connect" ? "bg-green-500/10 text-success"
+                        : ev.event_type === "device_uninstall" ? "bg-red-500/10 text-danger"
+                        : "bg-yellow-500/10 text-warning"
+                    }`}>
+                      {ev.event}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3 text-xs text-muted-foreground">{ev.hostname || "—"}</td>
+                  <td className="px-5 py-3 text-xs text-muted-foreground">{ev.detail || "—"}</td>
+                  <td className="px-5 py-3 text-xs text-subtle whitespace-nowrap">
+                    {ev.timestamp ? new Date(ev.timestamp).toLocaleString() : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {scheduleFor && (

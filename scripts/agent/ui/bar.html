@@ -54,7 +54,7 @@
     <span class="sub" id="sub"></span>
     <div class="acts">
       <button id="act-open">Open</button>
-      <button id="act-hide">Hide</button>
+      <button id="act-hide">Background</button>
     </div>
   </div>
 
@@ -113,7 +113,7 @@
     if (el("act-open").textContent === "Connect") await window.pywebview.api.connect();
     window.pywebview.api.restore_window();
   });
-  el("act-hide").addEventListener("click", () => window.pywebview.api.hide_all());
+  el("act-hide").addEventListener("click", () => window.pywebview.api.run_in_background());
 
   window.addEventListener("pywebviewready", refresh);
   setInterval(refresh, 2000);

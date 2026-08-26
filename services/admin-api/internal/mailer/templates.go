@@ -501,3 +501,72 @@ func RegistrationCode(to, firstName, code string, validMinutes int) {
 			"If you didn't sign up for Delsecure, you can ignore this email."),
 	})
 }
+
+// ─── Device lifecycle ─────────────────────────────────────────────────────────
+//
+// These three go to the company's admins, not the employee: the point is that
+// somebody accountable learns a device stopped being protected. Disconnect and
+// uninstall are the two ways coverage ends, so they are reported even though
+// both are permitted actions — this is an audit trail, not an alarm.
+
+// DeviceDisconnected tells the company an employee disconnected the connector.
+func DeviceDisconnected(admins []string, orgName, employeeName, hostname, when string) {
+	if len(admins) == 0 {
+		return
+	}
+	body := `<p style="margin:0 0 12px 0;"><strong>` + html.EscapeString(employeeName) +
+		`</strong> disconnected the Delsecure connector on <strong>` + html.EscapeString(hostname) +
+		`</strong>.</p>
+	<p style="margin:0;">That device is no longer being protected or monitored until it is connected
+	again. The full history is on the Devices page.</p>`
+
+	Send(Message{
+		To:      admins,
+		Subject: "Device disconnected — " + employeeName,
+		HTML: layout("A device was disconnected",
+			employeeName+" disconnected on "+when+".",
+			body, "View devices", cfg.AppURL+"/dashboard/devices", ""),
+	})
+}
+
+// DeviceUninstalled reports a removal. Uninstalling needs a company
+// administrator's password, so this doubles as a record of that approval.
+func DeviceUninstalled(admins []string, orgName, employeeName, hostname, approvedBy, when string) {
+	if len(admins) == 0 {
+		return
+	}
+	body := `<p style="margin:0 0 12px 0;">The Delsecure connector was removed from
+	<strong>` + html.EscapeString(hostname) + `</strong>, used by <strong>` +
+		html.EscapeString(employeeName) + `</strong>.</p>
+	<p style="margin:0 0 12px 0;">Approved with the credentials of <strong>` +
+		html.EscapeString(approvedBy) + `</strong>.</p>
+	<p style="margin:0;">This device is no longer protected. If you did not expect this, review it
+	on the Devices page.</p>`
+
+	Send(Message{
+		To:      admins,
+		Subject: "Connector uninstalled — " + hostname,
+		HTML: layout("A connector was uninstalled",
+			"Removed on "+when+", approved by "+approvedBy+".",
+			body, "View devices", cfg.AppURL+"/dashboard/devices", ""),
+	})
+}
+
+// DeviceConnected is the counterpart to DeviceDisconnected, so the trail shows
+// coverage resuming and not only when it stopped.
+func DeviceConnected(admins []string, orgName, employeeName, hostname, when string) {
+	if len(admins) == 0 {
+		return
+	}
+	body := `<p style="margin:0;"><strong>` + html.EscapeString(employeeName) +
+		`</strong> connected the Delsecure connector on <strong>` + html.EscapeString(hostname) +
+		`</strong>. That device is protected again.</p>`
+
+	Send(Message{
+		To:      admins,
+		Subject: "Device connected — " + employeeName,
+		HTML: layout("A device was connected",
+			employeeName+" connected on "+when+".",
+			body, "View devices", cfg.AppURL+"/dashboard/devices", ""),
+	})
+}

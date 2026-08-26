@@ -120,6 +120,10 @@ func connectStores() (*gorm.DB, *redis.Client, error) {
 		return nil, nil, fmt.Errorf("failed to migrate user roles: %w", err)
 	}
 
+	if err := database.MigrateEventTypes(db); err != nil {
+		return nil, nil, fmt.Errorf("failed to migrate event types: %w", err)
+	}
+
 	if err := database.MigrateCategoryDomainIndexes(db); err != nil {
 		return nil, nil, fmt.Errorf("failed to migrate category domain indexes: %w", err)
 	}

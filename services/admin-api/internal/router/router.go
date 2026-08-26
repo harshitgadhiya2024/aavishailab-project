@@ -309,11 +309,9 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 		// Working hours: which device is company-owned vs personal, and when
 		// its agent is allowed to enforce.
 		devices.PATCH("/:id", middleware.RequirePermission(models.PermDevicesWrite), enfH.SetDeviceOwnership)
-		// A device enrols once; these are the two company-controlled escapes —
-		// letting a machine reconnect after it already has an entry, and
-		// letting the employee uninstall at all.
-		devices.POST("/:id/allow-reconnect", middleware.RequirePermission(models.PermDevicesWrite), agentH.AllowDeviceReconnect)
-		devices.PUT("/:id/uninstall-allowed", middleware.RequirePermission(models.PermDevicesWrite), agentH.SetDeviceUninstallAllowed)
+		// The connect / disconnect / uninstall trail. Registered before the
+		// ":id" routes so "activity" isn't captured as a device id.
+		devices.GET("/activity", middleware.RequirePermission(models.PermDevicesRead), agentH.ListDeviceActivity)
 		devices.GET("/:id/enforcement", middleware.RequirePermission(models.PermDevicesRead), enfH.GetDeviceEnforcement)
 		devices.PUT("/:id/schedule", middleware.RequirePermission(models.PermDevicesWrite), enfH.PutDeviceSchedule)
 		devices.DELETE("/:id/schedule", middleware.RequirePermission(models.PermDevicesWrite), enfH.DeleteDeviceSchedule)
@@ -575,6 +573,17 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 			agent.GET("/threat-lookup", agentH.ThreatLookup)
 			agent.GET("/casb/app-control", agentH.CASBAppControl)
 			agent.POST("/offline", agentH.ReportOffline)
+
+			// Device lifecycle — each writes an activity event the company's
+			// Devices view shows, and emails the org's admins.
+			agent.POST("/lifecycle/connected", agentH.ReportDeviceConnected)
+			agent.POST("/lifecycle/disconnected", agentH.ReportDeviceDisconnected)
+			// Rate-limited because it takes a password: unthrottled, an
+			// endpoint sitting on an employee's own machine is a brute-force
+			// oracle against company administrator credentials.
+			agent.POST("/lifecycle/authorize-uninstall",
+				middleware.RateLimit(rdb, "uninstall-auth", 5, time.Minute),
+				agentH.AuthorizeUninstall)
 		}
 	}
 

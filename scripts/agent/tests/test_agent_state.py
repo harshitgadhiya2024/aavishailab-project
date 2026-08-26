@@ -96,3 +96,17 @@ def test_revoked_does_not_override_a_pre_enroll_block():
     s.set_blocked("already registered")
     s.set_revoked()
     assert s.snapshot()["state"] == "blocked"
+
+
+def test_https_ready_defaults_to_not_applicable():
+    # None means "no opinion" — non-macOS, or the CA state not yet known. The
+    # window must not show the "finish setup" banner on that basis alone.
+    assert agent.AgentState().snapshot()["https_ready"] is None
+
+
+def test_https_ready_tracks_the_ca_marker():
+    s = agent.AgentState()
+    s.set_https_ready(False)
+    assert s.snapshot()["https_ready"] is False
+    s.set_https_ready(True)
+    assert s.snapshot()["https_ready"] is True

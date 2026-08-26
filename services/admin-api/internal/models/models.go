@@ -282,21 +282,6 @@ type Device struct {
 	// never paused, whatever schedule it inherits — see deviceEnforcement.
 	Ownership string `gorm:"default:'company';index" json:"ownership"`
 
-	// A device enrols once. Re-running the installer on a machine that already
-	// has a Device row is refused unless an administrator has explicitly
-	// granted a fresh reconnect — so an employee cannot quietly re-enrol
-	// (creating a second identity, or escaping a policy) on their own.
-	// Consumed on use: granting permission allows exactly one reconnect.
-	ReconnectAllowed bool `gorm:"default:false" json:"reconnect_allowed"`
-	// Audit trail for the grant above, so "who let this device back on" is
-	// answerable after the fact.
-	ReconnectGrantedBy *uuid.UUID `gorm:"type:uuid" json:"reconnect_granted_by,omitempty"`
-	ReconnectGrantedAt *time.Time `json:"reconnect_granted_at,omitempty"`
-
-	// Whether the employee is allowed to uninstall the agent from this device.
-	// Off by default: removal is the company's call, not the employee's.
-	UninstallAllowed bool `gorm:"default:false" json:"uninstall_allowed"`
-
 	LastSeenAt *time.Time `json:"last_seen_at"`
 	PostureScore int            `gorm:"default:100" json:"posture_score"`
 	EnrolledAt   time.Time      `json:"enrolled_at"`
@@ -480,6 +465,12 @@ const (
 	EventTypeLogin        EventType = "login"
 	EventTypeLogout       EventType = "logout"
 	EventTypePolicyViol   EventType = "policy_violation"
+
+	// Device-lifecycle events — what the company sees on the Devices activity
+	// view. Added to the enum by database.MigrateEventTypes.
+	EventTypeDeviceConnect    EventType = "device_connect"
+	EventTypeDeviceDisconnect EventType = "device_disconnect"
+	EventTypeDeviceUninstall  EventType = "device_uninstall"
 
 	EventActionBlocked EventAction = "blocked"
 	EventActionAllowed EventAction = "allowed"

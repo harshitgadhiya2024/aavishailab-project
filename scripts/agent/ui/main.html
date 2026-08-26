@@ -111,6 +111,26 @@
   .foot button:hover { color: var(--fg); }
   .foot button:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
   .hidden { display: none !important; }
+
+  .https-note {
+    text-align: left; background: rgba(250,204,21,.07);
+    border: 1px solid rgba(250,204,21,.28); border-radius: 9px;
+    padding: 12px 13px; margin-bottom: 14px;
+  }
+  .hn-title { font-size: 12.5px; font-weight: 600; color: #FDE68A; margin: 0 0 4px; }
+  .hn-desc { font-size: 12px; color: var(--muted); line-height: 1.5; margin: 0 0 10px; }
+
+  /* Uninstall approval, shown in place of the main view. */
+  .uninstall-pane { flex: 1 1 auto; padding: 22px 24px 18px; overflow-y: auto; }
+  .up-title { font-size: 15px; font-weight: 650; color: var(--fg); margin: 0 0 6px; }
+  .up-desc { font-size: 12.5px; color: var(--subtle); margin: 0 0 16px; line-height: 1.5; }
+  .up-input {
+    -webkit-app-region: no-drag; width: 100%; margin-bottom: 10px;
+    background: var(--sunken); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px; color: var(--fg); font-family: inherit; font-size: 13px;
+  }
+  .up-input:focus { outline: none; border-color: var(--brand); }
+  .up-error { font-size: 12px; color: #FCA5A5; margin: 2px 0 10px; line-height: 1.45; }
 </style>
 </head>
 <body>
@@ -127,7 +147,7 @@
       <button class="winbtn" id="btn-min" title="Minimize to bar" aria-label="Minimize to bar">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14"/></svg>
       </button>
-      <button class="winbtn" id="btn-hide" title="Hide — keeps running" aria-label="Hide">
+      <button class="winbtn" id="btn-close" title="Close window" aria-label="Close window">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M18 6 6 18M6 6l12 12"/>
         </svg>
@@ -158,12 +178,49 @@
       <div class="pstate" id="uptime"></div>
     </div>
 
+    <!-- HTTPS block pages need the company CA trusted, which macOS only allows
+         behind a password prompt. Offered as an explicit action instead of
+         firing that prompt unannounced. -->
+    <div class="https-note hidden" id="https-note">
+      <p class="hn-title">Finish setup for encrypted sites</p>
+      <p class="hn-desc" id="hn-desc">Blocked HTTPS sites will show a browser error until you
+        install the company certificate.</p>
+      <button class="btn btn-primary" id="btn-https" style="padding:8px 12px;font-size:13px;">
+        Enable HTTPS protection
+      </button>
+    </div>
+
     <button class="btn btn-primary" id="cta">Connect</button>
+
+    <!-- Only meaningful once connected, so hidden until then. -->
+    <button class="btn btn-ghost hidden" id="btn-background" style="margin-top:8px;">
+      Run in background
+    </button>
+    <button class="btn btn-ghost hidden" id="btn-disconnect"
+            style="margin-top:8px;border-color:rgba(248,113,113,.35);color:#FCA5A5;">
+      Disconnect
+    </button>
+  </div>
+
+  <!-- Removal needs a company administrator's credentials, checked by the
+       server. Shown in place of the main view so there's no doubt what the
+       password is being asked for. -->
+  <div class="uninstall-pane hidden" id="uninstall-pane">
+    <p class="up-title">Administrator approval required</p>
+    <p class="up-desc">Removing Aavishield needs your company administrator's
+      Delsecure sign-in. Ask them to enter it below.</p>
+    <input class="up-input" id="u-email" type="email" placeholder="Administrator email"
+           autocomplete="off" spellcheck="false">
+    <input class="up-input" id="u-pass" type="password" placeholder="Password"
+           autocomplete="off">
+    <p class="up-error hidden" id="u-error"></p>
+    <button class="btn btn-primary" id="u-submit" style="margin-top:4px;">Approve and remove</button>
+    <button class="btn btn-ghost" id="u-cancel" style="margin-top:8px;">Cancel</button>
   </div>
 
   <div class="foot">
     <span id="version">v—</span>
-    <button id="btn-uninstall" class="hidden">Uninstall</button>
+    <button id="btn-uninstall">Uninstall</button>
   </div>
 
 <script>
@@ -278,8 +335,13 @@
       cta.textContent = "Connect";
     }
 
-    // Uninstall only exists where the company turned it on for this device.
-    el("btn-uninstall").classList.toggle("hidden", !s.uninstall_allowed);
+    // "Run in background" and "Disconnect" only mean anything once the device
+    // is actually connected.
+    const live = s.state === "connected" || s.state === "paused";
+    el("btn-background").classList.toggle("hidden", !live);
+    el("btn-disconnect").classList.toggle("hidden", !live);
+    // Only while connected, and only until the certificate is in place.
+    el("https-note").classList.toggle("hidden", !(live && s.https_ready === false));
   }
 
   async function refresh() {
@@ -295,8 +357,66 @@
     refresh();
   });
   el("btn-min").addEventListener("click", () => window.pywebview.api.minimize_to_bar());
-  el("btn-hide").addEventListener("click", () => window.pywebview.api.hide_all());
-  el("btn-uninstall").addEventListener("click", () => window.pywebview.api.open_uninstall());
+  // Closing the window is not stopping the agent: once "Run in background" has
+  // been used the process stays up, so this only puts the view away.
+  el("btn-close").addEventListener("click", () => window.pywebview.api.run_in_background());
+  el("btn-background").addEventListener("click", () => window.pywebview.api.run_in_background());
+
+  el("btn-disconnect").addEventListener("click", async () => {
+    if (!confirm("Disconnect this device?\n\nProtection stops and your company is notified.")) return;
+    await window.pywebview.api.disconnect();
+    refresh();
+  });
+
+  el("btn-https").addEventListener("click", async () => {
+    const btn = el("btn-https");
+    btn.disabled = true; btn.textContent = "Waiting for approval…";
+    const res = await window.pywebview.api.enable_https();
+    btn.disabled = false; btn.textContent = "Enable HTTPS protection";
+    if (res && res.ok) {
+      el("https-note").classList.add("hidden");
+    } else {
+      el("hn-desc").textContent = (res && res.error) ||
+        "Could not install the certificate.";
+    }
+    refresh();
+  });
+
+  // ── uninstall (administrator approval) ──────────────────────────────────
+  const pane = el("uninstall-pane");
+  const mainView = document.querySelector(".main");
+  function showUninstall(show) {
+    pane.classList.toggle("hidden", !show);
+    mainView.classList.toggle("hidden", show);
+    if (show) { el("u-error").classList.add("hidden"); el("u-email").focus(); }
+    else { el("u-email").value = ""; el("u-pass").value = ""; }
+  }
+  el("btn-uninstall").addEventListener("click", () => showUninstall(true));
+  el("u-cancel").addEventListener("click", () => showUninstall(false));
+
+  el("u-submit").addEventListener("click", async () => {
+    const email = el("u-email").value.trim();
+    const pass = el("u-pass").value;
+    const err = el("u-error");
+    if (!email || !pass) {
+      err.textContent = "Enter the administrator's email and password.";
+      err.classList.remove("hidden");
+      return;
+    }
+    el("u-submit").disabled = true;
+    el("u-submit").textContent = "Checking…";
+    const res = await window.pywebview.api.uninstall(email, pass);
+    el("u-submit").disabled = false;
+    el("u-submit").textContent = "Approve and remove";
+    if (res && res.ok) {
+      el("u-email").value = ""; el("u-pass").value = "";
+      pane.innerHTML = '<p class="up-title">Removing Aavishield…</p>' +
+        '<p class="up-desc">Approve the system prompt to finish. This window will close.</p>';
+    } else {
+      err.textContent = (res && res.error) || "Could not verify those credentials.";
+      err.classList.remove("hidden");
+    }
+  });
 
   window.addEventListener("pywebviewready", refresh);
   setInterval(refresh, 2000);

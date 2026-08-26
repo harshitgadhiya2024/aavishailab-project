@@ -26,6 +26,7 @@ import plistlib
 import random
 import signal
 import shlex
+import shutil
 import socket
 import ssl
 import subprocess
@@ -3092,6 +3093,9 @@ class AgentState:
         self._employee_name = ""
         self._connected_at: Optional[float] = None
         self._uninstall_allowed = False
+        # macOS only: is the org CA trusted, i.e. can HTTPS block pages show?
+        # None means "not applicable" (other platforms, or SSL Inspection off).
+        self._https_ready: Optional[bool] = None
 
     def _set(self, **kw):
         with self._lock:
@@ -3141,6 +3145,11 @@ class AgentState:
             self._message = ("This device is no longer registered. Reconnect it, "
                              "or ask your company IT administrator.")
 
+    def set_https_ready(self, ready: bool):
+        """Whether the org CA is trusted. Drives the window's one-time
+        "Enable HTTPS protection" action — see ensure_ca_trusted_darwin."""
+        self._set(https_ready=ready)
+
     def set_org_info(self, org_name: str, employee_name: str, uninstall_allowed: bool):
         self._set(org_name=org_name, employee_name=employee_name,
                   uninstall_allowed=uninstall_allowed)
@@ -3159,6 +3168,7 @@ class AgentState:
                 "employee_name": self._employee_name,
                 "uptime": uptime,
                 "uninstall_allowed": self._uninstall_allowed,
+                "https_ready": self._https_ready,
                 "version": AGENT_VERSION,
             }
 
@@ -3947,6 +3957,56 @@ def _ui_asset(name: str) -> Optional[str]:
     return path if os.path.isfile(path) else None
 
 
+def _report_connected(config: dict):
+    """Records the connect in the company's activity trail. Best effort — the
+    device is protected whether or not this report lands."""
+    try:
+        req = _agent_request(config, "/internal/agent/lifecycle/connected",
+                             method="POST", body=b"{}")
+        with _DIRECT_OPENER.open(req, timeout=15):
+            pass
+    except Exception as exc:  # noqa: BLE001
+        log.debug("could not report the connect: %s", exc)
+
+
+def _uninstall_darwin():
+    """Removes the connector from this Mac.
+
+    Needs root (LaunchAgent/LaunchDaemon plists, /Applications, the trusted
+    CA), so it goes through the same osascript admin prompt the CA install
+    uses. Authorization to *do* this was already granted by a company
+    administrator server-side; this prompt is macOS's own requirement for
+    touching those locations, not a second approval.
+    """
+    uid = str(os.getuid())
+    steps = " ; ".join([
+        "/bin/launchctl bootout system /Library/LaunchDaemons/com.aavishield.catrust.plist 2>/dev/null",
+        f"/bin/launchctl bootout gui/{uid}/com.aavishield.agent 2>/dev/null",
+        "/bin/rm -f /Library/LaunchDaemons/com.aavishield.catrust.plist "
+        "/Library/LaunchAgents/com.aavishield.agent.plist",
+        "/bin/rm -rf /Applications/Aavishield.app /etc/aavishield /usr/local/aavishield",
+        "/usr/sbin/pkgutil --forget com.aavishield.agent 2>/dev/null",
+        f"/usr/bin/security delete-certificate -c {shlex.quote(MITM_CA_COMMON_NAME)} "
+        "/Library/Keychains/System.keychain 2>/dev/null",
+        "true",  # keep the whole chain's exit status 0 so osascript doesn't error
+    ])
+    esc = steps.replace("\\", "\\\\").replace('"', '\\"')
+    script = ('do shell script "' + esc + '" with administrator privileges '
+              'with prompt "Aavishield needs your permission to remove the connector."')
+    try:
+        subprocess.run(["/usr/bin/osascript", "-e", script],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("uninstall command failed: %s", exc)
+        return
+    try:
+        shutil.rmtree(os.path.dirname(CONFIG_PATH), ignore_errors=True)
+    except Exception:  # noqa: BLE001
+        pass
+    log.info("Connector removed — exiting")
+    os._exit(0)
+
+
 class _UIBridge:
     """The object the webview exposes to JavaScript as window.pywebview.api.
 
@@ -3975,15 +4035,32 @@ class _UIBridge:
     def restore_window(self):
         self._ui.show_main()
 
-    def hide_all(self):
-        self._ui.hide_all()
+    def run_in_background(self):
+        """Puts the connector out of sight without stopping it.
 
-    def open_uninstall(self):
-        # Removal needs privileges this process doesn't have, and the portal
-        # already gates it on the company's permission — so this hands off
-        # there rather than trying to elevate.
-        portal = (os.environ.get(ENROLL_PORTAL_ENV) or DEFAULT_PORTAL_URL).rstrip("/")
-        _open_in_browser(f"{portal}/dashboard/download")
+        Replaces the old Hide: the window and the bar both go, the agent keeps
+        enforcing, and it survives the person closing the window entirely
+        (see DesktopUI.run_in_background)."""
+        self._ui.run_in_background()
+
+    def disconnect(self) -> dict:
+        self._ui.begin_disconnect()
+        return self._ui.state.snapshot()
+
+    def enable_https(self) -> dict:
+        """Trusts the org CA so HTTPS sites can show the company's block page.
+
+        Explicitly user-initiated: macOS puts up an admin-password prompt, and
+        one that appears unasked reads as malware. Returns {ok} or {error} so
+        the window can say what happened — a dismissed prompt used to leave no
+        trace at all."""
+        return self._ui.enable_https()
+
+    def uninstall(self, email: str, password: str) -> dict:
+        """Removal needs a company administrator's credentials, verified by the
+        server — the employee cannot do this alone. Returns {ok} or {error} for
+        the window to show."""
+        return self._ui.begin_uninstall(email or "", password or "")
 
 
 class DesktopUI:
@@ -4008,6 +4085,15 @@ class DesktopUI:
         self._bar = None
         self._cancel = threading.Event()
         self._connect_thread: Optional[threading.Thread] = None
+        # Set once the person chooses "Run in background": from then on,
+        # closing the window must not end the process (see run_blocking).
+        self._background = threading.Event()
+        # The enrolled config, needed to call the server for disconnect and
+        # uninstall. Set by set_config() as soon as enrollment completes.
+        self._config: Optional[dict] = None
+
+    def set_config(self, config: dict):
+        self._config = config
 
     def start(self) -> bool:
         """Creates the windows. Returns False to fall back to headless."""
@@ -4103,6 +4189,18 @@ class DesktopUI:
         except Exception as exc:  # noqa: BLE001 - cosmetic; enforcement continues
             log.warning("desktop UI stopped: %s", exc)
 
+        # webview.start() returns when the last window is closed. Once the
+        # person has chosen "Run in background", closing the window must not
+        # end the process — protection is the point, the window is only a
+        # view of it. Returning here would fall out of main() and exit, so
+        # park the main thread instead and let the daemon threads (proxy,
+        # heartbeat, policy refresh) carry on. The tray icon, still running,
+        # is how the window comes back.
+        if self._background.is_set():
+            log.info("window closed while running in the background — agent continues")
+            while True:
+                time.sleep(3600)
+
     # ── window switching ──────────────────────────────────────────────────
     def show_main(self):
         self._safe(lambda: (self._bar.hide(), self._main.show()))
@@ -4110,13 +4208,19 @@ class DesktopUI:
     def show_bar(self):
         self._safe(lambda: (self._main.hide(), self._bar.show()))
 
-    def hide_all(self):
-        # Without a tray icon there would be no way back, so hiding degrades
-        # to the bar rather than stranding the person with no UI at all.
+    def run_in_background(self):
+        """Both windows away; the agent keeps running.
+
+        Deliberately not a "hide that must be undone from the tray": closing
+        the window afterwards must not stop protection either, which is why
+        run_blocking() reopens the GUI loop instead of letting the process fall
+        out of main() (see the note there). The tray icon is the way back when
+        one exists; without it the bar stays so nobody is stranded."""
         if not self._has_tray:
             log.info("no tray icon available — collapsing to the bar instead of hiding")
             self.show_bar()
             return
+        self._background.set()
         self._safe(lambda: (self._main.hide(), self._bar.hide()))
 
     def _safe(self, fn):
@@ -4137,6 +4241,11 @@ class DesktopUI:
             config = browser_enroll(ui_state=self.state, cancel=self._cancel)
             if config:
                 self.state.set_connected()
+                self.set_config(config)
+                # Tell the company this device is protected again. Best effort:
+                # a failed report must not stop the agent coming up.
+                threading.Thread(target=_report_connected, args=(config,),
+                                 daemon=True).start()
                 self._on_enrolled(config)
 
         self._connect_thread = threading.Thread(target=worker, daemon=True)
@@ -4145,6 +4254,105 @@ class DesktopUI:
     def cancel_connect(self):
         self._cancel.set()
         self.state.set_disconnected()
+
+    # ── HTTPS / CA trust ──────────────────────────────────────────────────
+    def enable_https(self) -> dict:
+        config = self._config
+        if not config:
+            return {"error": "Connect this device first."}
+        if os.path.exists(MITM_TRUST_MARKER):
+            self.state.set_https_ready(True)
+            return {"ok": True}
+        try:
+            ok = _trust_ca_once(config)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("CA trust failed: %s", exc)
+            return {"error": "Could not install the certificate."}
+        self.state.set_https_ready(ok)
+        if ok:
+            return {"ok": True}
+        return {"error": "The certificate was not installed. You need to approve "
+                         "the macOS password prompt."}
+
+    # ── disconnect / uninstall ────────────────────────────────────────────
+    def begin_disconnect(self):
+        """Stops protection on this device and tells the company.
+
+        Disconnecting is the employee's to make, but it ends coverage — so it
+        is reported rather than prevented: the server writes an activity event
+        and emails the org's admins. Local credentials are dropped so the next
+        start comes up disconnected."""
+        config = self._config
+        self.state.set_disconnected()
+
+        def worker():
+            if config:
+                try:
+                    req = _agent_request(config, "/internal/agent/lifecycle/disconnected",
+                                         method="POST", body=b"{}")
+                    with _DIRECT_OPENER.open(req, timeout=15):
+                        pass
+                except Exception as exc:  # noqa: BLE001 - never block the local teardown
+                    log.warning("could not report the disconnect: %s", exc)
+            # Local teardown regardless of whether the report got through:
+            # the person asked to stop being monitored, so stop.
+            try:
+                clear_system_proxy()
+            except Exception as exc:  # noqa: BLE001
+                log.warning("could not clear the system proxy: %s", exc)
+            try:
+                os.remove(CONFIG_PATH)
+            except OSError:
+                pass
+            AGENT_REVOKED.set()  # stops the running loops from enforcing
+            log.info("Disconnected by the employee")
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def begin_uninstall(self, email: str, password: str) -> dict:
+        """Verifies a company administrator's credentials, then removes the
+        connector. Returns a dict the window renders directly."""
+        config = self._config
+        if not config:
+            return {"error": "This device isn't connected, so there's nothing to remove."}
+
+        try:
+            body = json.dumps({"email": email, "password": password}).encode()
+            req = _agent_request(config, "/internal/agent/lifecycle/authorize-uninstall",
+                                 method="POST", body=body)
+            with _DIRECT_OPENER.open(req, timeout=20) as resp:
+                json.load(resp)
+        except urllib.error.HTTPError as exc:
+            try:
+                detail = json.loads(exc.read().decode("utf-8", "replace") or "{}")
+            except ValueError:
+                detail = {}
+            if exc.code == 429:
+                return {"error": "Too many attempts. Wait a minute and try again."}
+            return {"error": detail.get("error") or
+                    "Those administrator credentials were not accepted."}
+        except Exception as exc:  # noqa: BLE001
+            log.warning("uninstall authorization failed: %s", exc)
+            return {"error": "Could not reach the server to check those credentials."}
+
+        # Authorised: the server has already recorded the event and emailed the
+        # company. Run the platform uninstaller, which needs its own elevation.
+        threading.Thread(target=self._run_uninstaller, daemon=True).start()
+        return {"ok": True}
+
+    def _run_uninstaller(self):
+        time.sleep(1)  # let the window paint its confirmation first
+        try:
+            clear_system_proxy()
+        except Exception:  # noqa: BLE001
+            pass
+        if platform.system() == "Darwin":
+            _uninstall_darwin()
+        else:
+            # Windows/Linux removal is the OS package manager's job; the portal
+            # serves a script for it.
+            portal = (os.environ.get(ENROLL_PORTAL_ENV) or DEFAULT_PORTAL_URL).rstrip("/")
+            _open_in_browser(f"{portal}/dashboard/download")
 
 
 class TrayUI:
@@ -4329,6 +4537,7 @@ def main():
     if config is not None:
         state.set_connected()
         if ui_ready:
+            ui.set_config(config)
             _start_agent_thread(config, state)
             ui.show_main()
             ui.run_blocking()
@@ -4436,17 +4645,16 @@ def run_agent(config: dict, state: AgentState, block: bool = True):
     threading.Thread(target=AutoUpdater(config).loop, daemon=True).start()
     threading.Thread(target=AppControlWatcher(config).loop, daemon=True).start()
 
-    # macOS: trust the org CA from here (the user session) because the root
-    # daemon can't show the required GUI prompt. One-shot and slightly delayed
-    # so it doesn't collide with the enrollment browser tab still closing.
+    # macOS: whether HTTPS block pages can be shown depends on the org CA
+    # being trusted, which needs a GUI prompt. Rather than firing that prompt
+    # unannounced (it looks like malware, and a dismissed one left no trace),
+    # publish the state and let the window offer it as an explicit action.
     if platform.system() == "Darwin":
-        def _ca_trust_once():
-            time.sleep(3)
-            try:
-                ensure_ca_trusted_darwin(config)
-            except Exception as exc:  # noqa: BLE001 - never let this affect enforcement
-                log.debug("CA trust attempt failed: %s", exc)
-        threading.Thread(target=_ca_trust_once, daemon=True).start()
+        def _watch_ca_state():
+            while True:
+                state.set_https_ready(os.path.exists(MITM_TRUST_MARKER))
+                time.sleep(10)
+        threading.Thread(target=_watch_ca_state, daemon=True).start()
 
     # Time-and-activity monitoring: an input counter and the screenshot loop.
     # Both stay dormant until the org enables screenshots and enforcement is
