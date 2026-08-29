@@ -51,6 +51,18 @@ type Match struct {
 	Weight        int    `json:"weight"`
 }
 
+// ExternalMatch is a detector hit computed outside dlp-service — currently
+// only ai-service's vision classification of an image. dlp-service folds
+// this into the same weighted aggregate as every regex/checksum detector,
+// but only for a policy that has explicitly enabled `Detector` (e.g.
+// "ai_visual") — see its scoring::run_detectors.
+type ExternalMatch struct {
+	Detector   string `json:"detector"`
+	Label      string `json:"label"`
+	Confidence int    `json:"confidence"` // 0-100; scales the policy's own weight for Detector
+	Preview    string `json:"preview"`
+}
+
 // Verdict is dlp-service's decision for a piece of content.
 type Verdict struct {
 	Scanned    bool           `json:"scanned"`
@@ -66,12 +78,13 @@ type Verdict struct {
 }
 
 type scanRequest struct {
-	OrgID       string           `json:"org_id"`
-	Filename    string           `json:"filename"`
-	ContentType string           `json:"content_type"`
-	Destination string           `json:"destination"`
-	ContentB64  string           `json:"content_b64"`
-	Policies    []PolicyEnvelope `json:"policies"`
+	OrgID           string           `json:"org_id"`
+	Filename        string           `json:"filename"`
+	ContentType     string           `json:"content_type"`
+	Destination     string           `json:"destination"`
+	ContentB64      string           `json:"content_b64"`
+	Policies        []PolicyEnvelope `json:"policies"`
+	ExternalMatches []ExternalMatch  `json:"external_matches,omitempty"`
 }
 
 // otelhttp.NewTransport creates a child span per call and propagates the
@@ -113,13 +126,23 @@ func MintToken(orgID string, ttl time.Duration) string {
 // ctx should carry the inbound request's span (c.Request.Context() from the
 // Gin handler) so this hop joins that trace instead of starting a new one.
 func Scan(ctx context.Context, orgID, filename, contentType, destination string, content []byte, policies []PolicyEnvelope) (*Verdict, error) {
+	return ScanExt(ctx, orgID, filename, contentType, destination, content, policies, nil)
+}
+
+// ScanExt is Scan plus externalMatches — detector hits computed outside
+// dlp-service (currently only ai-service's vision classification) that
+// should be folded into the same weighted aggregate as the content itself.
+func ScanExt(ctx context.Context, orgID, filename, contentType, destination string, content []byte,
+	policies []PolicyEnvelope, externalMatches []ExternalMatch) (*Verdict, error) {
+
 	reqBody, err := json.Marshal(scanRequest{
-		OrgID:       orgID,
-		Filename:    filename,
-		ContentType: contentType,
-		Destination: destination,
-		ContentB64:  base64.StdEncoding.EncodeToString(content),
-		Policies:    policies,
+		OrgID:           orgID,
+		Filename:        filename,
+		ContentType:     contentType,
+		Destination:     destination,
+		ContentB64:      base64.StdEncoding.EncodeToString(content),
+		Policies:        policies,
+		ExternalMatches: externalMatches,
 	})
 	if err != nil {
 		return nil, err

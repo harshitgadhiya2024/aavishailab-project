@@ -21,6 +21,14 @@ export type DLPFormData = {
   // Optional per-detector weight overrides (detector value -> 0..100). Empty
   // means "use the service defaults" (DLP_DEFAULT_WEIGHTS).
   detectorWeights: Record<string, number>;
+  // When content can't be fully inspected (a password-protected zip/Office
+  // file, a scan that timed out, the extraction service being unreachable),
+  // this decides what happens instead of silently allowing it through.
+  // Unset (false) preserves today's behavior for every reason — allow, with
+  // nothing more than a debug log; admin-api's resolveUnscannableAction
+  // defaults each reason to "allow" when this is omitted from Rules
+  // entirely, so leaving this off changes nothing about existing policies.
+  blockUnscannable: boolean;
 };
 
 // Default per-detector weights — mirrors dlp-service DEFAULT_WEIGHTS so the
@@ -43,6 +51,10 @@ export const DLP_DETECTORS: { value: string; label: string }[] = [
   { value: "github_token", label: "GitHub Token" },
   { value: "generic_api_key", label: "Generic API Key / Secret" },
   { value: "source_code", label: "Source Code Files" },
+  {
+    value: "ai_visual",
+    label: "AI Image Classification (photos/screenshots of ID cards, credentials, etc.)",
+  },
 ];
 
 export const DLP_BYPASS_FILE_TYPES: { value: string; label: string }[] = [
@@ -50,14 +62,30 @@ export const DLP_BYPASS_FILE_TYPES: { value: string; label: string }[] = [
   { value: "pdf", label: "PDFs" },
 ];
 
+// The reasons on_unscannable's "block" setting applies to, in one bundle —
+// see DLPFormData.blockUnscannable. Kept in sync with admin-api's
+// resolveUnscannableAction reason strings.
+export const DLP_UNSCANNABLE_REASONS = [
+  "encrypted_archive",
+  "encrypted_document",
+  "unsupported_archive",
+] as const;
+
 export const EMPTY_DLP_FORM: DLPFormData = {
   detectors: ["credit_card", "pan_india", "aadhaar"],
   keywords: "",
   customPatterns: [],
-  bypassFileTypes: ["image", "pdf"],
+  // Deep content inspection now unpacks images and PDFs (OCR + text-layer
+  // extraction) instead of only ever seeing their raw bytes, so a brand
+  // new policy no longer needs to exempt them by default. Existing
+  // policies that already bypass image/pdf are left exactly as they were
+  // — see the dashboard banner that flags them instead of silently
+  // rewriting a live policy's enforcement.
+  bypassFileTypes: [],
   blockThreshold: 80,
   alertThreshold: 50,
   detectorWeights: {},
+  blockUnscannable: false,
 };
 
 // ─── Targeting (who a policy applies to) ───────────────────────────────────────
@@ -151,6 +179,9 @@ export function formToApiPayload(form: PolicyFormData) {
       alert_threshold: form.dlp.alertThreshold,
       detector_weights: form.dlp.detectorWeights,
     };
+    if (form.dlp.blockUnscannable) {
+      rules.on_unscannable = Object.fromEntries(DLP_UNSCANNABLE_REASONS.map((r) => [r, "block"]));
+    }
   } else if (WEBSITE_BLOCKING_UI_TYPES.includes(form.policy_type)) {
     if (form.conditionTab === "category") {
       rules = { categories: form.categoryConditions.filter(Boolean) };
@@ -260,6 +291,10 @@ export function apiToForm(policy: Record<string, unknown>): PolicyFormData {
       rules.detector_weights && typeof rules.detector_weights === "object"
         ? (rules.detector_weights as Record<string, number>)
         : {},
+    blockUnscannable:
+      typeof rules.on_unscannable === "object" && rules.on_unscannable !== null
+        ? Object.values(rules.on_unscannable as Record<string, unknown>).some((v) => v === "block")
+        : false,
   };
 
   const rawTargets = (policy.targets as Record<string, unknown>) || {};

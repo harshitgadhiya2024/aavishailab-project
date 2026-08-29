@@ -77,6 +77,30 @@ pub struct ScanRequest {
     pub text: Option<String>,
     #[serde(default, deserialize_with = "null_as_default")]
     pub policies: Vec<PolicyIn>,
+    /// Detector hits computed outside this service — currently just
+    /// ai-service's vision classification of an image extract-service
+    /// pulled out of the upload. Each one only counts toward a policy that
+    /// has explicitly enabled its `detector` name (ai_visual), exactly
+    /// like every built-in detector — see scoring::run_detectors.
+    #[serde(default, deserialize_with = "null_as_default")]
+    pub external_matches: Vec<ExternalMatchIn>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ExternalMatchIn {
+    pub detector: String,
+    #[serde(default)]
+    pub label: String,
+    /// 0-100. The final weight applied is this service's own
+    /// policy.weight_for(detector) scaled by confidence/100 — the caller
+    /// supplies confidence, not a raw weight, so the policy's configured
+    /// weight (and any per-policy override) stays the single source of
+    /// truth for "how much does this detector matter" the same way it is
+    /// for every regex detector.
+    #[serde(default)]
+    pub confidence: i64,
+    #[serde(default)]
+    pub preview: String,
 }
 
 #[derive(Debug, Serialize)]

@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse, StreamingResponse
 from pydantic import BaseModel
 
+from app import internal_auth, vision
 from app.core.agent import AavishieldAgent
 from app.llm.providers import Message, get_router
 from app.tracing import setup_tracing
@@ -108,6 +109,31 @@ async def health():
         "service": "ai-service",
         "providers": router.get_available_models(),
     }
+
+
+# ─── DLP vision classification (internal, service-to-service) ────────────────
+
+class ClassifyImageRequest(BaseModel):
+    org_id: str
+    image_b64: str
+    mime: str = "image/jpeg"
+
+
+@app.post("/v1/dlp/classify-image")
+async def classify_image_endpoint(req: ClassifyImageRequest, authorization: str = Header(...)):
+    """Internal endpoint admin-api calls (via a new ai-service client, HMAC-
+    authed the same way as dlp-service/extract-service) for an image
+    extract-service flagged as worth a closer look. See app/vision.py for
+    the full rationale, cost controls, and failure-mode handling."""
+    try:
+        internal_auth.verify_token(authorization, req.org_id)
+    except internal_auth.AuthError as exc:
+        _METRICS["errors_total"] += 1
+        raise HTTPException(status_code=401, detail=str(exc))
+
+    verdict = await vision.classify_image(req.org_id, req.image_b64, req.mime)
+    _METRICS["vision_classify_requests_total"] = _METRICS.get("vision_classify_requests_total", 0) + 1
+    return verdict.to_dict()
 
 
 # ─── Chat (non-streaming) ─────────────────────────────────────────────────────
