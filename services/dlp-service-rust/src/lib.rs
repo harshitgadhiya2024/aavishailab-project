@@ -161,13 +161,7 @@ async fn scan(State(state): State<SharedState>, headers: HeaderMap, body: Bytes)
     };
 
     let auth_header = headers.get("authorization").and_then(|v| v.to_str().ok());
-    if let Err(e) = auth::verify_token(
-        auth_header,
-        &req.org_id,
-        &state.config.service_secret,
-        state.config.service_secret_previous.as_deref(),
-        state.config.require_auth,
-    ) {
+    if let Err(e) = auth::verify_token(auth_header, &req.org_id, &state.config.service_secret, state.config.require_auth) {
         state.metrics.auth_failures_total.fetch_add(1, Ordering::Relaxed);
         return ScanError::Unauthorized(e.message().to_string()).into_response();
     }
@@ -177,18 +171,8 @@ async fn scan(State(state): State<SharedState>, headers: HeaderMap, body: Bytes)
         Err(e) => return e.into_response(),
     };
     let policies: Vec<scoring::Policy> = req.policies.into_iter().map(policy_from_in).collect();
-    let external: Vec<scoring::ExternalMatch> = req
-        .external_matches
-        .into_iter()
-        .map(|em| scoring::ExternalMatch {
-            detector: em.detector,
-            label: em.label,
-            confidence: em.confidence,
-            preview: em.preview,
-        })
-        .collect();
 
-    let result = scoring::scan_ext(&policies, &text, &req.filename, &req.content_type, &state.config, &external);
+    let result = scoring::scan(&policies, &text, &req.filename, &req.content_type, &state.config);
 
     state.metrics.scans_total.fetch_add(1, Ordering::Relaxed);
     match result.action.as_str() {

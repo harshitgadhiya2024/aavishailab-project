@@ -146,18 +146,7 @@ fn effective_action(band: &str, policy_action: &str) -> &'static str {
     severity_action(band_sev.min(policy_sev))
 }
 
-/// A detector hit computed outside this service (currently only
-/// ai-service's vision classification). `confidence` (0-100) scales the
-/// policy's own weight for `detector` — see ExternalMatchIn's doc comment.
-#[derive(Clone, Debug)]
-pub struct ExternalMatch {
-    pub detector: String,
-    pub label: String,
-    pub confidence: i64,
-    pub preview: String,
-}
-
-fn run_detectors(policy: &Policy, text: &str, filename: &str, external: &[ExternalMatch]) -> Vec<d::Match> {
+fn run_detectors(policy: &Policy, text: &str, filename: &str) -> Vec<d::Match> {
     let mut matches = Vec::new();
     for det in &policy.detectors {
         let w = policy.weight_for(det);
@@ -174,33 +163,10 @@ fn run_detectors(policy: &Policy, text: &str, filename: &str, external: &[Extern
     }
     matches.extend(d::detect_keywords(text, &policy.keywords, policy.weight_for(d::KEYWORD)));
     matches.extend(d::detect_custom_patterns(text, &policy.custom_patterns, policy.weight_for(d::CUSTOM_REGEX)));
-
-    for em in external {
-        // Only counts toward a policy that has explicitly enabled this
-        // detector name — an org that never turned on ai_visual gets no
-        // effect from vision calls at all, same as any other detector.
-        if !policy.detectors.iter().any(|pd| pd == &em.detector) {
-            continue;
-        }
-        let base_weight = policy.weight_for(&em.detector);
-        let confidence = em.confidence.clamp(0, 100);
-        let scaled = ((base_weight as f64) * (confidence as f64 / 100.0)).round() as i64;
-        if scaled <= 0 {
-            continue;
-        }
-        let label = if em.label.is_empty() { d::builtin_label(&em.detector).to_string() } else { em.label.clone() };
-        matches.push(d::Match { detector: em.detector.clone(), label, preview: em.preview.clone(), weight: scaled });
-    }
-
     matches
 }
 
 pub fn score_policy(policy: &Policy, text: &str, filename: &str, content_type: &str, cfg: &Config) -> PolicyResult {
-    score_policy_ext(policy, text, filename, content_type, cfg, &[])
-}
-
-pub fn score_policy_ext(policy: &Policy, text: &str, filename: &str, content_type: &str, cfg: &Config,
-                         external: &[ExternalMatch]) -> PolicyResult {
     let (block_t, alert_t) = policy.thresholds(cfg);
 
     let category = d::file_category(filename, content_type);
@@ -208,7 +174,7 @@ pub fn score_policy_ext(policy: &Policy, text: &str, filename: &str, content_typ
         return PolicyResult::empty(&policy.name, block_t, alert_t);
     }
 
-    let matches = run_detectors(policy, text, filename, external);
+    let matches = run_detectors(policy, text, filename);
     if matches.is_empty() {
         return PolicyResult::empty(&policy.name, block_t, alert_t);
     }
@@ -242,16 +208,11 @@ pub fn score_policy_ext(policy: &Policy, text: &str, filename: &str, content_typ
 /// Unlike naive first-match, this guarantees that if ANY policy would
 /// block, the upload is blocked — a stricter, safer default for data loss.
 pub fn scan(policies: &[Policy], text: &str, filename: &str, content_type: &str, cfg: &Config) -> PolicyResult {
-    scan_ext(policies, text, filename, content_type, cfg, &[])
-}
-
-pub fn scan_ext(policies: &[Policy], text: &str, filename: &str, content_type: &str, cfg: &Config,
-                 external: &[ExternalMatch]) -> PolicyResult {
     let mut best: Option<PolicyResult> = None;
     let mut best_key: Option<(i64, i64, i64)> = None;
 
     for policy in policies {
-        let result = score_policy_ext(policy, text, filename, content_type, cfg, external);
+        let result = score_policy(policy, text, filename, content_type, cfg);
         if !result.matched {
             continue;
         }
@@ -448,76 +409,5 @@ mod tests {
         let r = scan_text("confidential", vec![p]);
         assert_eq!(r.score, 90);
         assert_eq!(r.band, "block");
-    }
-
-    // ─── external_matches (vision-AI) integration ──────────────────────
-
-    fn vision_match(confidence: i64) -> ExternalMatch {
-        ExternalMatch {
-            detector: d::AI_VISUAL.to_string(),
-            label: "Aadhaar Card (photo)".to_string(),
-            confidence,
-            preview: "aadhaar_card".to_string(),
-        }
-    }
-
-    #[test]
-    fn test_external_match_ignored_when_detector_not_enabled() {
-        let p = policy(); // does not include ai_visual
-        let r = scan_ext(&[p], "", "photo.jpg", "image/jpeg", &cfg(), &[vision_match(95)]);
-        assert!(!r.matched);
-    }
-
-    #[test]
-    fn test_external_match_scores_when_detector_enabled() {
-        let mut p = policy();
-        p.detectors.push(d::AI_VISUAL.to_string());
-        let r = scan_ext(&[p], "", "photo.jpg", "image/jpeg", &cfg(), &[vision_match(100)]);
-        assert!(r.matched);
-        assert_eq!(r.score, 75); // full confidence -> full default AI_VISUAL weight
-        assert_eq!(r.band, "alert"); // 75 is >= the 50 alert threshold but < the 80 block one
-        assert_eq!(r.matches[0].detector, d::AI_VISUAL);
-    }
-
-    #[test]
-    fn test_external_match_weight_scales_with_confidence() {
-        let mut p = policy();
-        p.detectors = vec![d::AI_VISUAL.to_string()];
-        let r = scan_ext(&[p], "", "photo.jpg", "image/jpeg", &cfg(), &[vision_match(40)]);
-        assert!(r.matched);
-        assert_eq!(r.score, 30); // 75 * 0.40 = 30
-        assert_eq!(r.band, "allow"); // below the 50 alert threshold
-    }
-
-    #[test]
-    fn test_external_match_respects_per_policy_weight_override() {
-        let mut p = policy();
-        p.detectors = vec![d::AI_VISUAL.to_string()];
-        p.detector_weights.insert(d::AI_VISUAL.to_string(), 50);
-        let r = scan_ext(&[p], "", "photo.jpg", "image/jpeg", &cfg(), &[vision_match(100)]);
-        assert_eq!(r.score, 50);
-    }
-
-    #[test]
-    fn test_external_match_combines_with_text_detectors() {
-        // A card number found by regex PLUS a vision hit on the same
-        // upload must combine into one aggregate score, exactly like two
-        // regex detectors would.
-        let mut p = policy();
-        p.detectors.push(d::AI_VISUAL.to_string());
-        let r = scan_ext(&[p], CARD, "photo.jpg", "image/jpeg", &cfg(), &[vision_match(100)]);
-        assert!(r.matched);
-        assert!(r.matches.len() >= 2);
-        // Dominant (card, 55) + discounted secondary (ai_visual, 75) beats
-        // either alone.
-        assert!(r.score > 55);
-    }
-
-    #[test]
-    fn test_zero_confidence_external_match_contributes_nothing() {
-        let mut p = policy();
-        p.detectors = vec![d::AI_VISUAL.to_string()];
-        let r = scan_ext(&[p], "", "photo.jpg", "image/jpeg", &cfg(), &[vision_match(0)]);
-        assert!(!r.matched);
     }
 }

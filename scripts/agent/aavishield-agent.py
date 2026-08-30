@@ -17,9 +17,6 @@ Runs on the employee's device and:
 import base64
 import datetime
 import errno
-import gzip
-import hashlib
-from html import escape as html_escape
 import hmac
 import json
 import logging
@@ -41,7 +38,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
-from collections import deque, OrderedDict
+from collections import deque
 from typing import Dict, List, Optional, Tuple
 
 try:
@@ -157,13 +154,6 @@ SCAN_EXTENSIONS = (".exe", ".msi", ".dmg", ".pkg", ".zip", ".rar", ".7z", ".apk"
 # limitation, and MITMEngine is what closes it, deliberately, per-org, opt-in.
 DLP_SCAN_TIMEOUT = 15  # seconds to wait for a DLP verdict
 UPLOAD_METHODS = ("POST", "PUT", "PATCH")
-
-# A document response gets fully buffered (not streamed) so the notice shim
-# can be injected into it — bounded so an unusually huge HTML page doesn't
-# get held in memory just for this. Pages past this size are relayed as-is,
-# unmodified (no shim, no broken page): rare in practice, real webmail/chat
-# app shells are a few hundred KB at most.
-SHIM_INJECT_MAX_BODY = 20 * 1024 * 1024
 THREAT_LOOKUP_TIMEOUT = 5
 THREAT_CACHE_TTL = 5 * 60
 CASB_LOOKUP_TIMEOUT = 5
@@ -652,95 +642,6 @@ class CASBControlCache:
             "reason": result.get("reason") or "CASB app-control policy",
             "matched_rule": result.get("matched_rule") or "",
         }
-
-
-# ─── Resumable-upload chunk carry (DLP boundary coverage) ────────────────────
-# Google Drive, OneDrive and Slack (among others) split one logical file
-# upload into a sequence of PUT/PATCH requests against the same session URL,
-# each one a Content-Range slice of the whole. Scanned independently, a
-# sensitive value that happens to fall across a slice boundary is invisible
-# to either half's scan. This cache carries the trailing bytes of one chunk
-# forward so the next chunk in the same session is scanned as if the two
-# were contiguous — mirroring the 64KB window overlap admin-api already uses
-# server-side for its own multi-window scans (scanstream.go's
-# dlpWindowOverlap).
-UPLOAD_CARRY_TTL = 10 * 60  # seconds a session's tail is kept between chunks
-UPLOAD_CARRY_MAX_SESSIONS = 256
-UPLOAD_CARRY_TAIL_BYTES = 64 * 1024
-
-
-class UploadCarryCache:
-    """Bounded LRU of (host, upload-session-url) -> tail bytes."""
-
-    def __init__(self):
-        self._lock = threading.Lock()
-        self._sessions: "OrderedDict[Tuple[str, str], Tuple[float, bytes]]" = OrderedDict()
-
-    @staticmethod
-    def session_key(headers: bytes, host: str, url_path: str) -> Optional[Tuple[str, str]]:
-        """A request only belongs to a resumable-upload session if it carries
-        a Content-Range header — an ordinary single-shot upload never does,
-        so this (and every method below) is a no-op for the common case."""
-        if b"content-range:" not in headers.lower():
-            return None
-        return (host, url_path)
-
-    def take(self, key: Optional[Tuple[str, str]]) -> bytes:
-        """Returns (and consumes) the tail carried from this session's
-        previous chunk — b"" if this is the first chunk, the session never
-        carried one, or it expired."""
-        if key is None:
-            return b""
-        with self._lock:
-            entry = self._sessions.pop(key, None)
-        if entry is None:
-            return b""
-        expiry, tail = entry
-        return tail if expiry > time.monotonic() else b""
-
-    def update(self, key: Optional[Tuple[str, str]], spool, size: int) -> None:
-        """Stores this chunk's own trailing UPLOAD_CARRY_TAIL_BYTES for the
-        next chunk in the same session. Leaves the spool's read position
-        unspecified — callers are done with it by the time this runs."""
-        if key is None:
-            return
-        spool.seek(max(0, size - UPLOAD_CARRY_TAIL_BYTES))
-        tail = spool.read(UPLOAD_CARRY_TAIL_BYTES)
-        now = time.monotonic()
-        with self._lock:
-            self._sessions[key] = (now + UPLOAD_CARRY_TTL, tail)
-            self._sessions.move_to_end(key)
-            while len(self._sessions) > UPLOAD_CARRY_MAX_SESSIONS:
-                self._sessions.popitem(last=False)
-            expired = [k for k, (exp, _) in self._sessions.items() if exp <= now and k != key]
-            for k in expired:
-                self._sessions.pop(k, None)
-
-
-UPLOAD_CARRY = UploadCarryCache()
-
-
-class _ChainedReader:
-    """Minimal read()-only file-like wrapper that yields `prefix` before
-    delegating to `spool` — lets a carried tail be prepended onto a spooled
-    upload chunk without copying the (potentially huge) spool into memory."""
-
-    def __init__(self, prefix: bytes, spool):
-        self._prefix = prefix
-        self._spool = spool
-
-    def read(self, n: int = -1) -> bytes:
-        if not self._prefix:
-            return self._spool.read(n)
-        if n < 0:
-            out = self._prefix + self._spool.read()
-            self._prefix = b""
-            return out
-        if n <= len(self._prefix):
-            out, self._prefix = self._prefix[:n], self._prefix[n:]
-            return out
-        out, self._prefix = self._prefix, b""
-        return out + self._spool.read(n - len(out))
 
 
 # ─── Application control (process watcher) ────────────────────────────────────
@@ -1282,12 +1183,6 @@ class MITMEngine:
         # Inspection, never for one that has it off — see policy_enabled().
         self._policy_enabled = False
         self._bypass: set = set()
-        # Whether a blocked upload also gets the in-page notice shim
-        # injected into the page that triggered it (see _inject_block_shim)
-        # — separate from SSL Inspection itself so an org can keep deep
-        # HTTPS inspection on while opting a site out of having its pages
-        # rewritten, if that site turns out to be sensitive to it.
-        self._inject_notice = True
         self._leaf_cache: Dict[str, Tuple[str, str, float]] = {}  # host -> (certfile, keyfile, expiry)
         os.makedirs(MITM_CERT_DIR, mode=0o700, exist_ok=True)
 
@@ -1311,14 +1206,10 @@ class MITMEngine:
         enabled = policy_enabled and mitm_ca_trusted(self.config)
         if policy_enabled and not enabled:
             log.warning("SSL Inspection is enabled by policy, but the local CA is not trusted; using blind HTTPS tunnels")
-        # Defaults true when the server hasn't started sending this key yet,
-        # so existing orgs get the notice shim without any migration step.
-        inject_notice = bool(body.get("inject_notice", True))
         with self._lock:
             self._enabled = enabled
             self._policy_enabled = policy_enabled
             self._bypass = bypass
-            self._inject_notice = inject_notice
 
     def policy_enabled(self) -> bool:
         """Whether the org wants SSL Inspection on, independent of whether the
@@ -1328,10 +1219,6 @@ class MITMEngine:
         instead would hide it exactly when it's needed."""
         with self._lock:
             return self._policy_enabled
-
-    def inject_notice_enabled(self) -> bool:
-        with self._lock:
-            return self._inject_notice
 
     def loop_refresh(self):
         while True:
@@ -1472,247 +1359,6 @@ BLOCK_PAGE_HTML = """<!DOCTYPE html>
   </div>
 </body>
 </html>"""
-
-
-# ─── In-page block notice (for XHR/fetch uploads a 403 body never reaches) ───
-# Gmail, Outlook Web, Slack and Teams upload attachments via fetch()/XHR, not
-# a form POST — their own JavaScript swallows a 403 response and shows a
-# generic "Upload failed", so BLOCK_PAGE_HTML above never renders for the
-# single case employees actually hit day to day. This tiny script is
-# injected into the *page* (not the blocked response) so it can watch every
-# fetch/XHR the page itself makes and render the real reason when one of
-# them carries the X-Aavishield-Block header _send_dlp_block sets below.
-#
-# The exact text of _BLOCK_SHIM_JS is what gets embedded AND what its CSP
-# hash is computed over (_shim_csp_hash) — derived from the same stripped
-# string so the two can never drift apart and silently break the hash-source
-# a strict Content-Security-Policy requires for an inline script to run.
-_BLOCK_SHIM_JS = """(function(){
-  if (window.__aavishieldShimInstalled) return;
-  window.__aavishieldShimInstalled = true;
-
-  function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
-
-  function showBlockOverlay(info) {
-    if (document.getElementById('__aavishield_block_overlay')) return;
-    var o = document.createElement('div');
-    o.id = '__aavishield_block_overlay';
-    o.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:rgba(240,244,250,.97);display:flex;align-items:center;justify-content:center;font-family:Segoe UI,Arial,sans-serif;';
-    o.innerHTML = '<div style="background:#fff;border-radius:12px;padding:40px;max-width:440px;width:90%;box-shadow:0 4px 24px rgba(0,72,160,.18);text-align:center;">'
-      + '<div style="font-size:56px;margin-bottom:16px;">\\uD83D\\uDEE1\\uFE0F</div>'
-      + '<h1 style="color:#0048A0;font-size:21px;margin:0 0 10px;">Upload Blocked</h1>'
-      + '<p style="color:#555;line-height:1.5;margin:0 0 14px;">This upload was blocked by your organization\\'s data security policy.</p>'
-      + '<div style="background:#f0f4fa;border-radius:8px;padding:10px 14px;margin:0 0 14px;font-size:13px;color:#333;text-align:left;">'
-      + '<strong>Reason:</strong> ' + info.reason + '<br><strong>Policy:</strong> ' + info.policy + '</div>'
-      + '<button id="__aavishield_dismiss" style="background:#0048A0;color:#fff;border:0;border-radius:6px;padding:9px 22px;font-size:14px;cursor:pointer;">Dismiss</button>'
-      + '<div style="margin-top:16px;font-size:11px;color:#999;">Protected by <strong>Aavishield</strong></div>'
-      + '</div>';
-    document.body.appendChild(o);
-    document.getElementById('__aavishield_dismiss').onclick = function () { o.parentNode.removeChild(o); };
-  }
-
-  function extractInfo(getHeader) {
-    return {
-      reason: esc(getHeader('X-Aavishield-Reason') || 'Sensitive company data detected'),
-      policy: esc(getHeader('X-Aavishield-Policy') || 'Data Loss Prevention')
-    };
-  }
-
-  var origFetch = window.fetch;
-  if (origFetch) {
-    window.fetch = function () {
-      return origFetch.apply(this, arguments).then(function (resp) {
-        try {
-          if (resp.headers.get('X-Aavishield-Block')) {
-            showBlockOverlay(extractInfo(function (h) { return resp.headers.get(h); }));
-          }
-        } catch (e) {}
-        return resp;
-      });
-    };
-  }
-
-  var OrigXHR = window.XMLHttpRequest;
-  if (OrigXHR) {
-    var origOpen = OrigXHR.prototype.open;
-    OrigXHR.prototype.open = function () {
-      this.addEventListener('load', function () {
-        try {
-          if (this.getResponseHeader('X-Aavishield-Block')) {
-            showBlockOverlay(extractInfo(this.getResponseHeader.bind(this)));
-          }
-        } catch (e) {}
-      });
-      return origOpen.apply(this, arguments);
-    };
-  }
-})();""".strip()
-
-
-def _shim_script_tag() -> bytes:
-    return b'<script data-aavishield-shim="1">' + _BLOCK_SHIM_JS.encode("utf-8") + b"</script>"
-
-
-def _shim_csp_hash() -> str:
-    """A CSP script-src hash-source covers exactly the raw text between
-    <script> and </script> — precisely _BLOCK_SHIM_JS, which is why the tag
-    above and this hash are both built from that one string."""
-    digest = hashlib.sha256(_BLOCK_SHIM_JS.encode("utf-8")).digest()
-    return "sha256-" + base64.b64encode(digest).decode("ascii")
-
-
-_SHIM_MARKER = b"data-aavishield-shim"
-
-
-def _is_document_request(request_headers: bytes) -> bool:
-    """True for a top-level page navigation — the only kind of response
-    worth rewriting HTML into. Modern browsers send Sec-Fetch-Dest on every
-    request; Sec-Fetch-Dest: document is the standard, spec'd way to
-    identify one. Older browsers/clients that omit it fall back to an
-    Accept header that prefers text/html, which a real document request
-    (and essentially nothing else) sends."""
-    lower = request_headers.lower()
-    if b"sec-fetch-dest: document" in lower:
-        return True
-    if b"sec-fetch-dest:" in lower:
-        return False  # a modern browser said what this is, and it isn't a document
-    for line in request_headers.split(b"\r\n"):
-        if line.lower().startswith(b"accept:"):
-            return b"text/html" in line.lower()
-    return False
-
-
-def _header_safe(value: str, max_len: int = 512) -> str:
-    """Strips CR/LF (header-injection defense — this value ultimately comes
-    from a detector label or admin-configured policy name, not directly
-    from the site being browsed, but there's no reason to trust it blindly
-    when building a raw header line by hand) and caps length."""
-    return value.replace("\r", " ").replace("\n", " ")[:max_len]
-
-
-def _response_is_html(response_headers: bytes) -> bool:
-    for line in response_headers.split(b"\r\n"):
-        if line.lower().startswith(b"content-type:"):
-            return b"text/html" in line.lower()
-    return False
-
-
-def _strip_unsupported_encodings(request_headers: bytes) -> bytes:
-    """Rewrites Accept-Encoding on a document request to drop br/zstd. This
-    agent is stdlib-only and can decode gzip/deflate but not Brotli or
-    Zstandard, and injecting into a document response means fully
-    decompressing, editing, and recompressing its body — so a document
-    response must arrive in a codec this process can actually handle.
-    Non-document requests (images, XHR, everything else) are left alone;
-    performance for ordinary traffic is unaffected."""
-    lines = request_headers.split(b"\r\n")
-    out = []
-    for line in lines:
-        if line.lower().startswith(b"accept-encoding:"):
-            kept = [enc.strip() for enc in line.split(b":", 1)[1].split(b",")
-                    if enc.strip().lower() in (b"gzip", b"deflate", b"identity")]
-            if not kept:
-                continue  # drop the header entirely; server defaults to identity
-            out.append(b"Accept-Encoding: " + b", ".join(kept))
-        else:
-            out.append(line)
-    return b"\r\n".join(out)
-
-
-def _rewrite_csp_headers(headers: bytes) -> bytes:
-    """Adds the shim's hash-source to every Content-Security-Policy /
-    Content-Security-Policy-Report-Only header line, so a site with a
-    strict CSP doesn't simply refuse to run the injected script.
-
-    Deliberately conservative about where the hash gets added:
-      - an existing script-src / script-src-elem directive gets the hash
-        appended in place (the common case);
-      - with neither, but a default-src present, a NEW script-src is added
-        as a copy of default-src's own source list plus the hash — CSP
-        gives default-src no say over scripts once script-src exists, so
-        replicating its sources (not just adding 'self') keeps the page's
-        already-allowed scripts (CDNs, etc.) working instead of silently
-        narrowing them;
-      - with neither script-src nor default-src at all, the header is left
-        untouched — inventing a new restriction where the site chose to
-        have none would be a strictly narrowing (and page-breaking) change,
-        the opposite of this feature's job.
-
-    A site using a nonce-based 'strict-dynamic' policy or Trusted Types is a
-    known gap even in the cases this does handle — see mitm_inject_notice to
-    disable injection for such a host."""
-    csp_hash = ("'" + _shim_csp_hash() + "'").encode("ascii")
-    lines = headers.split(b"\r\n")
-    out = []
-    for line in lines:
-        lower = line.lower()
-        if not (lower.startswith(b"content-security-policy:") or lower.startswith(b"content-security-policy-report-only:")):
-            out.append(line)
-            continue
-
-        prefix, _, value = line.partition(b":")
-        directives = value.split(b";")
-        default_src_value = None
-        touched = False
-        for i, d in enumerate(directives):
-            name = d.strip().split(b" ", 1)[0].lower()
-            if name in (b"script-src", b"script-src-elem"):
-                directives[i] = d.rstrip() + b" " + csp_hash
-                touched = True
-            elif name == b"default-src":
-                default_src_value = d
-        if not touched and default_src_value is not None:
-            parts = default_src_value.strip().split(b" ", 1)
-            sources = parts[1] if len(parts) > 1 else b"'self'"
-            directives.append(b" script-src " + sources + b" " + csp_hash)
-        out.append(prefix + b":" + b";".join(directives))
-    return b"\r\n".join(out)
-
-
-def _inject_block_shim(headers: bytes, body: bytes) -> Tuple[bytes, bytes]:
-    """Given a document response's headers+body, injects the block-overlay
-    shim before </head> (or </body> as a fallback) and rewrites CSP headers
-    to permit it. Returns the original (headers, body) unchanged whenever
-    injection isn't applicable or safely possible — a response this
-    function can't confidently rewrite is relayed exactly as received
-    rather than risking a corrupted page."""
-    if _SHIM_MARKER in body:
-        return headers, body  # already injected (e.g. a retried relay)
-
-    is_gzipped = b"content-encoding: gzip" in headers.lower()
-    raw_body = body
-    if is_gzipped:
-        try:
-            raw_body = gzip.decompress(body)
-        except OSError:
-            return headers, body
-
-    try:
-        text = raw_body.decode("utf-8")
-        encoding = "utf-8"
-    except UnicodeDecodeError:
-        try:
-            text = raw_body.decode("latin-1")
-            encoding = "latin-1"
-        except Exception:
-            return headers, body
-
-    lower = text.lower()
-    insert_at = lower.find("</head>")
-    if insert_at == -1:
-        insert_at = lower.find("</body>")
-    if insert_at == -1:
-        return headers, body  # no sensible insertion point — leave the page alone
-
-    tag_text = _shim_script_tag().decode("utf-8")
-    new_text = text[:insert_at] + tag_text + text[insert_at:]
-    new_raw_body = new_text.encode(encoding, errors="replace")
-
-    if is_gzipped:
-        new_raw_body = gzip.compress(new_raw_body, compresslevel=6)
-
-    new_headers = ProxyConnection._replace_framing(_rewrite_csp_headers(headers), len(new_raw_body))
-    return new_headers, new_raw_body
 
 
 class ProxyConnection(threading.Thread):
@@ -1928,9 +1574,9 @@ class ProxyConnection(threading.Thread):
 
         try:
             html = BLOCK_PAGE_HTML.format(
-                domain=html_escape(host),
-                reason=html_escape(rule.get("reason") or "Organization security policy"),
-                category=html_escape(rule.get("category") or "Blocked"),
+                domain=host,
+                reason=rule.get("reason") or "Organization security policy",
+                category=rule.get("category") or "Blocked",
             ).encode("utf-8")
             response = (
                 b"HTTP/1.1 403 Forbidden\r\n"
@@ -1970,25 +1616,6 @@ class ProxyConnection(threading.Thread):
             url_path = self._request_path(data)
             method = self._request_method(data)
 
-            # A top-level page navigation is a candidate for the in-page
-            # block-notice shim on its response (see _inject_block_shim) —
-            # decided from the request, since that's where Sec-Fetch-Dest/
-            # Accept live. Gated on both the org-level toggle and this
-            # engine being active for the host at all (should_intercept
-            # already gated whether we're MITM'ing this connection in the
-            # first place, by the time _serve_over_tls runs).
-            shim_active = (
-                self.mitm is not None
-                and self.mitm.inject_notice_enabled()
-                and _is_document_request(data)
-            )
-            if shim_active:
-                # This process can decode gzip/deflate but not Brotli or
-                # Zstandard, and injecting means fully decompressing the
-                # response — so ask upstream for a codec we can actually
-                # rewrite. Non-document requests are untouched.
-                data = _strip_unsupported_encodings(data)
-
             # An upload is spooled, scanned, then streamed on — the body is
             # never held in memory, so upload size is bounded by scratch space
             # rather than by what the agent can allocate.
@@ -1997,42 +1624,27 @@ class ProxyConnection(threading.Thread):
             upload_size = 0
             if method in UPLOAD_METHODS:
                 content_length = self._content_length(data)
-                chunked_upload = content_length is None and self._is_chunked(data)
-                if content_length is not None or chunked_upload:
+                if content_length is not None:
                     headers_only, _, leftover_body = data.partition(b"\r\n\r\n")
-                    self._send_continue_if_expected(client_sock, data)
-                    if chunked_upload:
-                        # De-chunk into a spool so a "Transfer-Encoding:
-                        # chunked" upload is scanned exactly like any other
-                        # instead of silently passing through unscanned
-                        # (or, worse, stalling the connection — see the
-                        # comment on the old content_length-only branch this
-                        # replaces).
-                        upload_spool, upload_size = self._spool_chunked(client_sock, leftover_body)
-                    else:
-                        upload_spool, upload_size = self._spool(
-                            client_sock, max(0, content_length - len(leftover_body)), leftover_body)
+                    upload_spool, upload_size = self._spool(
+                        client_sock, max(0, content_length - len(leftover_body)), leftover_body)
                     if upload_spool is None:
                         return
 
                     casb_verdict = self._casb_upload_verdict(host)
                     if casb_verdict is not None and casb_verdict.get("action") == "block":
                         upload_spool.close()
-                        self._send_dlp_block(client_sock, host, url_path, casb_verdict, headers_only)
+                        self._send_dlp_block(client_sock, host, url_path, casb_verdict)
                         return
 
                     verdict = self._scan_upload_spooled(
                         host, url_path, headers_only, upload_spool, upload_size, method)
                     if verdict is not None and verdict.get("action") == "block":
                         upload_spool.close()
-                        self._send_dlp_block(client_sock, host, url_path, verdict, headers_only)
+                        self._send_dlp_block(client_sock, host, url_path, verdict)
                         return
 
-                    # A de-chunked body must be re-framed with Content-Length —
-                    # we already hold the whole thing, and the upstream needs
-                    # framing that matches what we're actually about to send.
-                    forward_data = (self._replace_framing(headers_only, upload_size)
-                                     if chunked_upload else headers_only + b"\r\n\r\n")
+                    forward_data = headers_only + b"\r\n\r\n"
 
             try:
                 upstream_sock.sendall(forward_data)
@@ -2051,37 +1663,8 @@ class ProxyConnection(threading.Thread):
                 chunked = self._is_chunked(headers)
 
                 is_download = self._looks_like_download(headers, url_path)
-                is_shim_target = shim_active and not is_download and (content_length is not None or chunked) \
-                    and _response_is_html(headers)
 
-                if is_shim_target:
-                    spool, size = (
-                        self._spool(upstream_sock, max(0, content_length - len(leftover)), leftover)
-                        if content_length is not None
-                        else self._spool_chunked(upstream_sock, leftover)
-                    )
-                    if spool is None:
-                        return
-                    try:
-                        if size > SHIM_INJECT_MAX_BODY:
-                            out_headers = headers if content_length is not None else self._replace_framing(headers, size)
-                            client_sock.sendall(out_headers)
-                            self._relay_spool(client_sock, spool, size)
-                        else:
-                            spool.seek(0)
-                            body = spool.read()
-                            new_headers, new_body = _inject_block_shim(headers, body)
-                            # Always re-frame to match exactly what we're
-                            # about to send: the body is fully buffered
-                            # regardless of how it arrived (chunked or not,
-                            # injected or not), so the outgoing framing must
-                            # describe THIS byte length, not the original.
-                            new_headers = self._replace_framing(new_headers, len(new_body))
-                            client_sock.sendall(new_headers)
-                            client_sock.sendall(new_body)
-                    finally:
-                        spool.close()
-                elif is_download and content_length is not None:
+                if is_download and content_length is not None:
                     spool, size = self._spool(
                         upstream_sock, max(0, content_length - len(leftover)), leftover)
                     if spool is None:
@@ -2153,21 +1736,6 @@ class ProxyConnection(threading.Thread):
     @staticmethod
     def _is_chunked(headers: bytes) -> bool:
         return b"transfer-encoding: chunked" in headers.lower()
-
-    @staticmethod
-    def _send_continue_if_expected(sock, headers: bytes) -> None:
-        """A client sending "Expect: 100-continue" withholds the request body
-        until it sees a 100 Continue — normally sent by the origin server.
-        Because this proxy reads (and scans) the body itself before ever
-        talking to the upstream, it has to send that interim response on the
-        origin's behalf, or a client honoring the spec (curl, many upload
-        SDKs) stalls forever waiting for a go-ahead nothing will send."""
-        head = headers.split(b"\r\n\r\n", 1)[0].lower()
-        if b"expect:" in head and b"100-continue" in head:
-            try:
-                sock.sendall(b"HTTP/1.1 100 Continue\r\n\r\n")
-            except OSError:
-                pass
 
     @staticmethod
     def _relay_exact(src, dst, remaining: int):
@@ -2268,9 +1836,9 @@ class ProxyConnection(threading.Thread):
         if rule is not None and rule.get("action") == "block":
             log.info("BLOCK http://%s (%s)", host, rule.get("reason", ""))
             html = BLOCK_PAGE_HTML.format(
-                domain=html_escape(host),
-                reason=html_escape(rule.get("reason") or "Organization security policy"),
-                category=html_escape(rule.get("category") or "Blocked"),
+                domain=host,
+                reason=rule.get("reason") or "Organization security policy",
+                category=rule.get("category") or "Blocked",
             ).encode("utf-8")
             response = (
                 b"HTTP/1.1 403 Forbidden\r\n"
@@ -2290,31 +1858,25 @@ class ProxyConnection(threading.Thread):
         upload_size = 0
         if method in UPLOAD_METHODS:
             content_length = self._content_length(data)
-            chunked_upload = content_length is None and self._is_chunked(data)
-            if content_length is not None or chunked_upload:
+            if content_length is not None:
                 headers_only, _, leftover_body = data.partition(b"\r\n\r\n")
-                self._send_continue_if_expected(self.conn, data)
-                if chunked_upload:
-                    upload_spool, upload_size = self._spool_chunked(self.conn, leftover_body)
-                else:
-                    upload_spool, upload_size = self._spool(
-                        self.conn, max(0, content_length - len(leftover_body)), leftover_body)
+                upload_spool, upload_size = self._spool(
+                    self.conn, max(0, content_length - len(leftover_body)), leftover_body)
                 if upload_spool is None:
                     return
                 url_path = self._request_path(data)
                 casb_verdict = self._casb_upload_verdict(host)
                 if casb_verdict is not None and casb_verdict.get("action") == "block":
                     upload_spool.close()
-                    self._send_dlp_block(self.conn, host, url_path, casb_verdict, headers_only)
+                    self._send_dlp_block(self.conn, host, url_path, casb_verdict)
                     return
                 verdict = self._scan_upload_spooled(
                     host, url_path, headers_only, upload_spool, upload_size, method)
                 if verdict is not None and verdict.get("action") == "block":
                     upload_spool.close()
-                    self._send_dlp_block(self.conn, host, url_path, verdict, headers_only)
+                    self._send_dlp_block(self.conn, host, url_path, verdict)
                     return
-                data = (self._replace_framing(headers_only, upload_size)
-                        if chunked_upload else headers_only + b"\r\n\r\n")
+                data = headers_only + b"\r\n\r\n"
 
         try:
             upstream = socket.create_connection((host, port), timeout=CONNECT_TIMEOUT)
@@ -2583,8 +2145,8 @@ class ProxyConnection(threading.Thread):
             log.info("MALWARE BLOCKED: %s%s (%s, %d bytes)", host, url_path, sig, size)
             reason = result.get("reason") or f"Malware detected in downloaded file: {sig}"
             html = BLOCK_PAGE_HTML.format(
-                domain=html_escape(host),
-                reason=html_escape(reason),
+                domain=host,
+                reason=reason,
                 category="Malware Detection",
             ).encode("utf-8")
             client_sock.sendall(
@@ -2632,19 +2194,9 @@ class ProxyConnection(threading.Thread):
                              method: str = "") -> Optional[dict]:
         """Submits an outbound request body to admin-api's DLP scanner,
         streamed from the spool file. Returns None (treated as allow — fail
-        open) if the scanner can't be reached; otherwise the verdict dict.
-
-        When this chunk carries a Content-Range header (one slice of a
-        resumable-upload session — see UploadCarryCache above), the previous
-        chunk's trailing bytes are prepended so a value straddling the
-        boundary still scans as one contiguous stream, and this chunk's own
-        trailing bytes are carried forward for the next one. For an ordinary
-        single-shot upload (no Content-Range) this is a complete no-op."""
+        open) if the scanner can't be reached; otherwise the verdict dict."""
         if not GATE.enforces_dlp():
             return None
-        session_key = UPLOAD_CARRY.session_key(headers, host, url_path)
-        carried_tail = UPLOAD_CARRY.take(session_key)
-
         query = urllib.parse.urlencode({
             "filename": self._upload_filename(headers, url_path),
             "content_type": self._header_value(headers, "content-type"),
@@ -2653,69 +2205,29 @@ class ProxyConnection(threading.Thread):
             "path": url_path,
         })
         spool.seek(0)
-        body = _ChainedReader(carried_tail, spool) if carried_tail else spool
-        send_size = size + len(carried_tail)
         try:
             req = _agent_request(self.cache.config, f"/internal/agent/scan-dlp?{query}",
-                                 method="POST", body=body)
-            req.add_header("Content-Length", str(send_size))
+                                 method="POST", body=spool)
+            req.add_header("Content-Length", str(size))
             req.add_header("Content-Type", "application/octet-stream")
-            with _DIRECT_OPENER.open(req, timeout=self._scan_deadline(send_size)) as resp:
-                result = json.loads(resp.read().decode("utf-8"))
+            with _DIRECT_OPENER.open(req, timeout=self._scan_deadline(size)) as resp:
+                return json.loads(resp.read().decode("utf-8"))
         except (urllib.error.URLError, OSError, ValueError) as exc:
             log.debug("upload scan failed for %s%s: %s", host, url_path, exc)
             return None
 
-        UPLOAD_CARRY.update(session_key, spool, size)
-        return result
-
-    def _send_dlp_block(self, client_sock, host: str, url_path: str, verdict: dict, request_headers: bytes = b""):
+    def _send_dlp_block(self, client_sock, host: str, url_path: str, verdict: dict):
         reason = verdict.get("reason") or "Sensitive company data detected"
-        policy_name = verdict.get("policy_name") or "Data Loss Prevention"
-        category = "Data Loss Prevention"
         log.info("DLP BLOCKED: upload to %s%s (%s)", host, url_path, reason)
         html = BLOCK_PAGE_HTML.format(
-            domain=html_escape(host),
-            reason=html_escape(reason),
-            category=category,
+            domain=host,
+            reason=reason,
+            category="Data Loss Prevention",
         ).encode("utf-8")
-        # These X-Aavishield-* headers are what let the in-page notice shim
-        # (see _inject_block_shim) render the REAL reason for an XHR/fetch
-        # upload a site's own JS otherwise reduces to a generic "Upload
-        # failed" — the 403 body above is what a plain form POST sees, this
-        # is what a modern web app's own request-handling code sees.
-        #
-        # Reflecting Origin (rather than a bare "*") lets a *cross*-origin
-        # upload's JS see this response at all — a fetch()/XHR to a
-        # cross-origin endpoint with no matching Access-Control-Allow-Origin
-        # never reaches .then()/'load' in the first place; it's rejected by
-        # the browser before user code sees anything. Same-origin uploads
-        # (the common case — Gmail/Slack/Teams all upload to their own
-        # origin) need none of this, but it costs nothing to add.
-        cors_headers = b""
-        origin = self._header_value(request_headers, "origin") if request_headers else ""
-        if origin:
-            cors_headers = (
-                b"Access-Control-Allow-Origin: " + _header_safe(origin).encode("utf-8") + b"\r\n"
-                b"Access-Control-Allow-Credentials: true\r\n"
-            )
-        incident_id = verdict.get("incident_id") or ""
-        incident_header = (
-            b"X-Aavishield-Incident: " + _header_safe(incident_id).encode("utf-8") + b"\r\n"
-            if incident_id else b""
-        )
         response = (
             b"HTTP/1.1 403 Forbidden\r\n"
             b"Content-Type: text/html; charset=utf-8\r\n"
             b"Content-Length: " + str(len(html)).encode() + b"\r\n"
-            b"X-Aavishield-Block: 1\r\n"
-            b"X-Aavishield-Reason: " + _header_safe(reason).encode("utf-8") + b"\r\n"
-            b"X-Aavishield-Policy: " + _header_safe(policy_name).encode("utf-8") + b"\r\n"
-            b"X-Aavishield-Category: " + _header_safe(category).encode("utf-8") + b"\r\n"
-            + incident_header +
-            b"Access-Control-Expose-Headers: X-Aavishield-Block, X-Aavishield-Reason, "
-            b"X-Aavishield-Policy, X-Aavishield-Category, X-Aavishield-Incident\r\n"
-            + cors_headers +
             b"Connection: close\r\n\r\n" + html
         )
         try:

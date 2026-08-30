@@ -78,33 +78,9 @@ pub fn mint_token(org_id: &str, ttl_seconds: i64, secret: &str) -> String {
     )
 }
 
-/// Constant-time HMAC verification against a single candidate secret.
-fn signature_matches(payload_bytes: &[u8], provided_sig: &[u8], secret: &str) -> bool {
-    let Ok(mut mac) = HmacSha256::new_from_slice(secret.as_bytes()) else {
-        return false;
-    };
-    mac.update(payload_bytes);
-    let expected_sig = mac.finalize().into_bytes();
-    // Constant-time compare — a timing side-channel here would leak how
-    // many leading signature bytes an attacker guessed correctly.
-    provided_sig.len() == expected_sig.len() && provided_sig.ct_eq(&expected_sig).unwrap_u8() == 1
-}
-
 /// Returns Ok(()) unless the bearer token is valid AND bound to
 /// expected_org_id.
-///
-/// `secret_previous` is checked during a secret rotation window: admin-api
-/// may still hold tokens minted with the outgoing secret for up to their
-/// 5-minute TTL after rotating, and without this fallback every one of
-/// those scans 401s and silently degrades to the unscored Go fallback
-/// scanner. Mirrors app/auth.py's `candidates` list.
-pub fn verify_token(
-    authorization_header: Option<&str>,
-    expected_org_id: &str,
-    secret: &str,
-    secret_previous: Option<&str>,
-    require_auth: bool,
-) -> Result<(), AuthError> {
+pub fn verify_token(authorization_header: Option<&str>, expected_org_id: &str, secret: &str, require_auth: bool) -> Result<(), AuthError> {
     if !require_auth {
         return Ok(());
     }
@@ -120,11 +96,13 @@ pub fn verify_token(
     let payload_bytes = URL_SAFE_NO_PAD.decode(parts[1]).map_err(|_| AuthError::Undecodable)?;
     let provided_sig = URL_SAFE_NO_PAD.decode(parts[2]).map_err(|_| AuthError::Undecodable)?;
 
-    let matches = signature_matches(&payload_bytes, &provided_sig, secret)
-        || secret_previous
-            .map(|prev| signature_matches(&payload_bytes, &provided_sig, prev))
-            .unwrap_or(false);
-    if !matches {
+    let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).map_err(|_| AuthError::BadSignature)?;
+    mac.update(&payload_bytes);
+    let expected_sig = mac.finalize().into_bytes();
+
+    // Constant-time compare — a timing side-channel here would leak how
+    // many leading signature bytes an attacker guessed correctly.
+    if provided_sig.len() != expected_sig.len() || provided_sig.ct_eq(&expected_sig).unwrap_u8() != 1 {
         return Err(AuthError::BadSignature);
     }
 
@@ -151,64 +129,42 @@ mod tests {
     fn test_valid_token_round_trips() {
         let tok = mint_token(ORG_A, 300, SECRET);
         let header = format!("Bearer {tok}");
-        assert!(verify_token(Some(&header), ORG_A, SECRET, None, true).is_ok());
+        assert!(verify_token(Some(&header), ORG_A, SECRET, true).is_ok());
     }
 
     #[test]
     fn test_missing_header_rejected() {
-        assert_eq!(verify_token(None, ORG_A, SECRET, None, true), Err(AuthError::Missing));
+        assert_eq!(verify_token(None, ORG_A, SECRET, true), Err(AuthError::Missing));
     }
 
     #[test]
     fn test_wrong_org_rejected() {
         let tok = mint_token(ORG_B, 300, SECRET);
         let header = format!("Bearer {tok}");
-        assert_eq!(verify_token(Some(&header), ORG_A, SECRET, None, true), Err(AuthError::OrgMismatch));
+        assert_eq!(verify_token(Some(&header), ORG_A, SECRET, true), Err(AuthError::OrgMismatch));
     }
 
     #[test]
     fn test_expired_token_rejected() {
         let tok = mint_token(ORG_A, -10, SECRET);
         let header = format!("Bearer {tok}");
-        assert_eq!(verify_token(Some(&header), ORG_A, SECRET, None, true), Err(AuthError::Expired));
+        assert_eq!(verify_token(Some(&header), ORG_A, SECRET, true), Err(AuthError::Expired));
     }
 
     #[test]
     fn test_tampered_signature_rejected() {
         let forged = mint_token(ORG_A, 300, "attacker-guess");
         let header = format!("Bearer {forged}");
-        assert_eq!(verify_token(Some(&header), ORG_A, SECRET, None, true), Err(AuthError::BadSignature));
+        assert_eq!(verify_token(Some(&header), ORG_A, SECRET, true), Err(AuthError::BadSignature));
     }
 
     #[test]
     fn test_malformed_token_rejected() {
-        assert_eq!(verify_token(Some("Bearer not.a.valid.token.shape"), ORG_A, SECRET, None, true), Err(AuthError::Malformed));
+        assert_eq!(verify_token(Some("Bearer not.a.valid.token.shape"), ORG_A, SECRET, true), Err(AuthError::Malformed));
     }
 
     #[test]
     fn test_auth_disabled_always_passes() {
-        assert!(verify_token(None, ORG_A, SECRET, None, false).is_ok());
-    }
-
-    #[test]
-    fn test_previous_secret_accepted_during_rotation() {
-        // admin-api already rotated to a new secret; this token was minted
-        // moments before that with the outgoing one. Without the
-        // secret_previous fallback this 401s and the caller silently
-        // degrades to the unscored Go fallback scanner.
-        const OLD_SECRET: &str = "old-secret-being-rotated-out";
-        let tok = mint_token(ORG_A, 300, OLD_SECRET);
-        let header = format!("Bearer {tok}");
-        assert!(verify_token(Some(&header), ORG_A, SECRET, Some(OLD_SECRET), true).is_ok());
-    }
-
-    #[test]
-    fn test_neither_current_nor_previous_secret_accepted() {
-        let tok = mint_token(ORG_A, 300, "some-other-secret");
-        let header = format!("Bearer {tok}");
-        assert_eq!(
-            verify_token(Some(&header), ORG_A, SECRET, Some("old-secret-being-rotated-out"), true),
-            Err(AuthError::BadSignature)
-        );
+        assert!(verify_token(None, ORG_A, SECRET, false).is_ok());
     }
 }
