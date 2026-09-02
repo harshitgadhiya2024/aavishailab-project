@@ -61,6 +61,9 @@ class ProviderConfig:
     # chat/completions — rather than the single /v1/chat/completions endpoint
     # OpenAI uses. With "per_model" the model name is spliced into the URL.
     path_style: str = "openai"  # openai | per_model
+    # Extra headers sent on every request (OpenRouter uses HTTP-Referer /
+    # X-Title for its dashboard attribution; harmless elsewhere).
+    extra_headers: dict = field(default_factory=dict)
 
 
 class LLMProvider:
@@ -72,6 +75,7 @@ class LLMProvider:
             headers={
                 "Authorization": f"Bearer {config.api_key}",
                 "Content-Type": "application/json",
+                **config.extra_headers,
             },
             timeout=httpx.Timeout(config.timeout),
         )
@@ -174,9 +178,26 @@ class MultiLLMRouter:
 
     def _load_providers(self):
         """Load providers from environment variables."""
-        provider_chain = os.getenv("LLM_PROVIDER_CHAIN", "kie_ai").split(",")
+        # OpenRouter is the default primary now (DLP text/vision classification
+        # runs through it); kie.ai stays on the chain as a fallback where a key
+        # is still configured.
+        provider_chain = os.getenv("LLM_PROVIDER_CHAIN", "openrouter,kie_ai").split(",")
 
         provider_configs = {
+            "openrouter": ProviderConfig(
+                name="openrouter",
+                # Standard OpenAI-compatible surface: a single
+                # {base}/chat/completions endpoint, model passed in the body.
+                base_url=os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
+                api_key=os.getenv("OPENROUTER_API_KEY", ""),
+                default_model=os.getenv("OPENROUTER_DEFAULT_MODEL", "google/gemini-2.5-flash-lite"),
+                timeout=int(os.getenv("LLM_TIMEOUT_SECONDS", "60")),
+                path_style="openai",
+                extra_headers={
+                    "HTTP-Referer": os.getenv("OPENROUTER_REFERER", "https://aavishield.com"),
+                    "X-Title": os.getenv("OPENROUTER_TITLE", "AaviShield DLP"),
+                },
+            ),
             "kie_ai": ProviderConfig(
                 name="kie_ai",
                 # Base is the host only: the model and /v1 are appended per call.
@@ -209,7 +230,7 @@ class MultiLLMRouter:
                     logger.warning(f"LLM provider {name} skipped (not enabled or no API key)")
 
         if not self.providers:
-            logger.error("No LLM providers configured! Set KIE_AI_API_KEY in .env")
+            logger.error("No LLM providers configured! Set OPENROUTER_API_KEY in .env")
 
     async def chat(
         self,

@@ -1,7 +1,0 @@
-# Local dev artifacts — never belong in the image or the build context.
-# ai-service's Dockerfile uses `COPY . .`, so without this the 65M venv ships
-# inside the image; for the others it still keeps the context upload small.
-.venv/
-__pycache__/
-*.pyc
-.pytest_cache/

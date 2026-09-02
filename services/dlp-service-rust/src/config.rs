@@ -8,6 +8,15 @@
 //! tests to construct a `Config` with overridden values (e.g. a tiny
 //! `max_scan_size` to exercise the 413 path) without mutating global state,
 //! which is exactly what the Python suite needs `monkeypatch` for.
+//!
+//! `max_scan_size` is NOT a product size ceiling: DLP scans content of any
+//! size. admin-api spools an upload to disk and walks it in overlapping
+//! ~4 MB windows (extracted-text segments included), so this service only
+//! ever receives a window, never a whole 3 GB file. The default is
+//! therefore "unlimited" (usize::MAX); DLP_MAX_SCAN_SIZE only exists so an
+//! operator can impose a defensive per-request cap, and `0` also means
+//! unlimited. The tests still set a tiny value explicitly to exercise the
+//! 413 path.
 
 use std::env;
 
@@ -16,6 +25,13 @@ pub const DEFAULT_SECRET: &str = "dev-insecure-dlp-secret-change-me";
 #[derive(Clone, Debug)]
 pub struct Config {
     pub service_secret: String,
+    /// During a secret rotation, admin-api may still hold tokens minted with
+    /// the outgoing secret for up to its 5-minute TTL. Without this, every
+    /// scan across that window 401s and silently falls back to the
+    /// unscored in-process Go scanner (see docker-compose.yml's
+    /// DLP_SERVICE_SECRET_PREVIOUS, which app/auth.py's Python original
+    /// already honors — this field brings the Rust port to parity).
+    pub service_secret_previous: Option<String>,
     pub require_auth: bool,
     pub max_scan_size: usize,
     pub default_block_threshold: i64,
@@ -30,10 +46,18 @@ impl Config {
     pub fn from_env() -> Self {
         Config {
             service_secret: env::var("DLP_SERVICE_SECRET").unwrap_or_else(|_| DEFAULT_SECRET.to_string()),
+            service_secret_previous: env::var("DLP_SERVICE_SECRET_PREVIOUS")
+                .ok()
+                .filter(|v| !v.is_empty()),
             require_auth: env::var("DLP_REQUIRE_AUTH")
                 .map(|v| v.eq_ignore_ascii_case("true"))
                 .unwrap_or(true),
-            max_scan_size: env_usize("DLP_MAX_SCAN_SIZE", 20 * 1024 * 1024),
+            // Default = no limit. A non-zero DLP_MAX_SCAN_SIZE imposes a
+            // defensive per-request cap; 0 or unset means unlimited.
+            max_scan_size: match env_usize("DLP_MAX_SCAN_SIZE", 0) {
+                0 => usize::MAX,
+                n => n,
+            },
             default_block_threshold: env_i64("DLP_BLOCK_THRESHOLD", 80),
             default_alert_threshold: env_i64("DLP_ALERT_THRESHOLD", 50),
         }
@@ -48,6 +72,7 @@ impl Config {
     pub fn for_test(secret: &str) -> Self {
         Config {
             service_secret: secret.to_string(),
+            service_secret_previous: None,
             require_auth: true,
             max_scan_size: 20 * 1024 * 1024,
             default_block_threshold: 80,
