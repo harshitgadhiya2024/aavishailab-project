@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/aavishield/admin-api/internal/extractclient"
@@ -252,10 +253,17 @@ func TestScanDLPStreamViaExtract_TransportErrorReturnsNotOK(t *testing.T) {
 }
 
 func TestScanDLPStreamViaExtract_StopsEarlyOnBlock(t *testing.T) {
-	// A second segment after the blocking one must never be scanned/counted
-	// — this is the "block is terminal" contract carried over from the
-	// raw-byte path.
-	blockedContent := false
+	// The first segment carries a card and must block; the stream then also
+	// offers a second segment plus a summary. The contract is that
+	// scanDLPStreamViaExtract returns the blocked verdict — it must not scan
+	// the "should never be reached" segment into the result.
+	//
+	// We don't assert on server-side write progress: whether the handler
+	// goroutine gets to write line 2 before the client closes the body is a
+	// race by nature (buffered pipe, scheduler timing), and reading a flag
+	// it sets from the test goroutine is itself a data race. The real
+	// generator-side "stop walking on client hangup" guarantee is covered by
+	// extract-service's own tests.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/x-ndjson")
 		flusher, _ := w.(http.Flusher)
@@ -264,10 +272,7 @@ func TestScanDLPStreamViaExtract_StopsEarlyOnBlock(t *testing.T) {
 			{"kind": "segment", "seq": 2, "part": "b.txt", "filename": "b.txt", "text": "should never be reached"},
 			{"kind": "summary", "parts": 2, "complete": true},
 		}
-		for i, line := range lines {
-			if i == 1 {
-				blockedContent = true // if we get here, the client kept reading past the block
-			}
+		for _, line := range lines {
 			b, _ := json.Marshal(line)
 			w.Write(b)
 			w.Write([]byte("\n"))
@@ -285,11 +290,13 @@ func TestScanDLPStreamViaExtract_StopsEarlyOnBlock(t *testing.T) {
 	if !ok || !v.matched || v.action != "block" {
 		t.Fatalf("expected a blocked verdict, got ok=%v v=%+v", ok, v)
 	}
-	_ = blockedContent // server-side write order isn't a reliable client-stop signal over a
-	// buffered pipe in a fast local test; the real contract (closing the
-	// body on block) is exercised for real by extract-service's own
-	// integration behavior — see its README/tests for the generator-side
-	// half of this guarantee.
+	if v.previews != nil {
+		for _, p := range v.previews {
+			if strings.Contains(p, "should never be reached") {
+				t.Fatalf("second segment leaked into the verdict: %v", v.previews)
+			}
+		}
+	}
 }
 
 func TestExtractClientStream_ParsesSummary(t *testing.T) {
