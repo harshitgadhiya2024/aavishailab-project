@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse, StreamingResponse
 from pydantic import BaseModel
 
+from app import internal_auth, transcribe, text_classify, vision
 from app.core.agent import AavishieldAgent
 from app.llm.providers import Message, get_router
 from app.tracing import setup_tracing
@@ -64,8 +65,8 @@ def _provider_error_message(exc: Exception) -> str:
     if "All LLM providers failed" in detail or "404" in detail or "Operation not found" in detail:
         return (
             "The AI assistant can't reach a working language model. This is a service "
-            "configuration issue, not a problem with your request — check KIE_AI_BASE_URL, "
-            "KIE_AI_API_KEY and KIE_AI_DEFAULT_MODEL (or configure OLLAMA_BASE_URL) for the "
+            "configuration issue, not a problem with your request — check OPENROUTER_API_KEY "
+            "and OPENROUTER_DEFAULT_MODEL (or the KIE_AI_* / OLLAMA_* fallback) for the "
             f"AI service. Provider said: {detail[:200]}"
         )
     return f"The AI assistant failed to answer: {detail[:300]}"
@@ -108,6 +109,76 @@ async def health():
         "service": "ai-service",
         "providers": router.get_available_models(),
     }
+
+
+# ─── DLP vision classification (internal, service-to-service) ────────────────
+
+class ClassifyImageRequest(BaseModel):
+    org_id: str
+    image_b64: str
+    mime: str = "image/jpeg"
+
+
+@app.post("/v1/dlp/classify-image")
+async def classify_image_endpoint(req: ClassifyImageRequest, authorization: str = Header(...)):
+    """Internal endpoint admin-api calls (via a new ai-service client, HMAC-
+    authed the same way as dlp-service/extract-service) for an image
+    extract-service flagged as worth a closer look. See app/vision.py for
+    the full rationale, cost controls, and failure-mode handling."""
+    try:
+        internal_auth.verify_token(authorization, req.org_id)
+    except internal_auth.AuthError as exc:
+        _METRICS["errors_total"] += 1
+        raise HTTPException(status_code=401, detail=str(exc))
+
+    verdict = await vision.classify_image(req.org_id, req.image_b64, req.mime)
+    _METRICS["vision_classify_requests_total"] = _METRICS.get("vision_classify_requests_total", 0) + 1
+    return verdict.to_dict()
+
+
+class ClassifyTextRequest(BaseModel):
+    org_id: str
+    text: str
+
+
+@app.post("/v1/dlp/classify-text")
+async def classify_text_endpoint(req: ClassifyTextRequest, authorization: str = Header(...)):
+    """Internal endpoint admin-api calls (HMAC-authed like classify-image)
+    for a chunk of text extract-service pulled out of an upload, to decide
+    whether it is semantically sensitive company data. See
+    app/text_classify.py for cost controls and failure-mode handling."""
+    try:
+        internal_auth.verify_token(authorization, req.org_id)
+    except internal_auth.AuthError as exc:
+        _METRICS["errors_total"] += 1
+        raise HTTPException(status_code=401, detail=str(exc))
+
+    verdict = await text_classify.classify_text(req.org_id, req.text)
+    _METRICS["text_classify_requests_total"] = _METRICS.get("text_classify_requests_total", 0) + 1
+    return verdict.to_dict()
+
+
+class TranscribeRequest(BaseModel):
+    org_id: str
+    audio_b64: str
+    mime: str = "audio/mpeg"
+
+
+@app.post("/v1/dlp/transcribe")
+async def transcribe_endpoint(req: TranscribeRequest, authorization: str = Header(...)):
+    """Internal endpoint: best-effort speech-to-text for an audio/video
+    segment so its spoken content can flow through the same DLP detectors
+    as any other text. Fails soft to an empty transcript (caller then
+    records the part as unscannable). See app/transcribe.py."""
+    try:
+        internal_auth.verify_token(authorization, req.org_id)
+    except internal_auth.AuthError as exc:
+        _METRICS["errors_total"] += 1
+        raise HTTPException(status_code=401, detail=str(exc))
+
+    result = await transcribe.transcribe(req.org_id, req.audio_b64, req.mime)
+    _METRICS["transcribe_requests_total"] = _METRICS.get("transcribe_requests_total", 0) + 1
+    return result
 
 
 # ─── Chat (non-streaming) ─────────────────────────────────────────────────────

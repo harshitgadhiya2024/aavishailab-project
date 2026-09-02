@@ -33,6 +33,15 @@ pub const GENERIC_API_KEY: &str = "generic_api_key";
 pub const SOURCE_CODE: &str = "source_code";
 pub const KEYWORD: &str = "keyword";
 pub const CUSTOM_REGEX: &str = "custom_regex";
+/// Not regex/checksum detectors like the others — these name+weight
+/// entries exist so a policy can enable/weight the LLM classifiers
+/// (ai-service's /v1/dlp/classify-image, /v1/dlp/classify-text, and the
+/// transcribe→classify-text path for audio/video), wired in via
+/// admin-api's external_matches, through the exact same policy mechanism
+/// as every built-in detector rather than a parallel on/off switch.
+pub const AI_VISUAL: &str = "ai_visual";
+pub const AI_TEXT: &str = "ai_text";
+pub const AI_AUDIO: &str = "ai_audio";
 
 pub fn builtin_label(detector: &str) -> &'static str {
     match detector {
@@ -43,6 +52,9 @@ pub fn builtin_label(detector: &str) -> &'static str {
         GITHUB_TOKEN => "GitHub Token",
         GENERIC_API_KEY => "Generic API Key / Secret",
         SOURCE_CODE => "Source Code File",
+        AI_VISUAL => "AI Image Classification",
+        AI_TEXT => "AI Content Classification",
+        AI_AUDIO => "AI Audio Classification",
         _ => "",
     }
 }
@@ -69,6 +81,9 @@ pub fn default_weight(detector: &str) -> i64 {
         AADHAAR => 55,
         PAN_INDIA => 45,
         SOURCE_CODE => 40,
+        AI_VISUAL => 75,
+        AI_TEXT => 70,
+        AI_AUDIO => 60,
         CUSTOM_REGEX => 35,
         KEYWORD => 25,
         _ => 25,

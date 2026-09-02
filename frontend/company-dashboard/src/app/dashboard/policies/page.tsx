@@ -1068,6 +1068,27 @@ export default function PoliciesPage() {
                         Applies to plain-HTTP uploads always, and to HTTPS uploads only when SSL Inspection is enabled
                         for this organization (see SSL Inspection settings).
                       </p>
+
+                      <div className="border-t border-border pt-4">
+                        <label className="flex items-start gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            className="mt-0.5"
+                            checked={form.dlp.blockUnscannable}
+                            onChange={(e) =>
+                              setForm((f) => ({ ...f, dlp: { ...f.dlp, blockUnscannable: e.target.checked } }))
+                            }
+                          />
+                          <span className="text-sm text-body">
+                            Block uploads that can&apos;t be fully scanned
+                            <span className="block text-xs text-subtle mt-0.5">
+                              Covers password-protected ZIP/7z archives and encrypted Office documents — content
+                              nothing can see inside of. Off by default: today, and unless you turn this on, that
+                              content is allowed through (same as before deep inspection existed).
+                            </span>
+                          </span>
+                        </label>
+                      </div>
                     </div>
                   )}
 

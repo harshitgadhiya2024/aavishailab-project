@@ -77,6 +77,13 @@ services:
       # dlp-service for weighted scoring; unset -> in-process fallback scanner.
       DLP_SERVICE_URL: http://dlp-service:6200
       DLP_SERVICE_SECRET: ${DLP_SERVICE_SECRET:-change-this-dlp-shared-secret-in-production}
+      # Deep-extraction microservice: when set, DLP uploads are first walked
+      # by extract-service (CSV/JSON/DOCX/XLSX/PPTX/PDF/ZIP/TAR/7z/images +
+      # OCR/RTF/legacy Office/.eml/multipart) into real text segments before
+      # scoring; unset -> raw bytes are scanned directly (today's behavior).
+      EXTRACT_SERVICE_URL: http://extract-service:6400
+      EXTRACT_SERVICE_SECRET: ${EXTRACT_SERVICE_SECRET:-change-this-extract-shared-secret-in-production}
+      EXTRACT_SERVICE_SECRET_PREVIOUS: ${EXTRACT_SERVICE_SECRET_PREVIOUS:-}
       # Malware microservice: when set, /internal/agent/scan-file proxies
       # downloads to malware-service for 0-100 risk scoring; unset -> in-process
       # ClamAV fallback.
@@ -107,6 +114,20 @@ services:
       # CASB service (inline app-control + out-of-band cloud share analysis).
       CASB_SERVICE_URL: http://casb-service:6250
       CASB_SERVICE_SECRET: ${CASB_SERVICE_SECRET:-change-this-casb-shared-secret-in-production}
+      # AI service's internal DLP classification endpoints: /v1/dlp/classify-image
+      # (photographed / screenshotted IDs, credentials), /v1/dlp/classify-text
+      # (semantic sensitivity of extracted document prose — Task 2), and
+      # /v1/dlp/transcribe (audio/video -> text). Wired the same way
+      # DLP_SERVICE_URL / EXTRACT_SERVICE_URL are. This alone doesn't turn the
+      # paid LLM calls on — a DLP policy also has to enable the matching
+      # "ai_visual" / "ai_text" / "ai_audio" detector (all on in the built-in
+      # Automatic DLP policy). Blank AI_SERVICE_URL disables all three outright.
+      AI_SERVICE_URL: ${AI_SERVICE_URL:-http://ai-service:6002}
+      AI_SERVICE_INTERNAL_SECRET: ${AI_SERVICE_INTERNAL_SECRET:-change-this-ai-internal-shared-secret-in-production}
+      AI_SERVICE_INTERNAL_SECRET_PREVIOUS: ${AI_SERVICE_INTERNAL_SECRET_PREVIOUS:-}
+      # Largest audio/video body base64'd into one transcription call; larger
+      # media is reported unscannable (reason "media_too_large").
+      DLP_AUDIO_MAX_BYTES: ${DLP_AUDIO_MAX_BYTES:-25165824}
       # Native agent installers (.pkg/.msi/.deb) + manifest.json, published by
       # the agent-packages CI workflow. Served to installers and consumed by the
       # agent auto-updater. Empty is fine — the portal falls back to the script
@@ -144,6 +165,8 @@ services:
         condition: service_started
       dlp-service:
         condition: service_healthy
+      extract-service:
+        condition: service_healthy
       malware-service:
         condition: service_healthy
       threatintel-service:
@@ -163,10 +186,9 @@ services:
   # the same 80/50 per-scan, so a company gets protection with zero setup.
   dlp-service:
     build:
-      # Rust port (services/dlp-service-rust) — see its README for the
-      # differential-test + benchmark evidence behind this cutover. The
-      # Python original (services/dlp-service) stays in the repo as the
-      # instant-rollback path: swap this context back and rebuild.
+      # Rust implementation (services/dlp-service-rust) — see its README for
+      # the differential-test + benchmark evidence behind the original
+      # cutover from the retired Python service.
       context: ./services/dlp-service-rust
       dockerfile: Dockerfile
     container_name: aavishield-dlp-service
@@ -185,6 +207,65 @@ services:
       - "127.0.0.1:7200:6200"
     networks:
       - aavishield-net
+
+  # Stateless deep-content-extraction service: unpacks DOCX/XLSX/PPTX/PDF/
+  # ZIP/TAR/7z/images/RTF/legacy Office/.eml/multipart into plain-text
+  # segments dlp-service's detectors can actually see (raw-byte scanning
+  # alone never sees inside a zip/binary container). Parses untrusted,
+  # potentially hostile content — see its Dockerfile/README for the
+  # sandboxing this warrants (non-root, read-only rootfs, no egress).
+  # More memory than dlp-service: PDF rasterisation and OCR need headroom.
+  extract-service:
+    build:
+      context: ./services/extract-service
+      dockerfile: Dockerfile
+    container_name: aavishield-extract-service
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+          # A malicious archive/OOXML bomb can't fork its way past this even
+          # if a parser is tricked into shelling out (tesseract is the only
+          # subprocess this service legitimately spawns).
+          pids: 512
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # The short `tmpfs:` form mounts as root:root — invisible in a quick
+    # look, but it silently makes the mount unwritable by this container's
+    # non-root `extract` user (uid 10002, see the Dockerfile), which then
+    # makes EVERY temp file operation fail, including the one pytesseract
+    # relies on to hand tesseract an image (it shells out to the tesseract
+    # binary, which only takes a file path, never stdin) — so OCR failed
+    # silently on every image (ocr_image()'s broad except swallowed it) and
+    # a photographed Aadhaar/PAN card would have gone completely
+    # undetected. Confirmed by testing OCR against this exact compose
+    # config, not just in isolation. mode 01777 (world-writable + sticky
+    # bit) is the standard permission for a shared /tmp equivalent.
+    volumes:
+      - type: tmpfs
+        target: /tmp/extract-scratch
+        tmpfs:
+          mode: 01777
+    environment:
+      EXTRACT_SERVICE_SECRET: ${EXTRACT_SERVICE_SECRET:-change-this-extract-shared-secret-in-production}
+      EXTRACT_SERVICE_SECRET_PREVIOUS: ${EXTRACT_SERVICE_SECRET_PREVIOUS:-}
+      EXTRACT_REQUIRE_AUTH: "true"
+      EXTRACT_OCR_LANGS: ${EXTRACT_OCR_LANGS:-eng+hin}
+    ports:
+      - "127.0.0.1:7400:6400"
+    networks:
+      - aavishield-net
+    # This service never needs to make an outbound call anywhere — it only
+    # ever responds to the caller that reaches it (admin-api, in-network).
+    # docker-compose's bridge network doesn't restrict egress on its own;
+    # enforce that at the host/cloud firewall (deny egress from this
+    # container's IP except to aavishield-net) before treating it as a real
+    # security boundary — the read_only rootfs and cap drop above are
+    # enforced here, egress isolation is not.
 
   # Stateless malware file-scoring service: hash reputation + ClamAV + static
   # heuristics + sandbox hook -> 0-100 risk score with >80 block / 50-80 alert.
@@ -341,6 +422,31 @@ services:
       AI_SERVICE_PORT: "6002"
       ADMIN_API_URL: http://admin-api:6000
       REDIS_URL: redis://:${REDIS_PASSWORD:-aavishield_redis_dev}@redis:6379/0
+      # Internal (service-to-service) auth for POST /v1/dlp/classify-image —
+      # must match admin-api's AI_SERVICE_INTERNAL_SECRET above. Same
+      # rotation pattern as every other *_SERVICE_SECRET in this file.
+      AI_SERVICE_INTERNAL_SECRET: ${AI_SERVICE_INTERNAL_SECRET:-change-this-ai-internal-shared-secret-in-production}
+      AI_SERVICE_INTERNAL_SECRET_PREVIOUS: ${AI_SERVICE_INTERNAL_SECRET_PREVIOUS:-}
+      AI_INTERNAL_REQUIRE_AUTH: "true"
+      # ─── LLM provider (OpenRouter is primary; kie.ai stays as fallback) ──
+      LLM_PROVIDER_CHAIN: ${LLM_PROVIDER_CHAIN:-openrouter,kie_ai}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      OPENROUTER_DEFAULT_MODEL: ${OPENROUTER_DEFAULT_MODEL:-google/gemini-2.5-flash-lite}
+      # ─── DLP classification models (all OpenRouter model ids; swappable) ─
+      # Vision (photographed / screenshotted sensitive documents).
+      DLP_VISION_MODEL: ${DLP_VISION_MODEL:-google/gemini-2.5-flash}
+      DLP_VISION_CACHE_TTL_SECONDS: ${DLP_VISION_CACHE_TTL_SECONDS:-2592000}
+      DLP_VISION_DAILY_CAP: ${DLP_VISION_DAILY_CAP:-2000}
+      # Text (semantic sensitivity of extracted document prose — Task 2).
+      DLP_TEXT_MODEL: ${DLP_TEXT_MODEL:-google/gemini-2.5-flash-lite}
+      DLP_TEXT_CACHE_TTL_SECONDS: ${DLP_TEXT_CACHE_TTL_SECONDS:-2592000}
+      DLP_TEXT_DAILY_CAP: ${DLP_TEXT_DAILY_CAP:-20000}
+      DLP_TEXT_MAX_CHARS: ${DLP_TEXT_MAX_CHARS:-24000}
+      # Audio/video (speech-to-text, then run through the text detectors).
+      DLP_AUDIO_MODEL: ${DLP_AUDIO_MODEL:-google/gemini-2.5-flash}
+      DLP_AUDIO_CACHE_TTL_SECONDS: ${DLP_AUDIO_CACHE_TTL_SECONDS:-2592000}
+      DLP_AUDIO_DAILY_CAP: ${DLP_AUDIO_DAILY_CAP:-500}
     ports:
       - "127.0.0.1:7002:6002"
     # python:3.12-slim ships no wget/curl — probe with the interpreter instead.

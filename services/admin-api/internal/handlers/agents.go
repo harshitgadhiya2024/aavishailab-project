@@ -936,6 +936,7 @@ func (h *AgentHandler) ScanDLP(c *gin.Context) {
 	resp["policy_name"] = v.policyName
 	resp["detectors"] = v.detectors
 	resp["reason"] = v.reason
+	resp["incident_id"] = event.ID.String()
 	c.JSON(http.StatusOK, resp)
 }
 
@@ -956,6 +957,18 @@ type dlpVerdict struct {
 }
 
 func scanDLPContent(ctx context.Context, orgID, filename, contentType, destination string, data []byte, policies []models.Policy) dlpVerdict {
+	return scanDLPContentExt(ctx, orgID, filename, contentType, destination, data, policies, nil)
+}
+
+// scanDLPContentExt is scanDLPContent plus externalMatches — detector hits
+// computed outside dlp-service (currently only ai-service's vision
+// classification of an image) that should be folded into the same weighted
+// aggregate as the content itself. Dropped silently when the in-process
+// fallback scanner is used instead of dlp-service, which has no scoring
+// concept to fold them into — a known, pre-existing limitation of that
+// fallback (see its own doc comment).
+func scanDLPContentExt(ctx context.Context, orgID, filename, contentType, destination string, data []byte,
+	policies []models.Policy, externalMatches []dlpclient.ExternalMatch) dlpVerdict {
 	// Automatic DLP: when an org hasn't authored an applicable custom DLP
 	// policy, every upload is still scanned against a built-in default ruleset
 	// (all detectors on, score >= 80 blocks, 50-79 alerts). Companies never have
@@ -967,7 +980,7 @@ func scanDLPContent(ctx context.Context, orgID, filename, contentType, destinati
 
 	if dlpclient.Enabled() {
 		envelopes := buildDLPEnvelopes(policies)
-		if v, err := dlpclient.Scan(ctx, orgID, filename, contentType, destination, data, envelopes); err == nil {
+		if v, err := dlpclient.ScanExt(ctx, orgID, filename, contentType, destination, data, envelopes, externalMatches); err == nil {
 			return verdictFromService(v, policies)
 		} else {
 			log.Printf("dlp-service scan failed (%v) — falling back to in-process scanner", err)
@@ -1004,6 +1017,14 @@ func defaultDLPPolicy() models.Policy {
 				string(dlp.DetectorGitHubToken),
 				string(dlp.DetectorGenericAPIKey),
 				string(dlp.DetectorSourceCode),
+				// LLM tiers — on by default so semantic sensitivity
+				// (contracts, salary sheets, photographed IDs, spoken
+				// secrets) is caught with zero setup, exactly like the
+				// checksum detectors above. Only fire when ai-service is
+				// configured (AI_SERVICE_URL); otherwise a no-op.
+				"ai_text",
+				"ai_visual",
+				"ai_audio",
 			},
 			"block_threshold": 80,
 			"alert_threshold": 50,
@@ -1213,6 +1234,21 @@ func mitmSettingsFromOrg(org *models.Organization) (enabled bool, bypass []strin
 	return enabled, bypass
 }
 
+// injectNoticeFromOrg reports whether a blocked upload should also get the
+// agent's in-page notice shim injected into the page that triggered it (see
+// aavishield-agent.py's _inject_block_shim) — the mechanism that lets an
+// XHR/fetch-based upload (Gmail, Slack, Teams, Outlook Web — none of which
+// use a plain form POST) show the real block reason instead of a generic
+// "Upload failed". Defaults to true (on) so existing orgs get the notice
+// without any migration step; an org can opt a sensitive/fragile site out
+// via this same org-level setting alongside mitm_bypass_domains.
+func injectNoticeFromOrg(org *models.Organization) bool {
+	if v, ok := org.Settings["mitm_inject_notice"].(bool); ok {
+		return v
+	}
+	return true
+}
+
 // GetMITMConfig handles GET /internal/agent/mitm-config
 // Agent checks whether TLS interception is enabled for its org, and which
 // hostnames to always blind-tunnel instead of terminating.
@@ -1235,6 +1271,7 @@ func (h *AgentHandler) GetMITMConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"enabled":        enabled,
 		"bypass_domains": bypass,
+		"inject_notice":  injectNoticeFromOrg(&org),
 	})
 }
 
@@ -1429,6 +1466,7 @@ func (h *AgentHandler) GetMITMSettings(c *gin.Context) {
 		"enabled":                enabled,
 		"bypass_domains":         bypass,
 		"default_bypass_domains": defaultBypass,
+		"inject_notice":          injectNoticeFromOrg(&org),
 	})
 }
 
@@ -1439,6 +1477,12 @@ func (h *AgentHandler) UpdateMITMSettings(c *gin.Context) {
 	var req struct {
 		Enabled       bool     `json:"enabled"`
 		BypassDomains []string `json:"bypass_domains"`
+		// Pointer so "omitted" (leave as-is) is distinguishable from
+		// "explicitly false" — every other MITM settings field here already
+		// gets fully overwritten on every PUT, but this one ships after
+		// existing dashboard clients that don't know about it yet, and
+		// those must not silently flip it off just by saving the form.
+		InjectNotice *bool `json:"inject_notice"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -1464,13 +1508,18 @@ func (h *AgentHandler) UpdateMITMSettings(c *gin.Context) {
 	}
 	org.Settings["mitm_enabled"] = req.Enabled
 	org.Settings["mitm_bypass_domains"] = bypass
+	injectNotice := injectNoticeFromOrg(&org)
+	if req.InjectNotice != nil {
+		injectNotice = *req.InjectNotice
+	}
+	org.Settings["mitm_inject_notice"] = injectNotice
 
 	if err := h.db.Model(&org).Update("settings", org.Settings).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update settings"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"enabled": req.Enabled, "bypass_domains": cleaned})
+	c.JSON(http.StatusOK, gin.H{"enabled": req.Enabled, "bypass_domains": cleaned, "inject_notice": injectNotice})
 }
 
 // ReportOffline handles POST /internal/agent/offline

@@ -54,19 +54,22 @@ jobs:
       fail-fast: false
       matrix:
         service:
-          # dlp-service is no longer what runs in production (see
-          # docker-compose.yml, which now builds dlp-service-rust) — kept
-          # here so the documented instant-rollback path stays verified,
-          # not because this is the live implementation.
-          - dlp-service
           - malware-service
           - casb-service
           - ai-service
+          # Deep content extraction (documents/archives/images+OCR) feeding
+          # the DLP detector pipeline. Python/FastAPI; see its README.
+          - extract-service
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      # extract-service's OCR tests shell out to the real tesseract binary
+      # (matching its Dockerfile), so the runner needs it installed.
+      - name: Install tesseract (extract-service only)
+        if: matrix.service == 'extract-service'
+        run: sudo apt-get update && sudo apt-get install -y tesseract-ocr tesseract-ocr-hin
       - name: Install dependencies
         working-directory: services/${{ matrix.service }}
         run: |
