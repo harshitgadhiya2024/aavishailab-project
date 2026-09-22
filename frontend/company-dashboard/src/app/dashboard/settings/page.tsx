@@ -6,7 +6,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { authApi, companyApi, enforcementApi, mfaApi, monitoringApi, settingsApi } from "@/lib/api";
 import {
   Lock, ShieldCheck, Bell, Loader2, Save, ArrowRight, KeyRound,
-  LogOut, AlertTriangle, ChevronRight, Building2, Clock, Trash2, Camera, Eye, EyeOff,
+  LogOut, AlertTriangle, ChevronRight, Building2, Clock, Trash2, Camera, Eye, EyeOff, ShieldAlert,
 } from "lucide-react";
 import { ScheduleEditor, EnforcementBadge, defaultSchedule, type ScheduleValue } from "@/components/enforcement/ScheduleEditor";
 import { cn } from "@/lib/utils";
@@ -575,7 +575,103 @@ function NumberField({ label, value, onChange }: { label: string; value: number;
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-type TabId = "password" | "two-factor" | "notifications" | "working-hours" | "monitoring" | "org-security" | "sessions";
+
+/**
+ * The page an employee actually sees when something is blocked.
+ *
+ * The company's name and logo are not editable here — they come from the
+ * company profile, because a company has one name and one logo and asking for
+ * them twice is how the two end up disagreeing. What is editable is the part
+ * that is specific to being blocked: what to do about it, and who to ask.
+ */
+function BlockPagePanel({ canWrite }: { canWrite: boolean }) {
+  const qc = useQueryClient();
+  const { data, isLoading } = useQuery({ queryKey: ["block-page"], queryFn: companyApi.blockPage });
+
+  const [message, setMessage] = useState("");
+  const [contact, setContact] = useState("");
+  const [loaded, setLoaded] = useState(false);
+
+  // Seed the inputs once, on first load. Re-seeding on every render would
+  // fight the person typing.
+  useEffect(() => {
+    if (data?.data && !loaded) {
+      setMessage(data.data.message ?? "");
+      setContact(data.data.contact ?? "");
+      setLoaded(true);
+    }
+  }, [data, loaded]);
+
+  const save = useMutation({
+    mutationFn: () => companyApi.updateBlockPage({ message, contact }),
+    onSuccess: () => {
+      toast.success("Block page updated");
+      qc.invalidateQueries({ queryKey: ["block-page"] });
+    },
+    onError: (e: any) => toast.error(e.response?.data?.error ?? "Could not save the block page"),
+  });
+
+  const companyName = data?.data?.company_name || "your company";
+
+  return (
+    <Panel
+      title="Block page"
+      description="What an employee sees when a site or download is blocked"
+      action={canWrite ? (
+        <button
+          onClick={() => save.mutate()}
+          disabled={save.isPending || isLoading}
+          className="rounded-lg bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground hover:bg-brand-600 disabled:opacity-60"
+        >
+          {save.isPending ? "Saving..." : "Save"}
+        </button>
+      ) : undefined}
+    >
+      <div className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          The page is headed <strong className="text-foreground">Blocked by {companyName}</strong> and
+          carries your logo, both taken from your company profile. These two fields are the rest of it.
+        </p>
+
+        <div>
+          <label className="block text-xs font-medium text-muted-foreground mb-1">
+            What should they do about it?
+          </label>
+          <textarea
+            value={message}
+            onChange={e => setMessage(e.target.value.slice(0, 300))}
+            disabled={!canWrite}
+            rows={3}
+            placeholder="Raise a ticket in ServiceNow if you need access to this site."
+            className={inputClass}
+          />
+          <p className="text-[11px] text-subtle mt-1">
+            {message.length}/300 · Replaces the default &ldquo;contact your IT administrator&rdquo; line.
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-muted-foreground mb-1">
+            Who should they contact?
+          </label>
+          <input
+            value={contact}
+            onChange={e => setContact(e.target.value.slice(0, 120))}
+            disabled={!canWrite}
+            placeholder="it-helpdesk@example.com"
+            className={inputClass}
+          />
+          <p className="text-[11px] text-subtle mt-1">
+            An email address becomes a clickable link. Anything else &mdash; &ldquo;the IT desk on
+            floor 3&rdquo; &mdash; is shown as plain text.
+          </p>
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+type TabId = "password" | "two-factor" | "notifications" | "working-hours" | "monitoring" | "block-page" | "org-security" | "sessions";
 
 const TABS: { id: TabId; label: string; description: string; icon: React.ElementType; orgLevel?: boolean }[] = [
   { id: "password", label: "Password", description: "Sign-in credentials", icon: Lock },
@@ -583,6 +679,7 @@ const TABS: { id: TabId; label: string; description: string; icon: React.Element
   { id: "notifications", label: "Notifications", description: "Email preferences", icon: Bell, orgLevel: true },
   { id: "working-hours", label: "Working hours", description: "When agents enforce", icon: Clock, orgLevel: true },
   { id: "monitoring", label: "Monitoring", description: "Screenshots & activity", icon: Camera, orgLevel: true },
+  { id: "block-page", label: "Block page", description: "What employees see", icon: ShieldAlert, orgLevel: true },
   { id: "org-security", label: "Organization security", description: "Org-wide rules", icon: Building2, orgLevel: true },
   { id: "sessions", label: "Sessions", description: "Signed-in devices", icon: LogOut },
 ];
@@ -677,6 +774,7 @@ export default function SettingsPage() {
           {active === "notifications" && <NotificationsPanel canWrite={canWriteSettings} />}
           {active === "working-hours" && <WorkingHoursPanel canWrite={canWriteSettings} />}
           {active === "monitoring" && <MonitoringPanel canWrite={canWriteSettings} />}
+          {active === "block-page" && <BlockPagePanel canWrite={canWriteSettings} />}
           {active === "org-security" && <OrgSecurityPanel canManageUsers={canManageUsers} />}
           {active === "sessions" && (
             <Panel title="Sessions" description="Sign out of this browser">

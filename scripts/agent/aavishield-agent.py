@@ -999,6 +999,44 @@ class InventoryCollector:
         return out
 
 
+def notify_app_blocked(app_name: str):
+    """Tells the person why an application just closed.
+
+    Best-effort and never fatal: a machine with no notification daemon, or a
+    locked screen, must not hold up or fail a sweep. Each platform below uses
+    a tool the OS already ships, for the same reason the rest of this file
+    does — the agent is distributed as a single file with no extra deps.
+    """
+    # Nothing an attacker controls reaches this string, but it is interpolated
+    # into an AppleScript/PowerShell literal, so quotes and newlines are
+    # stripped rather than escaped per-language.
+    safe = "".join(c for c in str(app_name) if c not in '"\\\'\r\n')[:80]
+    title = "Blocked by your company"
+    body = (f"{safe} is not allowed on this device. "
+            "Contact your IT administrator if you need access.")
+    try:
+        system = platform.system()
+        if system == "Darwin":
+            _run(["osascript", "-e",
+                  f'display notification "{body}" with title "{title}"'])
+        elif system == "Windows":
+            script = (
+                "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications,"
+                " ContentType=WindowsRuntime] > $null; "
+                "$t=[Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent(2); "
+                "$x=$t.GetElementsByTagName('text'); "
+                f"$x[0].AppendChild($t.CreateTextNode('{title}')) > $null; "
+                f"$x[1].AppendChild($t.CreateTextNode('{body}')) > $null; "
+                "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Aavishield')"
+                ".Show([Windows.UI.Notifications.ToastNotification]::new($t))"
+            )
+            _run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script])
+        else:
+            _run(["notify-send", title, body])
+    except Exception as exc:  # noqa: BLE001 - cosmetic; enforcement already happened
+        log.debug("could not show the app-block notice: %s", exc)
+
+
 class AppControlWatcher:
     """Blocks applications, not just their websites.
 
@@ -1181,6 +1219,12 @@ class AppControlWatcher:
                 if self.reported.get(pid) != matcher.get("app_id"):
                     self.reported[pid] = matcher.get("app_id")
                     self._report(matcher, pid, os.path.basename(exe_path), exe_path, terminated)
+                    if terminated:
+                        # Told, not just stopped. An app that simply vanishes
+                        # is indistinguishable from a crash, and the employee
+                        # has no way to tell the difference or know what to do
+                        # about it.
+                        notify_app_blocked(matcher.get("name") or "This application")
                     log.info("APP %s: %s (pid %d)",
                              "BLOCKED" if terminated else "DETECTED",
                              matcher.get("name"), pid)
@@ -1698,34 +1742,126 @@ BLOCK_PAGE_HTML = """<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Aavishield — Access Blocked</title>
+  <title>{heading}</title>
   <style>
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-    body {{ font-family: 'Segoe UI', sans-serif; background: #f0f4fa; display: flex; align-items: center; justify-content: center; min-height: 100vh; }}
-    .card {{ background: white; border-radius: 12px; padding: 48px; max-width: 480px; width: 90%; box-shadow: 0 4px 24px rgba(0,72,160,0.12); text-align: center; }}
-    .shield {{ font-size: 64px; margin-bottom: 24px; }}
-    h1 {{ color: #0048A0; font-size: 24px; margin-bottom: 12px; }}
+    body {{ font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; background: #f0f4fa; display: flex; align-items: center; justify-content: center; min-height: 100vh; }}
+    .card {{ background: white; border-radius: 12px; padding: 48px 40px; max-width: 480px; width: 90%; box-shadow: 0 4px 24px rgba(0,72,160,0.12); text-align: center; }}
+    .logo {{ max-height: 44px; max-width: 180px; margin-bottom: 20px; }}
+    h1 {{ color: #0048A0; font-size: 22px; margin-bottom: 12px; }}
     p {{ color: #555; line-height: 1.6; margin-bottom: 8px; }}
-    .domain {{ font-weight: 600; color: #0048A0; }}
-    .policy {{ background: #f0f4fa; border-radius: 8px; padding: 12px 16px; margin: 16px 0; font-size: 14px; color: #333; }}
-    .footer {{ margin-top: 24px; font-size: 12px; color: #999; }}
+    .policy {{ background: #f0f4fa; border-radius: 8px; padding: 14px 16px; margin: 20px 0; font-size: 14px; color: #333; text-align: left; }}
+    .policy div + div {{ margin-top: 6px; }}
+    .contact a {{ color: #0048A0; }}
+    .footer {{ margin-top: 28px; font-size: 12px; color: #999; }}
   </style>
 </head>
 <body>
   <div class="card">
-    <div class="shield">\U0001F6E1</div>
-    <h1>Access Blocked</h1>
-    <p>This website has been blocked by your organization's security policy.</p>
+    {logo}
+    <h1>{heading}</h1>
+    <p>This site is not permitted on this device.</p>
     <div class="policy">
-      <strong>Domain:</strong> <span class="domain">{domain}</span><br>
-      <strong>Reason:</strong> {reason}<br>
-      <strong>Category:</strong> {category}
+      <div><strong>Site:</strong> {domain}</div>
+      <div><strong>Reason:</strong> {reason}</div>
+      <div><strong>Category:</strong> {category}</div>
     </div>
-    <p>If you believe this is a mistake, please contact your IT administrator.</p>
-    <div class="footer">Protected by <strong>Aavishield</strong> Zero Trust Security</div>
+    <p>{closing}</p>
+    {contact}
+    <div class="footer">{footer}</div>
   </div>
 </body>
 </html>"""
+
+
+class BrandingCache:
+    """The company's own name, logo and message for the block page.
+
+    A block page carrying the security vendor's name reads like malware to the
+    person being blocked; one carrying their employer's name reads like policy.
+    That is the whole reason this exists.
+
+    Starts empty and stays empty on any failure — render_block_page falls back
+    to neutral wording rather than showing a half-branded page, so an
+    unreachable server costs nothing visible.
+    """
+
+    REFRESH_INTERVAL = 300
+
+    def __init__(self, config: dict):
+        self.config = config
+        self._lock = threading.Lock()
+        self._data: dict = {}
+
+    def get(self) -> dict:
+        with self._lock:
+            return dict(self._data)
+
+    def refresh(self):
+        if AGENT_REVOKED.is_set():
+            return
+        try:
+            req = _agent_request(self.config, "/internal/agent/branding")
+            with _DIRECT_OPENER.open(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode("utf-8") or "{}")
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            mark_revoked_if_auth_error(exc)
+            log.debug("branding refresh failed: %s", exc)
+            return
+        if isinstance(data, dict):
+            with self._lock:
+                self._data = data
+
+    def loop_refresh(self):
+        while True:
+            time.sleep(self.REFRESH_INTERVAL)
+            self.refresh()
+
+
+BRANDING = BrandingCache({})
+
+
+def render_block_page(domain: str, reason: str, category: str) -> bytes:
+    """Builds the block page an employee sees, in their company's name.
+
+    Every interpolated value is escaped here, once, rather than at each of the
+    three call sites — `domain` and `reason` arrive from the network and from
+    server-supplied policy text, and this page is served inside the blocked
+    origin's own security context.
+    """
+    b = BRANDING.get()
+    company = html_escape((b.get("company_name") or "").strip())
+    logo_url = (b.get("logo_url") or "").strip()
+    message = (b.get("message") or "").strip()
+    contact_raw = (b.get("support_contact") or "").strip()
+
+    heading = f"Blocked by {company}" if company else "Access blocked"
+    footer = f"{company} security policy" if company else "Your organization's security policy"
+    logo = (
+        f'<img class="logo" src="{html_escape(logo_url)}" alt="{company or "Company logo"}">'
+        if logo_url else ""
+    )
+    closing = html_escape(message) if message else \
+        "If you believe this is a mistake, contact your IT administrator."
+
+    if not contact_raw:
+        contact = ""
+    elif "@" in contact_raw and " " not in contact_raw:
+        c = html_escape(contact_raw)
+        contact = f'<p class="contact"><a href="mailto:{c}">{c}</a></p>'
+    else:
+        contact = f'<p class="contact">{html_escape(contact_raw)}</p>'
+
+    return BLOCK_PAGE_HTML.format(
+        heading=heading,
+        logo=logo,
+        domain=html_escape(domain),
+        reason=html_escape(reason),
+        category=html_escape(category),
+        closing=closing,
+        contact=contact,
+        footer=footer,
+    ).encode("utf-8")
 
 
 # ─── In-page block notice (for XHR/fetch a 403 body never reaches) ───────────
@@ -2186,11 +2322,7 @@ class ProxyConnection(threading.Thread):
             return
 
         try:
-            html = BLOCK_PAGE_HTML.format(
-                domain=html_escape(host),
-                reason=html_escape(rule.get("reason") or "Organization security policy"),
-                category=html_escape(rule.get("category") or "Blocked"),
-            ).encode("utf-8")
+            html = render_block_page(host, rule.get("reason") or "Organization security policy", rule.get("category") or "Blocked")
             response = (
                 b"HTTP/1.1 403 Forbidden\r\n"
                 b"Content-Type: text/html; charset=utf-8\r\n"
@@ -2520,11 +2652,7 @@ class ProxyConnection(threading.Thread):
         rule = self._effective_rule(host)
         if rule is not None and rule.get("action") == "block":
             log.info("BLOCK http://%s (%s)", host, rule.get("reason", ""))
-            html = BLOCK_PAGE_HTML.format(
-                domain=html_escape(host),
-                reason=html_escape(rule.get("reason") or "Organization security policy"),
-                category=html_escape(rule.get("category") or "Blocked"),
-            ).encode("utf-8")
+            html = render_block_page(host, rule.get("reason") or "Organization security policy", rule.get("category") or "Blocked")
             response = (
                 b"HTTP/1.1 403 Forbidden\r\n"
                 b"Content-Type: text/html; charset=utf-8\r\n"
@@ -2828,11 +2956,7 @@ class ProxyConnection(threading.Thread):
             sig = result.get("signature") or result.get("reason") or "malware"
             log.info("MALWARE BLOCKED: %s%s (%s, %d bytes)", host, url_path, sig, size)
             reason = result.get("reason") or f"Malware detected in downloaded file: {sig}"
-            html = BLOCK_PAGE_HTML.format(
-                domain=html_escape(host),
-                reason=html_escape(reason),
-                category="Malware Detection",
-            ).encode("utf-8")
+            html = render_block_page(host, reason, "Malware Detection")
             client_sock.sendall(
                 b"HTTP/1.1 403 Forbidden\r\n"
                 b"Content-Type: text/html; charset=utf-8\r\n"
@@ -5406,6 +5530,13 @@ def run_agent(config: dict, state: AgentState, block: bool = True):
         log.info("Starting outside working hours — not arming the proxy (%s)", GATE.reason)
         if system_proxy_active():
             clear_system_proxy()
+
+    # Load the company's block-page branding before anything can be blocked,
+    # so the very first block an employee sees already carries their own
+    # employer's name rather than falling back to neutral wording.
+    BRANDING.config = config
+    BRANDING.refresh()
+    threading.Thread(target=BRANDING.loop_refresh, daemon=True).start()
 
     threading.Thread(target=heartbeat_loop, args=(config, state), daemon=True).start()
     threading.Thread(target=cache.loop_refresh, daemon=True).start()

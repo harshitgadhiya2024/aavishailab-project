@@ -231,3 +231,79 @@ func (h *CompanyHandler) Timezones(c *gin.Context) {
 		"Africa/Johannesburg", "Africa/Lagos", "Africa/Cairo",
 	}})
 }
+
+// BlockPageBranding is what the block page an employee sees should say. Both
+// fields are optional: the agent falls back to neutral wording for anything
+// left empty, so a company that configures nothing still gets a usable page.
+type BlockPageBranding struct {
+	// Shown in place of the generic "contact your IT administrator" line.
+	Message string `json:"message"`
+	// Rendered as a mailto when it looks like an address, as plain text
+	// otherwise — "Ask the IT desk on floor 3" is a valid answer.
+	Contact string `json:"contact"`
+}
+
+// GetBlockPage handles GET /organization/block-page.
+func (h *CompanyHandler) GetBlockPage(c *gin.Context) {
+	orgID := c.GetString("scoped_org_id")
+
+	var org models.Organization
+	if err := h.db.First(&org, "id = ?", orgID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Organization not found"})
+		return
+	}
+
+	message, _ := org.Settings["block_page_message"].(string)
+	contact, _ := org.Settings["block_page_contact"].(string)
+
+	c.JSON(http.StatusOK, gin.H{
+		// Name and logo come from the org profile rather than being set
+		// again here — a company has one name and one logo, and asking for
+		// them twice is how the two end up disagreeing.
+		"company_name": org.Name,
+		"logo_url":     org.LogoURL,
+		"message":      message,
+		"contact":      contact,
+	})
+}
+
+// UpdateBlockPage handles PUT /organization/block-page.
+func (h *CompanyHandler) UpdateBlockPage(c *gin.Context) {
+	orgID := c.GetString("scoped_org_id")
+
+	var org models.Organization
+	if err := h.db.First(&org, "id = ?", orgID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Organization not found"})
+		return
+	}
+
+	var req BlockPageBranding
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Bounded because this renders on a page an employee sees; a runaway
+	// paste should not produce an unreadable block screen.
+	message := strings.TrimSpace(req.Message)
+	if len(message) > 300 {
+		message = message[:300]
+	}
+	contact := strings.TrimSpace(req.Contact)
+	if len(contact) > 120 {
+		contact = contact[:120]
+	}
+
+	if org.Settings == nil {
+		org.Settings = map[string]any{}
+	}
+	org.Settings["block_page_message"] = message
+	org.Settings["block_page_contact"] = contact
+
+	if err := h.db.Model(&org).Update("settings", org.Settings).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save the block page"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": message, "contact": contact})
+}

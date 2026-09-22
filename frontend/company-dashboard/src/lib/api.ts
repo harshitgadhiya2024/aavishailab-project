@@ -369,6 +369,10 @@ export const companyApi = {
   update: (data: any) => api.put("/api/v1/organization", data),
   timezones: () => api.get("/api/v1/organization/timezones"),
   updateNotifications: (data: any) => api.put("/api/v1/organization/notifications", data),
+  // What the block page an employee sees says, in the company's own words.
+  blockPage: () => api.get("/api/v1/organization/block-page"),
+  updateBlockPage: (data: { message: string; contact: string }) =>
+    api.put("/api/v1/organization/block-page", data),
 };
 
 // ─── Support tickets ──────────────────────────────────────────────────────────

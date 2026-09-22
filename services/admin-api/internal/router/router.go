@@ -446,6 +446,10 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 		organization.PUT("", middleware.RequirePermission(models.PermSettingsWrite), companyH.Update)
 		organization.GET("/timezones", middleware.RequirePermission(models.PermSettingsRead), companyH.Timezones)
 		organization.PUT("/notifications", middleware.RequirePermission(models.PermSettingsWrite), companyH.UpdateNotifications)
+		// What the block page an employee sees should say, in the company's
+		// own words. Name and logo come from the profile above.
+		organization.GET("/block-page", middleware.RequirePermission(models.PermSettingsRead), companyH.GetBlockPage)
+		organization.PUT("/block-page", middleware.RequirePermission(models.PermSettingsWrite), companyH.UpdateBlockPage)
 	}
 
 	// Dashboard users: who else can sign in, with which role and teams.
