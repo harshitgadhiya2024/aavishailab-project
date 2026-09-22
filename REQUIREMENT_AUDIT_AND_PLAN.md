@@ -264,31 +264,40 @@ effect without a connector restart.
 **Device posture** is now one event per device per day instead of one per
 heartbeat.
 
-**Rust connector** gained inventory collection, application control with a
-desktop notification naming the app and the reason, and a company-branded
-block page that also escapes what it interpolates — host and reason previously
-reached the page raw from the network and rendered as live markup.
+**Block page is the company's page** (requirement 1). Name and logo come from
+the org profile; "what to do about it" and "who to ask" are editable under
+Settings → Block page. Both connectors render it through one function, which
+is also where escaping now happens — the host arrives from the network and the
+reason from policy text, into a page served inside the blocked origin's own
+security context, and the Rust version interpolated both raw.
 
-Two bugs found by probing a real machine rather than by reading: the inventory
-collector's subprocess helper deadlocked on any output over the 64KB pipe
-buffer, so Linux package collection silently returned nothing (dpkg emits
-~68KB); and collecting every dpkg package returned ~790 rows of libraries,
-where `apt-mark showmanual` gives 140 that reflect what somebody chose to
-install.
+**An employee is told when an app is blocked** (requirement 3). Terminating a
+process silently is indistinguishable from a crash. Both connectors now raise
+a desktop notification naming the app and saying what to do, using what each
+OS already ships.
+
+**Screenshots carry the open-application list** (requirement: "screenshot ke
+baju me jo apps open ho"). Captured on the agent at the moment of the shot,
+because the window list a second later is a different answer. Applications,
+not processes. Two chips on the thumbnail, the full list in the zoom view, and
+nothing at all when the list is empty — an empty row of chips would read as
+"nothing was open", which is a different and wrong claim.
+
+**Rust connector** gained inventory collection, application control with the
+same notification, a company-branded block page, and DLP monitor-only.
 
 ### Remaining
 
 | # | Work | Why it is not done |
 |---|---|---|
-| 1 | Screenshots + input-activity monitoring in Rust | New platform code per OS (screen capture, global input hooks) with permission prompts that need real hardware to verify |
-| 2 | Open-application list beside each screenshot | Needs window enumeration per OS, plus a column on `Screenshot` |
-| 3 | Tray + desktop window in Rust, Disconnect shown only on personal devices | The server now sends `ownership`; the Rust connector has no UI yet to act on it. The Python connector still shows Disconnect unconditionally |
-| 4 | Auto-update, uninstall flow, connect/disconnect lifecycle in Rust | Python-only today |
-| 5 | Posture collection in Rust | Python-only; the server side already handles it |
-| 6 | Rust connector packaging, signing, CI | All three build scripts are PyInstaller; the Rust agent has none |
-| 7 | `/internal/agent/rules` and `/internal/agent/scan-dlp` extracted to Rust | Separate from the feature work; needs a routing decision in front of admin-api |
-| 8 | Sandbox detonation surfaced (`would_sandbox`) | Needs a CAPE/Cuckoo cluster — an infrastructure decision, not code |
-| 9 | Connector release 2.5.0 | Gated on 1–6 |
+| 1 | Screenshot capture + input-activity counting in Rust | New per-OS platform code (screen grab, global input hooks) behind permission prompts that need real hardware to verify. Working in the Python connector today |
+| 2 | Tray + desktop window in Rust | The Python connector has the full UI; the Rust agent has none. The server already sends `ownership`, so the gating logic is ready for it |
+| 3 | Auto-update, uninstall flow, connect/disconnect lifecycle in Rust | Python-only today |
+| 4 | Posture collection in Rust | Python-only; the server side already handles it, including the daily-digest change |
+| 5 | Rust connector packaging, signing, CI | All three build scripts freeze the Python file with PyInstaller. The Rust agent has no packaging, no signing, and its macOS/Windows integration has never run on real hardware |
+| 6 | `/internal/agent/rules` and `/internal/agent/scan-dlp` extracted to Rust | Separate from the feature work; needs a routing decision in front of admin-api |
+| 7 | Sandbox detonation surfaced (`would_sandbox`) | Needs a CAPE/Cuckoo cluster — an infrastructure decision, not code |
+| 8 | Connector release 2.5.0 | Everything the requirements need works in the Python connector now, so a 2.5.0 can ship from it. A Rust 2.5.0 is gated on 1–5 |
 
 ---
 
@@ -299,13 +308,20 @@ install.
   activity source taxonomy and the SSL-inspection default.
 - `cargo test` in `services/endpoint-agent`: 80 passing (was 64). `cargo
   clippy --all-targets`: clean.
-- `pytest` in `scripts/agent`: 123 passing, including the check that
+- `pytest` in `scripts/agent`: 143 passing (was 123), including the check that
   admin-api's embedded copy of the agent stays byte-identical.
 - `npx tsc --noEmit` and `npm run build` in `frontend/company-dashboard`:
   clean, 27 routes.
 - Inventory collector probed on this host: 140 applications after filtering
   (790 before), correctly finding snaps, dpkg packages and `~/.local/bin`
   binaries.
+- admin-api rebuilt and restarted against the live database: the
+  `installed_applications` table and its unique `(device_id, identifier)`
+  partial index were created, `screenshots.open_apps` was added, the
+  screenshot-default migration enabled capture for all 3 orgs and recorded its
+  once-ever marker, and `/internal/agent/inventory` and
+  `/internal/agent/branding` are registered and correctly refuse unauthenticated
+  calls.
 - Live containers: admin-api, dlp, malware, extract, threatintel, posture,
   shadowit, casb, clamav, postgres, redis and all three frontends healthy.
 
