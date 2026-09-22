@@ -42,6 +42,8 @@ export const portalApi = {
   resetPassword: (data: { token: string; new_password: string }) =>
     api.post("/api/v1/portal/reset-password", data),
   me: () => api.get("/api/v1/portal/me"),
+  changePassword: (data: { current_password: string; new_password: string }) =>
+    api.post("/api/v1/portal/change-password", data),
   devices: () => api.get("/api/v1/portal/devices"),
   deleteDevice: (id: string) => api.delete(`/api/v1/portal/devices/${id}`),
   activity: (params?: Record<string, unknown>) =>

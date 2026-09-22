@@ -1474,14 +1474,19 @@ BLOCK_PAGE_HTML = """<!DOCTYPE html>
 </html>"""
 
 
-# ─── In-page block notice (for XHR/fetch uploads a 403 body never reaches) ───
-# Gmail, Outlook Web, Slack and Teams upload attachments via fetch()/XHR, not
-# a form POST — their own JavaScript swallows a 403 response and shows a
-# generic "Upload failed", so BLOCK_PAGE_HTML above never renders for the
-# single case employees actually hit day to day. This tiny script is
-# injected into the *page* (not the blocked response) so it can watch every
-# fetch/XHR the page itself makes and render the real reason when one of
-# them carries the X-Aavishield-Block header _send_dlp_block sets below.
+# ─── In-page block notice (for XHR/fetch a 403 body never reaches) ───────────
+# A page's own JavaScript swallows a 403 response and shows a generic failure,
+# so BLOCK_PAGE_HTML never renders for a request the page made itself rather
+# than navigated to. This tiny script is injected into the *page* (not the
+# blocked response) so it can watch every fetch/XHR the page makes and render
+# the real reason when one of them carries an X-Aavishield-Block header.
+#
+# NOTE: DLP no longer blocks anything — uploads are recorded and allowed
+# through (see _record_upload_verdict) — so nothing on the upload path sets
+# that header any more and this shim stays dormant there. It remains in place
+# for web-policy blocks, which do still need an in-page explanation when the
+# blocked request came from a page's own fetch() rather than a navigation, and
+# is gated org-side by inject_notice_enabled() either way.
 #
 # The exact text of _BLOCK_SHIM_JS is what gets embedded AND what its CSP
 # hash is computed over (_shim_csp_hash) — derived from the same stripped
@@ -2015,18 +2020,12 @@ class ProxyConnection(threading.Thread):
                     if upload_spool is None:
                         return
 
-                    casb_verdict = self._casb_upload_verdict(host)
-                    if casb_verdict is not None and casb_verdict.get("action") == "block":
-                        upload_spool.close()
-                        self._send_dlp_block(client_sock, host, url_path, casb_verdict, headers_only)
-                        return
-
-                    verdict = self._scan_upload_spooled(
-                        host, url_path, headers_only, upload_spool, upload_size, method)
-                    if verdict is not None and verdict.get("action") == "block":
-                        upload_spool.close()
-                        self._send_dlp_block(client_sock, host, url_path, verdict, headers_only)
-                        return
+                    # Monitor-only: both of these record what left the company;
+                    # neither stops it. The upload always proceeds to the
+                    # upstream below. See _record_upload_verdict.
+                    self._record_upload_verdict(host, url_path, self._casb_upload_verdict(host))
+                    self._record_upload_verdict(host, url_path, self._scan_upload_spooled(
+                        host, url_path, headers_only, upload_spool, upload_size, method))
 
                     # A de-chunked body must be re-framed with Content-Length —
                     # we already hold the whole thing, and the upstream needs
@@ -2302,17 +2301,10 @@ class ProxyConnection(threading.Thread):
                 if upload_spool is None:
                     return
                 url_path = self._request_path(data)
-                casb_verdict = self._casb_upload_verdict(host)
-                if casb_verdict is not None and casb_verdict.get("action") == "block":
-                    upload_spool.close()
-                    self._send_dlp_block(self.conn, host, url_path, casb_verdict, headers_only)
-                    return
-                verdict = self._scan_upload_spooled(
-                    host, url_path, headers_only, upload_spool, upload_size, method)
-                if verdict is not None and verdict.get("action") == "block":
-                    upload_spool.close()
-                    self._send_dlp_block(self.conn, host, url_path, verdict, headers_only)
-                    return
+                # Monitor-only — see the matching call in _serve_over_tls.
+                self._record_upload_verdict(host, url_path, self._casb_upload_verdict(host))
+                self._record_upload_verdict(host, url_path, self._scan_upload_spooled(
+                    host, url_path, headers_only, upload_spool, upload_size, method))
                 data = (self._replace_framing(headers_only, upload_size)
                         if chunked_upload else headers_only + b"\r\n\r\n")
 
@@ -2651,6 +2643,11 @@ class ProxyConnection(threading.Thread):
             "destination": host,
             "method": method,
             "path": url_path,
+            # Lets the server label the incident "app" or "browser" — the
+            # requesting client's own User-Agent is the only signal available
+            # at this layer that distinguishes a native app's upload from a
+            # browser tab's, and it is already in the headers we hold.
+            "user_agent": self._header_value(headers, "user-agent"),
         })
         spool.seek(0)
         body = _ChainedReader(carried_tail, spool) if carried_tail else spool
@@ -2669,59 +2666,22 @@ class ProxyConnection(threading.Thread):
         UPLOAD_CARRY.update(session_key, spool, size)
         return result
 
-    def _send_dlp_block(self, client_sock, host: str, url_path: str, verdict: dict, request_headers: bytes = b""):
-        reason = verdict.get("reason") or "Sensitive company data detected"
-        policy_name = verdict.get("policy_name") or "Data Loss Prevention"
-        category = "Data Loss Prevention"
-        log.info("DLP BLOCKED: upload to %s%s (%s)", host, url_path, reason)
-        html = BLOCK_PAGE_HTML.format(
-            domain=html_escape(host),
-            reason=html_escape(reason),
-            category=category,
-        ).encode("utf-8")
-        # These X-Aavishield-* headers are what let the in-page notice shim
-        # (see _inject_block_shim) render the REAL reason for an XHR/fetch
-        # upload a site's own JS otherwise reduces to a generic "Upload
-        # failed" — the 403 body above is what a plain form POST sees, this
-        # is what a modern web app's own request-handling code sees.
-        #
-        # Reflecting Origin (rather than a bare "*") lets a *cross*-origin
-        # upload's JS see this response at all — a fetch()/XHR to a
-        # cross-origin endpoint with no matching Access-Control-Allow-Origin
-        # never reaches .then()/'load' in the first place; it's rejected by
-        # the browser before user code sees anything. Same-origin uploads
-        # (the common case — Gmail/Slack/Teams all upload to their own
-        # origin) need none of this, but it costs nothing to add.
-        cors_headers = b""
-        origin = self._header_value(request_headers, "origin") if request_headers else ""
-        if origin:
-            cors_headers = (
-                b"Access-Control-Allow-Origin: " + _header_safe(origin).encode("utf-8") + b"\r\n"
-                b"Access-Control-Allow-Credentials: true\r\n"
-            )
-        incident_id = verdict.get("incident_id") or ""
-        incident_header = (
-            b"X-Aavishield-Incident: " + _header_safe(incident_id).encode("utf-8") + b"\r\n"
-            if incident_id else b""
-        )
-        response = (
-            b"HTTP/1.1 403 Forbidden\r\n"
-            b"Content-Type: text/html; charset=utf-8\r\n"
-            b"Content-Length: " + str(len(html)).encode() + b"\r\n"
-            b"X-Aavishield-Block: 1\r\n"
-            b"X-Aavishield-Reason: " + _header_safe(reason).encode("utf-8") + b"\r\n"
-            b"X-Aavishield-Policy: " + _header_safe(policy_name).encode("utf-8") + b"\r\n"
-            b"X-Aavishield-Category: " + _header_safe(category).encode("utf-8") + b"\r\n"
-            + incident_header +
-            b"Access-Control-Expose-Headers: X-Aavishield-Block, X-Aavishield-Reason, "
-            b"X-Aavishield-Policy, X-Aavishield-Category, X-Aavishield-Incident\r\n"
-            + cors_headers +
-            b"Connection: close\r\n\r\n" + html
-        )
-        try:
-            client_sock.sendall(response)
-        except (ssl.SSLError, OSError):
-            pass
+    def _record_upload_verdict(self, host: str, url_path: str, verdict: Optional[dict]):
+        """Logs a DLP/CASB finding on this device. Nothing is ever blocked.
+
+        Data-loss protection here is visibility, not interception: the company
+        sees that an employee sent something sensitive, and the employee's work
+        is not interrupted. The incident itself is recorded server-side by
+        /internal/agent/scan-dlp — this only leaves a trace in the device's own
+        log so the same finding is diagnosable from the endpoint too.
+        """
+        if not verdict:
+            return
+        reason = (verdict.get("reason")
+                  or ", ".join(verdict.get("detectors") or [])
+                  or "sensitive content")
+        log.info("DLP RECORDED: upload to %s%s (%s, score %s) — allowed through",
+                 host, url_path, reason, verdict.get("score"))
 
     @staticmethod
     def _parse_http_target(data: bytes) -> Optional[Tuple[str, int, bool]]:

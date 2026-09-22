@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Shield, LayoutDashboard, Users, UsersRound, FileText,
+  Shield, LayoutDashboard, Users, UsersRound,
   Activity, Globe, Bot, Monitor, ChevronLeft, ChevronRight, ChevronDown,
-  BarChart3, FileWarning, Cloud, CloudCog, Inbox, Tags, ShieldCheck, UserCog, AppWindow, Camera,
+  BarChart3, FileWarning, Inbox, Tags, UserCog, AppWindow, Camera,
   LifeBuoy
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -34,27 +34,14 @@ const navGroups: NavGroup[] = [
     id: "policies",
     label: "Policy Management",
     items: [
-      { href: "/dashboard/policies", icon: FileText, label: "Policies", permission: PERMISSIONS.policiesRead },
       { href: "/dashboard/categories", icon: Tags, label: "Policy Categories", permission: PERMISSIONS.categoriesRead },
-      { href: "/dashboard/applications", icon: AppWindow, label: "Application Control", permission: PERMISSIONS.policiesRead },
-      { href: "/dashboard/access-requests", icon: Inbox, label: "Access Requests", permission: PERMISSIONS.accessRequestsRead },
-    ],
-  },
-  {
-    id: "protection",
-    label: "Protection",
-    items: [
       { href: "/dashboard/swg", icon: Globe, label: "Web Gateway", permission: PERMISSIONS.swgRead },
+      { href: "/dashboard/applications", icon: AppWindow, label: "Application Control", permission: PERMISSIONS.policiesRead },
+      // DLP has no policies of its own any more — it is on for every org, and
+      // this tab is purely the log of what it saw. It sits here because that
+      // is where the requirement's sidebar order puts it, not because there is
+      // anything to configure.
       { href: "/dashboard/dlp", icon: FileWarning, label: "Data Loss Prevention", permission: PERMISSIONS.policiesRead },
-      { href: "/dashboard/ssl-inspection", icon: ShieldCheck, label: "SSL Inspection", permission: PERMISSIONS.settingsRead },
-    ],
-  },
-  {
-    id: "cloud",
-    label: "Cloud & SaaS",
-    items: [
-      { href: "/dashboard/shadow-it", icon: Cloud, label: "Shadow IT", permission: PERMISSIONS.shadowItRead },
-      { href: "/dashboard/casb", icon: CloudCog, label: "CASB", permission: PERMISSIONS.casbRead },
     ],
   },
   {
@@ -63,6 +50,7 @@ const navGroups: NavGroup[] = [
     items: [
       { href: "/dashboard/activity", icon: Activity, label: "Activity", permission: PERMISSIONS.activityRead },
       { href: "/dashboard/screenshots", icon: Camera, label: "Screenshots", permission: PERMISSIONS.monitoringRead },
+      { href: "/dashboard/access-requests", icon: Inbox, label: "Access Requests", permission: PERMISSIONS.accessRequestsRead },
       { href: "/dashboard/reports", icon: BarChart3, label: "Reports", permission: PERMISSIONS.reportsRead },
       { href: "/dashboard/ai-assistant", icon: Bot, label: "AI Assistant", permission: PERMISSIONS.aiUse },
     ],

@@ -249,19 +249,20 @@ function OrgSecurityPanel({ canManageUsers }: { canManageUsers: boolean }) {
           </div>
         )}
 
+        {/* Read-only now: SSL inspection is on for every company and is not a
+            choice any more, so this states the fact instead of linking to a
+            page that would have nothing to change. */}
         <div className="flex items-start justify-between gap-4 py-3">
           <div className="min-w-0">
             <p className="text-sm text-foreground">SSL inspection</p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              {ssl.enabled
-                ? `On — ${(ssl.bypass_domains ?? []).length} domains excluded from decryption`
-                : "Off — DLP can only inspect plain HTTP uploads"}
+              Always on — {(ssl.bypass_domains ?? []).length} sensitive domains (banking, health)
+              are excluded from decryption
             </p>
           </div>
-          <Link href="/dashboard/ssl-inspection"
-            className="flex items-center gap-1 text-xs text-brand-500 hover:text-brand-400 whitespace-nowrap">
-            Manage <ArrowRight className="w-3 h-3" />
-          </Link>
+          <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-success whitespace-nowrap">
+            Enabled
+          </span>
         </div>
 
         <div className="flex items-start justify-between gap-4 py-3">

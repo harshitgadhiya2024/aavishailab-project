@@ -60,7 +60,7 @@ fn upstream_tls_config() -> Arc<rustls::ClientConfig> {
 /// the HTTPS response — no upstream connection is ever made. Turns a
 /// domain block for an HTTPS site from a generic browser connection-error
 /// screen into our own page.
-pub async fn serve_block_page<T>(io: T, host: &str, leaf: &Leaf, reason: &str, category: &str) -> std::io::Result<()>
+pub async fn serve_block_page<T>(deps: &Deps, io: T, host: &str, leaf: &Leaf, reason: &str, category: &str) -> std::io::Result<()>
 where
     T: AsyncRead + AsyncWrite + Unpin,
 {
@@ -68,7 +68,7 @@ where
     let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(cfg));
     let mut tls = acceptor.accept(io).await?;
 
-    let html = block_page_html(host, reason, category);
+    let html = block_page_html(deps, host, reason, category);
     let response = format!(
         "HTTP/1.1 403 Forbidden\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
         html.len(),
@@ -144,11 +144,12 @@ async fn relay_one(
     let content_type = parts.headers.get(hyper::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
     let content_disposition = parts.headers.get(hyper::header::CONTENT_DISPOSITION).and_then(|v| v.to_str().ok());
     let filename = crate::scan::upload_filename(content_disposition, &path);
+    let user_agent = parts.headers.get(hyper::header::USER_AGENT).and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
 
     // Upload scanning (CASB app-control, then DLP content): buffer the body
-    // (bounded — see MAX_SCAN_BODY), scan it, and block the request
-    // outright on a "block" verdict rather than forwarding it. A body over
-    // the cap relays unscanned rather than failing the request — fail-open.
+    // (bounded — see MAX_SCAN_BODY) and scan it. The verdict is recorded,
+    // never acted on: DLP is monitor-only, so the request always continues
+    // to its upstream. A body over the cap relays unscanned — fail-open.
     let body_bytes = match body.collect().await {
         Ok(collected) => collected.to_bytes(),
         Err(e) => {
@@ -158,10 +159,7 @@ async fn relay_one(
     };
 
     if matches!(method.as_str(), "POST" | "PUT" | "PATCH") && body_bytes.len() <= MAX_SCAN_BODY {
-        let verdict = crate::scan::upload_verdict(&deps.client, &deps.casb, &deps.gate, &host, &path, method.as_str(), &content_type, &filename, &body_bytes).await;
-        if verdict.blocked {
-            return Ok(crate::proxy::html_response(StatusCode::FORBIDDEN, &block_page_html(&host, &verdict.reason, "Data Loss Prevention")));
-        }
+        crate::scan::upload_verdict(&deps.client, &deps.casb, &deps.gate, &host, &path, method.as_str(), &content_type, &filename, &user_agent, &body_bytes).await;
     }
 
     let mut upstream_req = Request::builder().method(method).uri(&path);
@@ -196,7 +194,7 @@ async fn relay_one(
     if resp_parts.status.is_success() && resp_bytes.len() <= MAX_SCAN_BODY {
         let verdict = crate::scan::download_verdict(&deps.client, &deps.gate, &host, &path, &resp_bytes).await;
         if verdict.blocked {
-            return Ok(crate::proxy::html_response(StatusCode::FORBIDDEN, &block_page_html(&host, &verdict.reason, "Malware Protection")));
+            return Ok(crate::proxy::html_response(StatusCode::FORBIDDEN, &block_page_html(&deps, &host, &verdict.reason, "Malware Protection")));
         }
     }
 

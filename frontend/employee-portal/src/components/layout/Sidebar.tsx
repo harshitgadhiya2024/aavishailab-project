@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Shield, LayoutDashboard, Download, Activity, Monitor, ChevronLeft, ChevronRight } from "lucide-react";
+import { Shield, LayoutDashboard, Download, Activity, Monitor, UserRound, ChevronLeft, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 
@@ -11,6 +11,7 @@ const navItems = [
   { href: "/dashboard/download", icon: Download, label: "Download Agent" },
   { href: "/dashboard/devices", icon: Monitor, label: "My Devices" },
   { href: "/dashboard/activity", icon: Activity, label: "Blocked Activity" },
+  { href: "/dashboard/profile", icon: UserRound, label: "Profile" },
 ];
 
 export function Sidebar() {

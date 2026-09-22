@@ -282,6 +282,51 @@ func (h *PortalHandler) ResetPassword(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Password reset successfully"})
 }
 
+// ChangePassword handles POST /api/v1/portal/change-password — an employee
+// changing their own password from inside the portal (as opposed to
+// ForgotPassword/ResetPassword's out-of-session, emailed-token flow).
+// Mirrors AuthHandler.ChangePassword's contract (current password required,
+// new one bcrypt-hashed) against models.Employee.PortalPasswordHash instead
+// of models.User.PasswordHash — the two accounts are entirely separate.
+func (h *PortalHandler) ChangePassword(c *gin.Context) {
+	emp, ok := h.portalEmployee(c)
+	if !ok {
+		return
+	}
+
+	var req struct {
+		CurrentPassword string `json:"current_password" binding:"required"`
+		NewPassword     string `json:"new_password" binding:"required,min=8"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if emp.PortalPasswordHash == "" {
+		// Signed up via Google/Apple (SocialLogin/Signup leave this blank) —
+		// there is no password to verify against, so "change" doesn't apply.
+		// ForgotPassword still works for these accounts and sets one.
+		c.JSON(http.StatusBadRequest, gin.H{"error": "This account signs in with Google or Apple — there's no password to change."})
+		return
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(emp.PortalPasswordHash), []byte(req.CurrentPassword)); err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Current password is incorrect"})
+		return
+	}
+
+	hashed, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
+		return
+	}
+	h.db.Model(&models.Employee{}).Where("id = ?", emp.ID).Update("portal_password_hash", string(hashed))
+
+	mailer.PasswordChanged(emp.Email, emp.FirstName, true)
+
+	c.JSON(http.StatusOK, gin.H{"message": "Password changed successfully"})
+}
+
 // SocialLogin handles POST /api/v1/portal/social — same trust model as the
 // company auth.SocialLogin: internal-secret gated, only logs in an employee
 // record that a company admin already provisioned.
@@ -353,6 +398,7 @@ func (h *PortalHandler) Me(c *gin.Context) {
 			"org_id":         emp.OrgID,
 			"risk_score":     emp.RiskScore,
 			"last_active_at": emp.LastActiveAt,
+			"has_password":   emp.PortalPasswordHash != "",
 		},
 		"devices": devices,
 		"stats_7d": gin.H{

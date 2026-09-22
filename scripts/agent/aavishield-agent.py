@@ -745,6 +745,260 @@ class _ChainedReader:
 
 # ─── Application control (process watcher) ────────────────────────────────────
 
+class InventoryCollector:
+    """Reports what software is installed on this machine.
+
+    Application control (below) only ever notices an app that is *running* and
+    that somebody already catalogued. That leaves the company blind to the
+    thing it most wants to know: an employee installed something. This walks
+    the OS's own record of installed software and sends the whole list, so a
+    remote-access tool that has never been launched is still visible, and so is
+    a binary that came from a browser download rather than a package manager.
+
+    A full snapshot is sent every time, not a delta — the server diffs it (see
+    ReportInventory) and that is what makes uninstalls detectable without the
+    agent having to remember what it last sent across restarts and upgrades.
+
+    Deliberately shell-out based, like the rest of this file: the agent ships
+    as a single file with no psutil and no platform SDK bindings, so every
+    collector below uses a tool the OS already has.
+    """
+
+    # Long, because installing software is a rare event and enumerating it is
+    # the most expensive thing this agent does periodically. The first report
+    # goes out shortly after startup; after that, hourly is well inside the
+    # resolution anyone reads this data at.
+    INTERVAL = 3600
+    FIRST_DELAY = 90
+
+    def __init__(self, config: dict):
+        self.config = config
+        self.system = platform.system()
+
+    def loop(self):
+        time.sleep(self.FIRST_DELAY)
+        while True:
+            try:
+                self.report()
+            except Exception as exc:  # noqa: BLE001 - never kill the thread
+                log.debug("inventory report failed: %s", exc)
+            time.sleep(self.INTERVAL)
+
+    def report(self):
+        # Enumerating someone's personal laptop's software outside working
+        # hours is the same intrusion the gate exists to prevent everywhere
+        # else. A company machine is always 'full', so this only ever skips on
+        # BYOD, and only outside its window.
+        if not GATE.logs("activity"):
+            return
+        apps = self.collect()
+        if not apps:
+            return
+        payload = json.dumps({"applications": apps}).encode("utf-8")
+        try:
+            req = _agent_request(self.config, "/internal/agent/inventory",
+                                 method="POST", body=payload)
+            with _DIRECT_OPENER.open(req, timeout=30):
+                pass
+            log.info("Software inventory reported: %d application(s)", len(apps))
+        except (urllib.error.URLError, OSError) as exc:
+            mark_revoked_if_auth_error(exc)
+            log.debug("inventory upload failed: %s", exc)
+
+    def collect(self) -> List[dict]:
+        if self.system == "Windows":
+            apps = self._windows()
+        elif self.system == "Darwin":
+            apps = self._macos()
+        else:
+            apps = self._linux()
+        # Sorted so a truncated report (the server caps the list) is the same
+        # subset every time rather than an arbitrary one that churns.
+        return sorted(apps, key=lambda a: a.get("name", "").lower())
+
+    # ── Windows ───────────────────────────────────────────────────────────
+    def _windows(self) -> List[dict]:
+        """Both registry views plus the per-user hive.
+
+        Three paths, not one: 64-bit installers write to the native Uninstall
+        key, 32-bit ones are redirected to WOW6432Node, and anything installed
+        without admin rights lands under HKCU — which is exactly where a
+        manually downloaded tool ends up, so omitting it would miss the case
+        this feature is for.
+        """
+        script = (
+            "$paths = @("
+            "'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',"
+            "'HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',"
+            "'HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*');"
+            "Get-ItemProperty $paths -ErrorAction SilentlyContinue | "
+            "Where-Object { $_.DisplayName } | "
+            "ForEach-Object { [PSCustomObject]@{"
+            "name=$_.DisplayName; version=$_.DisplayVersion; vendor=$_.Publisher;"
+            "identifier=$_.PSChildName; install_path=$_.InstallLocation;"
+            "installed_at=$_.InstallDate } } | ConvertTo-Json -Compress -Depth 2"
+        )
+        rc, out = _run_long(["powershell", "-NoProfile", "-Command", script])
+        if rc != 0:
+            return []
+        return self._from_json(out, "registry")
+
+    # ── macOS ─────────────────────────────────────────────────────────────
+    def _macos(self) -> List[dict]:
+        """Every .app bundle, read from its own Info.plist.
+
+        system_profiler SPApplicationsDataType would give the same answer, but
+        it routinely takes 30+ seconds and spins the CPU while it does. Walking
+        the three application directories and reading the plists directly is
+        near-instant and yields the identifier that actually matters here — the
+        CFBundleIdentifier.
+        """
+        apps: List[dict] = []
+        roots = ["/Applications", "/Applications/Utilities",
+                 os.path.expanduser("~/Applications")]
+        for root in roots:
+            if not os.path.isdir(root):
+                continue
+            try:
+                entries = os.listdir(root)
+            except OSError:
+                continue
+            for entry in entries:
+                if not entry.endswith(".app"):
+                    continue
+                bundle = os.path.join(root, entry)
+                info = os.path.join(bundle, "Contents", "Info.plist")
+                name = entry[:-4]
+                identifier, version, installed_at = "", "", ""
+                try:
+                    with open(info, "rb") as fh:
+                        plist = plistlib.load(fh)
+                    identifier = plist.get("CFBundleIdentifier", "") or ""
+                    version = (plist.get("CFBundleShortVersionString")
+                               or plist.get("CFBundleVersion") or "")
+                    name = plist.get("CFBundleName") or name
+                except (OSError, ValueError, plistlib.InvalidFileException):
+                    pass
+                try:
+                    # macOS records no install date, so the bundle's own
+                    # creation time is the closest honest answer.
+                    installed_at = _rfc3339(os.path.getctime(bundle))
+                except OSError:
+                    installed_at = ""
+                apps.append({
+                    "name": str(name), "version": str(version),
+                    "identifier": str(identifier), "install_path": bundle,
+                    "vendor": "", "source": "applications",
+                    "installed_at": installed_at,
+                })
+        return apps + self._unix_manual_binaries()
+
+    # ── Linux ─────────────────────────────────────────────────────────────
+    def _linux(self) -> List[dict]:
+        apps: List[dict] = []
+
+        rc, out = _run_long(["dpkg-query", "-W", "-f=${Package}\\t${Version}\\t${Maintainer}\\n"])
+        if rc == 0:
+            for line in out.splitlines():
+                parts = line.split("\t")
+                if len(parts) >= 2 and parts[0].strip():
+                    apps.append({"name": parts[0].strip(), "version": parts[1].strip(),
+                                 "vendor": parts[2].strip() if len(parts) > 2 else "",
+                                 "identifier": parts[0].strip(), "install_path": "",
+                                 "source": "dpkg", "installed_at": ""})
+
+        rc, out = _run_long(["rpm", "-qa", "--queryformat", "%{NAME}\\t%{VERSION}\\t%{VENDOR}\\n"])
+        if rc == 0:
+            for line in out.splitlines():
+                parts = line.split("\t")
+                if len(parts) >= 2 and parts[0].strip():
+                    apps.append({"name": parts[0].strip(), "version": parts[1].strip(),
+                                 "vendor": parts[2].strip() if len(parts) > 2 else "",
+                                 "identifier": parts[0].strip(), "install_path": "",
+                                 "source": "rpm", "installed_at": ""})
+
+        for cmd, source in ((["snap", "list"], "snap"), (["flatpak", "list", "--columns=application,version"], "flatpak")):
+            rc, out = _run_long(cmd)
+            if rc != 0:
+                continue
+            for line in out.splitlines()[1:] if source == "snap" else out.splitlines():
+                parts = line.split()
+                if len(parts) >= 1 and parts[0] and not parts[0].startswith("-"):
+                    apps.append({"name": parts[0], "version": parts[1] if len(parts) > 1 else "",
+                                 "vendor": "", "identifier": f"{source}:{parts[0]}",
+                                 "install_path": "", "source": source, "installed_at": ""})
+
+        return apps + self._unix_manual_binaries()
+
+    # ── Manually installed binaries (macOS + Linux) ───────────────────────
+    def _unix_manual_binaries(self) -> List[dict]:
+        """Executables in the places a manual download actually lands.
+
+        A package database by definition knows nothing about a binary someone
+        curl'd into ~/.local/bin or /usr/local/bin — which is precisely how
+        developer tooling gets installed, and precisely the blind spot the
+        requirement calls out. Only regular executable files are reported, and
+        only one directory level deep, so this stays a bounded scan rather than
+        a filesystem crawl.
+        """
+        apps: List[dict] = []
+        roots = ["/usr/local/bin", os.path.expanduser("~/.local/bin"),
+                 os.path.expanduser("~/bin")]
+        for root in roots:
+            if not os.path.isdir(root):
+                continue
+            try:
+                entries = os.listdir(root)
+            except OSError:
+                continue
+            for entry in entries[:500]:
+                full = os.path.join(root, entry)
+                try:
+                    # Symlinks here are almost always a package manager's
+                    # shim pointing back at something already reported.
+                    if os.path.islink(full) or not os.path.isfile(full):
+                        continue
+                    if not os.access(full, os.X_OK):
+                        continue
+                    installed_at = _rfc3339(os.path.getmtime(full))
+                except OSError:
+                    continue
+                apps.append({
+                    "name": entry, "version": "", "vendor": "",
+                    "identifier": full, "install_path": full,
+                    "source": "path", "installed_at": installed_at,
+                })
+        return apps
+
+    @staticmethod
+    def _from_json(raw: str, source: str) -> List[dict]:
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            return []
+        # ConvertTo-Json emits a bare object, not a list, when there is exactly
+        # one result — a real case on a nearly-empty machine.
+        if isinstance(data, dict):
+            data = [data]
+        out = []
+        for item in data if isinstance(data, list) else []:
+            if not isinstance(item, dict):
+                continue
+            name = (item.get("name") or "").strip()
+            if not name:
+                continue
+            out.append({
+                "name": name,
+                "version": str(item.get("version") or "").strip(),
+                "vendor": str(item.get("vendor") or "").strip(),
+                "identifier": str(item.get("identifier") or "").strip(),
+                "install_path": str(item.get("install_path") or "").strip(),
+                "installed_at": str(item.get("installed_at") or "").strip(),
+                "source": source,
+            })
+        return out
+
+
 class AppControlWatcher:
     """Blocks applications, not just their websites.
 
@@ -1474,14 +1728,19 @@ BLOCK_PAGE_HTML = """<!DOCTYPE html>
 </html>"""
 
 
-# ─── In-page block notice (for XHR/fetch uploads a 403 body never reaches) ───
-# Gmail, Outlook Web, Slack and Teams upload attachments via fetch()/XHR, not
-# a form POST — their own JavaScript swallows a 403 response and shows a
-# generic "Upload failed", so BLOCK_PAGE_HTML above never renders for the
-# single case employees actually hit day to day. This tiny script is
-# injected into the *page* (not the blocked response) so it can watch every
-# fetch/XHR the page itself makes and render the real reason when one of
-# them carries the X-Aavishield-Block header _send_dlp_block sets below.
+# ─── In-page block notice (for XHR/fetch a 403 body never reaches) ───────────
+# A page's own JavaScript swallows a 403 response and shows a generic failure,
+# so BLOCK_PAGE_HTML never renders for a request the page made itself rather
+# than navigated to. This tiny script is injected into the *page* (not the
+# blocked response) so it can watch every fetch/XHR the page makes and render
+# the real reason when one of them carries an X-Aavishield-Block header.
+#
+# NOTE: DLP no longer blocks anything — uploads are recorded and allowed
+# through (see _record_upload_verdict) — so nothing on the upload path sets
+# that header any more and this shim stays dormant there. It remains in place
+# for web-policy blocks, which do still need an in-page explanation when the
+# blocked request came from a page's own fetch() rather than a navigation, and
+# is gated org-side by inject_notice_enabled() either way.
 #
 # The exact text of _BLOCK_SHIM_JS is what gets embedded AND what its CSP
 # hash is computed over (_shim_csp_hash) — derived from the same stripped
@@ -2015,18 +2274,12 @@ class ProxyConnection(threading.Thread):
                     if upload_spool is None:
                         return
 
-                    casb_verdict = self._casb_upload_verdict(host)
-                    if casb_verdict is not None and casb_verdict.get("action") == "block":
-                        upload_spool.close()
-                        self._send_dlp_block(client_sock, host, url_path, casb_verdict, headers_only)
-                        return
-
-                    verdict = self._scan_upload_spooled(
-                        host, url_path, headers_only, upload_spool, upload_size, method)
-                    if verdict is not None and verdict.get("action") == "block":
-                        upload_spool.close()
-                        self._send_dlp_block(client_sock, host, url_path, verdict, headers_only)
-                        return
+                    # Monitor-only: both of these record what left the company;
+                    # neither stops it. The upload always proceeds to the
+                    # upstream below. See _record_upload_verdict.
+                    self._record_upload_verdict(host, url_path, self._casb_upload_verdict(host))
+                    self._record_upload_verdict(host, url_path, self._scan_upload_spooled(
+                        host, url_path, headers_only, upload_spool, upload_size, method))
 
                     # A de-chunked body must be re-framed with Content-Length —
                     # we already hold the whole thing, and the upstream needs
@@ -2302,17 +2555,10 @@ class ProxyConnection(threading.Thread):
                 if upload_spool is None:
                     return
                 url_path = self._request_path(data)
-                casb_verdict = self._casb_upload_verdict(host)
-                if casb_verdict is not None and casb_verdict.get("action") == "block":
-                    upload_spool.close()
-                    self._send_dlp_block(self.conn, host, url_path, casb_verdict, headers_only)
-                    return
-                verdict = self._scan_upload_spooled(
-                    host, url_path, headers_only, upload_spool, upload_size, method)
-                if verdict is not None and verdict.get("action") == "block":
-                    upload_spool.close()
-                    self._send_dlp_block(self.conn, host, url_path, verdict, headers_only)
-                    return
+                # Monitor-only — see the matching call in _serve_over_tls.
+                self._record_upload_verdict(host, url_path, self._casb_upload_verdict(host))
+                self._record_upload_verdict(host, url_path, self._scan_upload_spooled(
+                    host, url_path, headers_only, upload_spool, upload_size, method))
                 data = (self._replace_framing(headers_only, upload_size)
                         if chunked_upload else headers_only + b"\r\n\r\n")
 
@@ -2651,6 +2897,11 @@ class ProxyConnection(threading.Thread):
             "destination": host,
             "method": method,
             "path": url_path,
+            # Lets the server label the incident "app" or "browser" — the
+            # requesting client's own User-Agent is the only signal available
+            # at this layer that distinguishes a native app's upload from a
+            # browser tab's, and it is already in the headers we hold.
+            "user_agent": self._header_value(headers, "user-agent"),
         })
         spool.seek(0)
         body = _ChainedReader(carried_tail, spool) if carried_tail else spool
@@ -2669,59 +2920,22 @@ class ProxyConnection(threading.Thread):
         UPLOAD_CARRY.update(session_key, spool, size)
         return result
 
-    def _send_dlp_block(self, client_sock, host: str, url_path: str, verdict: dict, request_headers: bytes = b""):
-        reason = verdict.get("reason") or "Sensitive company data detected"
-        policy_name = verdict.get("policy_name") or "Data Loss Prevention"
-        category = "Data Loss Prevention"
-        log.info("DLP BLOCKED: upload to %s%s (%s)", host, url_path, reason)
-        html = BLOCK_PAGE_HTML.format(
-            domain=html_escape(host),
-            reason=html_escape(reason),
-            category=category,
-        ).encode("utf-8")
-        # These X-Aavishield-* headers are what let the in-page notice shim
-        # (see _inject_block_shim) render the REAL reason for an XHR/fetch
-        # upload a site's own JS otherwise reduces to a generic "Upload
-        # failed" — the 403 body above is what a plain form POST sees, this
-        # is what a modern web app's own request-handling code sees.
-        #
-        # Reflecting Origin (rather than a bare "*") lets a *cross*-origin
-        # upload's JS see this response at all — a fetch()/XHR to a
-        # cross-origin endpoint with no matching Access-Control-Allow-Origin
-        # never reaches .then()/'load' in the first place; it's rejected by
-        # the browser before user code sees anything. Same-origin uploads
-        # (the common case — Gmail/Slack/Teams all upload to their own
-        # origin) need none of this, but it costs nothing to add.
-        cors_headers = b""
-        origin = self._header_value(request_headers, "origin") if request_headers else ""
-        if origin:
-            cors_headers = (
-                b"Access-Control-Allow-Origin: " + _header_safe(origin).encode("utf-8") + b"\r\n"
-                b"Access-Control-Allow-Credentials: true\r\n"
-            )
-        incident_id = verdict.get("incident_id") or ""
-        incident_header = (
-            b"X-Aavishield-Incident: " + _header_safe(incident_id).encode("utf-8") + b"\r\n"
-            if incident_id else b""
-        )
-        response = (
-            b"HTTP/1.1 403 Forbidden\r\n"
-            b"Content-Type: text/html; charset=utf-8\r\n"
-            b"Content-Length: " + str(len(html)).encode() + b"\r\n"
-            b"X-Aavishield-Block: 1\r\n"
-            b"X-Aavishield-Reason: " + _header_safe(reason).encode("utf-8") + b"\r\n"
-            b"X-Aavishield-Policy: " + _header_safe(policy_name).encode("utf-8") + b"\r\n"
-            b"X-Aavishield-Category: " + _header_safe(category).encode("utf-8") + b"\r\n"
-            + incident_header +
-            b"Access-Control-Expose-Headers: X-Aavishield-Block, X-Aavishield-Reason, "
-            b"X-Aavishield-Policy, X-Aavishield-Category, X-Aavishield-Incident\r\n"
-            + cors_headers +
-            b"Connection: close\r\n\r\n" + html
-        )
-        try:
-            client_sock.sendall(response)
-        except (ssl.SSLError, OSError):
-            pass
+    def _record_upload_verdict(self, host: str, url_path: str, verdict: Optional[dict]):
+        """Logs a DLP/CASB finding on this device. Nothing is ever blocked.
+
+        Data-loss protection here is visibility, not interception: the company
+        sees that an employee sent something sensitive, and the employee's work
+        is not interrupted. The incident itself is recorded server-side by
+        /internal/agent/scan-dlp — this only leaves a trace in the device's own
+        log so the same finding is diagnosable from the endpoint too.
+        """
+        if not verdict:
+            return
+        reason = (verdict.get("reason")
+                  or ", ".join(verdict.get("detectors") or [])
+                  or "sensitive content")
+        log.info("DLP RECORDED: upload to %s%s (%s, score %s) — allowed through",
+                 host, url_path, reason, verdict.get("score"))
 
     @staticmethod
     def _parse_http_target(data: bytes) -> Optional[Tuple[str, int, bool]]:

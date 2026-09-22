@@ -44,12 +44,30 @@ func normalizeDomain(raw string) string {
 
 // List handles GET /categories — every category with the effective domain
 // count for this org (seed rows + own additions − own removals).
+//
+// ?hidden=true switches to the categories THIS org has deleted (see Delete/
+// Restore below) — a separate view rather than a flag on every row, because
+// the normal case (managing the visible list) never needs to know about
+// hidden ones at all.
 func (h *CategoryHandler) List(c *gin.Context) {
 	orgID, _ := uuid.Parse(c.GetString("scoped_org_id"))
 	search := strings.ToLower(strings.TrimSpace(c.Query("search")))
+	wantHidden := c.Query("hidden") == "true"
+
+	var hiddenIDs []uuid.UUID
+	h.db.Model(&models.CategoryExclusion{}).Where("org_id = ?", orgID).Pluck("category_id", &hiddenIDs)
 
 	var categories []models.URLCategory
 	q := h.db.Order("name ASC")
+	if wantHidden {
+		if len(hiddenIDs) == 0 {
+			c.JSON(http.StatusOK, gin.H{"data": []any{}, "total": 0})
+			return
+		}
+		q = q.Where("id IN ?", hiddenIDs)
+	} else if len(hiddenIDs) > 0 {
+		q = q.Where("id NOT IN ?", hiddenIDs)
+	}
 	if search != "" {
 		q = q.Where("LOWER(name) LIKE ? OR LOWER(slug) LIKE ? OR LOWER(description) LIKE ?",
 			"%"+search+"%", "%"+search+"%", "%"+search+"%")
@@ -325,4 +343,69 @@ func (h *CategoryHandler) DeleteDomain(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Domain removed for your organization"})
+}
+
+// Delete handles DELETE /categories/:id — hides an entire category from this
+// org (see CategoryExclusion's doc comment: the shared URLCategory row is
+// never touched, so every other tenant is unaffected). Idempotent: deleting
+// an already-hidden category just succeeds again.
+func (h *CategoryHandler) Delete(c *gin.Context) {
+	orgID, err := uuid.Parse(c.GetString("scoped_org_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Organization scope required"})
+		return
+	}
+	categoryID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid category id"})
+		return
+	}
+
+	var category models.URLCategory
+	if err := h.db.Where("id = ?", categoryID).First(&category).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Category not found"})
+		return
+	}
+
+	var existing int64
+	h.db.Model(&models.CategoryExclusion{}).Where("org_id = ? AND category_id = ?", orgID, categoryID).Count(&existing)
+	if existing == 0 {
+		if err := h.db.Create(&models.CategoryExclusion{OrgID: orgID, CategoryID: categoryID}).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete category"})
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Category deleted for your organization"})
+}
+
+// Restore handles POST /categories/:id/restore — undoes Delete. Existing
+// policies that reference this category's slug are untouched either way:
+// Delete only ever hid the category from this org's lists and picker, it
+// never stripped a live policy's conditions, so there is nothing to restore
+// on that side.
+func (h *CategoryHandler) Restore(c *gin.Context) {
+	orgID, err := uuid.Parse(c.GetString("scoped_org_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Organization scope required"})
+		return
+	}
+	categoryID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid category id"})
+		return
+	}
+
+	// Hard delete, not a soft one: CategoryExclusion carries no history worth
+	// keeping once undone, and a soft-deleted row would still occupy
+	// idx_category_exclusion's (org_id, category_id) slot — Delete()
+	// re-hiding the same category later would then hit a unique-constraint
+	// violation trying to insert a fresh row over the old, merely-hidden one.
+	if err := h.db.Unscoped().Where("org_id = ? AND category_id = ?", orgID, categoryID).
+		Delete(&models.CategoryExclusion{}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to restore category"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Category restored"})
 }

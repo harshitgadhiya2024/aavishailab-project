@@ -71,10 +71,20 @@ pub fn upload_filename(content_disposition: Option<&str>, path: &str) -> String 
     path.rsplit('/').next().unwrap_or("").to_string()
 }
 
-/// CASB check (first — matches the Python original's ordering: CASB app-
-/// control is a coarser, faster "is this app/host allowed to receive
-/// uploads at all" gate, evaluated before the more expensive DLP content
-/// scan) then DLP content scan. Both fail open on a transport error.
+/// Records an outbound upload. **Always returns allow.**
+///
+/// Data-loss protection here is visibility, not interception: the company
+/// sees that an employee sent something sensitive, and the employee's work
+/// is never interrupted. Both halves below — the CASB app-control gate and
+/// the DLP content scan — still run, because running them is what produces
+/// the incident the company reads; neither one's verdict can stop the
+/// upload any more.
+///
+/// The return type stays `ScanVerdict` rather than becoming `()` so the two
+/// proxy paths keep one shared shape with `download_verdict`, which *does*
+/// still block — malware is a threat to the machine, sensitive data leaving
+/// is a thing to know about. Those are different decisions and only one of
+/// them was reversed.
 #[allow(clippy::too_many_arguments)]
 pub async fn upload_verdict(
     client: &AgentClient,
@@ -85,6 +95,7 @@ pub async fn upload_verdict(
     method: &str,
     content_type: &str,
     filename: &str,
+    user_agent: &str,
     body: &[u8],
 ) -> ScanVerdict {
     if !gate.enforces_dlp() {
@@ -92,20 +103,18 @@ pub async fn upload_verdict(
     }
 
     if let Some(casb_verdict) = casb.check(host, "upload").await {
-        if casb_verdict.action == "block" {
-            tracing::info!(%host, %path, reason = %casb_verdict.reason, "CASB block");
-            return ScanVerdict { blocked: true, reason: casb_verdict.reason };
+        if casb_verdict.action == "block" || casb_verdict.action == "alert" {
+            tracing::info!(%host, %path, reason = %casb_verdict.reason, "CASB recorded — allowed through");
         }
     }
 
     if body.is_empty() {
         return ScanVerdict::allow();
     }
-    if let Some(verdict) = scan_dlp(client, host, path, method, content_type, filename, body).await {
-        if verdict.action == "block" {
+    if let Some(verdict) = scan_dlp(client, host, path, method, content_type, filename, user_agent, body).await {
+        if verdict.action == "block" || verdict.action == "alert" {
             let reason = if verdict.reason.is_empty() { "Sensitive company data detected".to_string() } else { verdict.reason };
-            tracing::info!(%host, %path, %reason, "DLP block");
-            return ScanVerdict { blocked: true, reason };
+            tracing::info!(%host, %path, %reason, "DLP recorded — allowed through");
         }
     }
     ScanVerdict::allow()
@@ -132,14 +141,19 @@ pub async fn download_verdict(client: &AgentClient, gate: &EnforcementGate, host
 /// the upload proceed rather than block on a scanner hiccup, exactly as
 /// the server side (admin-api/dlp-service) also fails open on its own
 /// errors.
-async fn scan_dlp(client: &AgentClient, destination: &str, path: &str, method: &str, content_type: &str, filename: &str, body: &[u8]) -> Option<DlpVerdict> {
+#[allow(clippy::too_many_arguments)]
+async fn scan_dlp(client: &AgentClient, destination: &str, path: &str, method: &str, content_type: &str, filename: &str, user_agent: &str, body: &[u8]) -> Option<DlpVerdict> {
     let query = format!(
-        "destination={}&path={}&method={}&content_type={}&filename={}",
+        "destination={}&path={}&method={}&content_type={}&filename={}&user_agent={}",
         urlencode(destination),
         urlencode(path),
         urlencode(method),
         urlencode(content_type),
         urlencode(filename),
+        // Lets the server label the incident "app" or "browser" — the
+        // requesting client's own User-Agent is the only signal at this
+        // layer that separates a native app's upload from a browser tab's.
+        urlencode(user_agent),
     );
     let resp = client.post_bytes(&format!("/internal/agent/scan-dlp?{query}"), "application/octet-stream", body.to_vec()).await.ok()?;
     if !resp.status().is_success() {
@@ -211,13 +225,13 @@ mod tests {
 
     /// Regression test for the gap this session found and fixed: CASB
     /// app-control was defined but never actually invoked from either
-    /// proxy path. Locks in that `upload_verdict` checks CASB *before* the
-    /// `body.is_empty()` DLP shortcut — an empty-body upload (e.g. a HEAD-
-    /// like POST, or a multipart preflight) to a CASB-blocked host must
-    /// still be blocked; if CASB were ever moved after that shortcut, this
-    /// case would silently start passing through.
+    /// DLP is monitor-only: even the strongest possible verdict — a CASB
+    /// "block" on a known personal-cloud-storage host — must let the upload
+    /// through. This is the regression guard on that guarantee, and it is
+    /// deliberately the *most* severe input available, because if anything
+    /// could still block an upload it would be this.
     #[tokio::test]
-    async fn test_casb_block_applies_even_to_empty_body_uploads() {
+    async fn test_casb_block_never_blocks_the_upload() {
         let (client, casb, gate) = deps_for_verdict_tests();
         casb.seed_for_test(
             "drive.google.com",
@@ -225,9 +239,9 @@ mod tests {
             Some(Verdict { action: "block".to_string(), category: "CASB App Control".to_string(), reason: "Personal cloud storage blocked".to_string(), matched_rule: "".to_string() }),
         );
 
-        let verdict = upload_verdict(&client, &casb, &gate, "drive.google.com", "/upload", "POST", "", "", &[]).await;
-        assert!(verdict.blocked);
-        assert_eq!(verdict.reason, "Personal cloud storage blocked");
+        let verdict = upload_verdict(&client, &casb, &gate, "drive.google.com", "/upload", "POST", "", "", "", &[]).await;
+        assert!(!verdict.blocked, "DLP/CASB must record an upload, never stop it");
+        assert!(verdict.reason.is_empty());
     }
 
     /// CASB's own "allow" (no verdict cached) must not short-circuit the
@@ -242,7 +256,7 @@ mod tests {
         // this proves the code path *reached* the DLP scan (didn't block
         // or short-circuit on CASB alone) rather than proving a real DLP
         // verdict, which is covered end-to-end by live_integration_test.sh.
-        let verdict = upload_verdict(&client, &casb, &gate, "uploads.example.com", "/upload", "POST", "text/plain", "notes.txt", b"hello").await;
+        let verdict = upload_verdict(&client, &casb, &gate, "uploads.example.com", "/upload", "POST", "text/plain", "notes.txt", "Mozilla/5.0", b"hello").await;
         assert!(!verdict.blocked);
     }
 
@@ -259,7 +273,7 @@ mod tests {
             Some(Verdict { action: "block".to_string(), category: "CASB App Control".to_string(), reason: "Personal cloud storage blocked".to_string(), matched_rule: "".to_string() }),
         );
 
-        let verdict = upload_verdict(&client, &casb, &gate, "drive.google.com", "/upload", "POST", "", "", b"data").await;
+        let verdict = upload_verdict(&client, &casb, &gate, "drive.google.com", "/upload", "POST", "", "", "", b"data").await;
         assert!(!verdict.blocked, "paused mode must not enforce CASB either");
     }
 }

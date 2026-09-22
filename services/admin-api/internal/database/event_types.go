@@ -15,6 +15,9 @@ func MigrateEventTypes(db *gorm.DB) error {
 		"device_connect",
 		"device_disconnect",
 		"device_uninstall",
+		// Software inventory: one event the first time a device reports an
+		// application it has never reported before.
+		"app_install",
 	} {
 		// ALTER TYPE ... ADD VALUE cannot run inside a transaction block on
 		// older PostgreSQL, and gorm's Exec doesn't wrap DDL in one, so these

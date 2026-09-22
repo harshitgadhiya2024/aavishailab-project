@@ -208,7 +208,7 @@ export default function DashboardPage() {
         {[
           { label: "Devices enrolled", value: `${coverage.devices_online ?? 0}/${coverage.devices ?? 0}`, sub: "online now", icon: Monitor, href: "/dashboard/devices" },
           { label: "Employees protected", value: `${coverage.protected_employees ?? 0}/${coverage.employees ?? 0}`, sub: "have an agent", icon: Users, href: "/dashboard/employees" },
-          { label: "Active policies", value: `${coverage.policies_enabled ?? 0}/${coverage.policies ?? 0}`, sub: "enabled", icon: FileText, href: "/dashboard/policies" },
+          { label: "Active policies", value: `${coverage.policies_enabled ?? 0}/${coverage.policies ?? 0}`, sub: "enabled", icon: FileText, href: "/dashboard/swg" },
           { label: "Pending requests", value: formatNumber(coverage.pending_requests ?? 0), sub: "awaiting review", icon: Inbox, href: "/dashboard/access-requests" },
         ].map(item => (
           <Link key={item.label} href={item.href}

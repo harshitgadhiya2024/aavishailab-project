@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { categoryApi } from "@/lib/api";
 import {
   Search, Trash2, X, Loader2, Plus, Globe, Tags, Eye,
-  ShieldAlert
+  ShieldAlert, RotateCcw, EyeOff
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -26,6 +26,7 @@ export default function CategoriesPage() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
+  const [showHidden, setShowHidden] = useState(false);
 
   const [domainsCategory, setDomainsCategory] = useState<any>(null);
   const [domainSearch, setDomainSearch] = useState("");
@@ -33,10 +34,11 @@ export default function CategoriesPage() {
   const [domainLimit, setDomainLimit] = useState(10);
   const [newDomain, setNewDomain] = useState("");
   const [removeDomain, setRemoveDomain] = useState<any>(null);
+  const [deleteCategory, setDeleteCategory] = useState<any>(null);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["url-categories", search],
-    queryFn: () => categoryApi.list({ search: search || undefined }),
+    queryKey: ["url-categories", search, showHidden],
+    queryFn: () => categoryApi.list({ search: search || undefined, hidden: showHidden || undefined }),
   });
 
   const { data: domainsData, isLoading: domainsLoading } = useQuery({
@@ -77,6 +79,28 @@ export default function CategoriesPage() {
     onError: (e: any) => toast.error(e.response?.data?.error ?? "Failed to remove domain"),
   });
 
+  const deleteCategoryMut = useMutation({
+    mutationFn: (id: string) => categoryApi.delete(id),
+    onSuccess: () => {
+      toast.success("Category deleted for your organization");
+      setDeleteCategory(null);
+      setPage(1);
+      qc.invalidateQueries({ queryKey: ["url-categories"] });
+      qc.invalidateQueries({ queryKey: ["swg-categories-for-policy"] });
+    },
+    onError: (e: any) => toast.error(e.response?.data?.error ?? "Failed to delete category"),
+  });
+
+  const restoreCategoryMut = useMutation({
+    mutationFn: (id: string) => categoryApi.restore(id),
+    onSuccess: () => {
+      toast.success("Category restored");
+      qc.invalidateQueries({ queryKey: ["url-categories"] });
+      qc.invalidateQueries({ queryKey: ["swg-categories-for-policy"] });
+    },
+    onError: (e: any) => toast.error(e.response?.data?.error ?? "Failed to restore category"),
+  });
+
   const allCategories = Array.isArray(data?.data?.data) ? data.data.data : [];
   const total = allCategories.length;
   const totalPages = Math.ceil(total / limit);
@@ -109,8 +133,24 @@ export default function CategoriesPage() {
         <div>
           <h2 className="text-2xl font-bold text-foreground">Policy Categories</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            {total} categories · add or remove the domains each category blocks
+            {total} {showHidden ? "hidden" : ""} categories · add or remove the domains each category blocks
           </p>
+        </div>
+        <div className="flex items-center gap-1 bg-elevated rounded-lg p-1">
+          <button
+            onClick={() => { setShowHidden(false); setPage(1); }}
+            className={cn("px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+              !showHidden ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-body")}
+          >
+            Active
+          </button>
+          <button
+            onClick={() => { setShowHidden(true); setPage(1); }}
+            className={cn("px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5",
+              showHidden ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-body")}
+          >
+            <EyeOff className="w-3.5 h-3.5" /> Hidden
+          </button>
         </div>
       </div>
 
@@ -153,7 +193,7 @@ export default function CategoriesPage() {
                 <tr>
                   <td colSpan={5} className="text-center py-12 text-subtle">
                     <Tags className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                    No categories found
+                    {showHidden ? "No hidden categories" : "No categories found"}
                   </td>
                 </tr>
               ) : (
@@ -191,20 +231,40 @@ export default function CategoriesPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1">
-                          <button
-                            onClick={() => openDomains(cat)}
-                            title="View & manage domains"
-                            className="p-1.5 hover:bg-elevated rounded text-subtle hover:text-body"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => openDomains(cat)}
-                            title="Add domain"
-                            className="p-1.5 hover:bg-brand-500/10 rounded text-subtle hover:text-brand-500"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                          </button>
+                          {showHidden ? (
+                            <button
+                              onClick={() => restoreCategoryMut.mutate(cat.id)}
+                              disabled={restoreCategoryMut.isPending}
+                              title="Restore category"
+                              className="flex items-center gap-1.5 px-2.5 py-1.5 hover:bg-brand-500/10 rounded text-subtle hover:text-brand-500 text-xs font-medium disabled:opacity-60"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" /> Restore
+                            </button>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => openDomains(cat)}
+                                title="View & manage domains"
+                                className="p-1.5 hover:bg-elevated rounded text-subtle hover:text-body"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => openDomains(cat)}
+                                title="Add domain"
+                                className="p-1.5 hover:bg-brand-500/10 rounded text-subtle hover:text-brand-500"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => setDeleteCategory(cat)}
+                                title="Delete category"
+                                className="p-1.5 hover:bg-red-500/10 rounded text-subtle hover:text-danger"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -366,6 +426,33 @@ export default function CategoriesPage() {
                 className="flex-1 bg-red-600 text-white py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-60"
               >
                 {deleteMut.isPending && <Loader2 className="w-4 h-4 animate-spin" />} Remove
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete category confirm */}
+      {deleteCategory && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="bg-card rounded-2xl shadow-2xl w-full max-w-sm p-6">
+            <div className="w-12 h-12 bg-red-500/10 rounded-xl flex items-center justify-center mx-auto mb-4">
+              <ShieldAlert className="w-5 h-5 text-danger" />
+            </div>
+            <h3 className="text-center font-semibold text-foreground mb-2">Delete this category?</h3>
+            <p className="text-center text-sm text-muted-foreground mb-6">
+              <strong className="text-foreground">{deleteCategory.name}</strong> will disappear from your category
+              list and from the category picker when building policies — for your organization only, every other
+              company keeps it. You can bring it back anytime from the <strong className="text-foreground">Hidden</strong> tab.
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteCategory(null)} className="flex-1 border border-border text-body py-2 rounded-lg text-sm">Cancel</button>
+              <button
+                onClick={() => deleteCategoryMut.mutate(deleteCategory.id)}
+                disabled={deleteCategoryMut.isPending}
+                className="flex-1 bg-red-600 text-white py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-60"
+              >
+                {deleteCategoryMut.isPending && <Loader2 className="w-4 h-4 animate-spin" />} Delete
               </button>
             </div>
           </div>
