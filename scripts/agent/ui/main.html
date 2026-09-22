@@ -339,7 +339,19 @@
     // is actually connected.
     const live = s.state === "connected" || s.state === "paused";
     el("btn-background").classList.toggle("hidden", !live);
-    el("btn-disconnect").classList.toggle("hidden", !live);
+
+    // Disconnect is offered on personal hardware only.
+    //
+    // On a laptop the employee owns, being able to stop monitoring is the
+    // other half of the bargain that makes monitoring it defensible at all.
+    // On company equipment there is no such bargain to honour, and a button
+    // that switches protection off would simply be a hole in it.
+    //
+    // Anything other than an explicit "personal" counts as company: the field
+    // is absent on an older server and on the first paint before the first
+    // heartbeat lands, and neither of those should hand someone the button.
+    const personal = s.ownership === "personal";
+    el("btn-disconnect").classList.toggle("hidden", !(live && personal));
     // Only while connected, and only until the certificate is in place.
     el("https-note").classList.toggle("hidden", !(live && s.https_ready === false));
   }

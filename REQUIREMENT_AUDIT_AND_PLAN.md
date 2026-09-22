@@ -183,65 +183,133 @@ stat card) and `dashboard/dlp/page.tsx:259`.
 
 ---
 
-## Part 4 — Phased implementation plan
+## Part 4 — Architecture decision: Rust for the connector
 
-Ordered so each phase ships something verifiable, and so the two phases that require a new
-connector build land together at the end.
+Taken mid-implementation, and it changes the shape of everything below.
 
-### Phase 1 — Company portal shape *(frontend + small backend; no connector change)*
-1. Remove the Policies, SSL Inspection, Shadow IT and CASB tabs; delete their pages and API helpers;
-   repoint the two inbound links.
-2. Web Gateway tab: add the paginated activity log with the seven required fields.
-3. DLP tab: strip policy creation and policy links; make it a pure log view with the six required fields.
-4. Activity tab: source tabs — Web Gateway, DLP, Application, Download protection, Device posture.
+**Where Rust already is.** `dlp-service` and `malware-service` are both built
+from their Rust implementations today — `docker-compose.yml` points at
+`services/dlp-service-rust` and `services/malware-service-rust`, with the Python
+originals kept only as a rollback path. The two hottest scanning services are
+already Rust.
 
-### Phase 2 — DLP becomes monitor-only *(backend + connector)*
-1. Clamp every DLP verdict to `log`/`alert`; never return `block`.
-2. Remove the DLP block-page and in-page overlay paths from the agent; let the upload through and
-   record it.
-3. Capture the required log fields at scan time: request source (app vs browser), destination,
-   category (`text` vs `file-upload`), reason, risk score.
-4. Default DLP **and** SSL inspection to on for every organisation, including existing ones.
+**Where Go stays.** `admin-api` is a control plane: Postgres queries, auth,
+RBAC, billing, JSON for three dashboards. Its time goes to the database, not to
+the language. Only the two endpoints every device hits on a timer —
+`/internal/agent/rules` (every 10s per device) and `/internal/agent/scan-dlp` —
+are worth extracting, and that is a separate piece of work from the feature
+requirements.
 
-### Phase 3 — Installed application inventory *(new model + connector + UI)*
-1. New `InstalledApplication` model, tenant-scoped, keyed on (device, app identity).
-2. Per-OS collector in the agent: Windows registry uninstall keys, macOS `/Applications` +
-   `system_profiler`, Linux `dpkg`/`rpm`/`snap`/`flatpak`, plus manually downloaded binaries.
-3. Ingest endpoint with dedupe and first-seen/install-time tracking; emits an activity event per new install.
-4. Rebuild the Application Control tab employee-wise with the required columns and per-employee
-   Network Block / App Block switches.
+**Where the real win is: the connector.** The shipped client is
+`scripts/agent/aavishield-agent.py`, 5,260 lines of Python running a
+thread-per-connection proxy on every employee laptop, in the path of every HTTP
+request and every TLS termination. `services/endpoint-agent` is a Rust rewrite
+of that data plane — 3,201 lines, 80 tests, hyper for both legs of every relay
+instead of hand-rolled HTTP text parsing. **The decision is to ship the Rust
+connector.**
 
-### Phase 4 — Block page and app-level feedback *(backend + connector)*
-1. Per-org block-page branding (name, logo, custom message) delivered to the agent.
-2. Company-branded block page for web, download and app-control blocks.
-3. Desktop notification when an app is blocked, explaining why and what to do.
+What that costs, stated plainly: the Rust agent covers the network core and
+nothing else. Screenshots, input-activity monitoring, the tray icon, the
+desktop window, auto-update, the uninstall flow, connect/disconnect lifecycle
+reporting, posture collection and interactive browser enrollment are all
+Python-only today. All three packaging scripts freeze the Python file with
+PyInstaller; the Rust agent has no packaging, no signing and no CI, and its
+macOS/Windows system-integration code has never run on real hardware. Until
+that is closed, **Python remains the shipping connector** and the Rust agent is
+where new connector features are written.
 
-### Phase 5 — Device ownership and screenshots *(backend + connector)*
-1. Screenshots default on; company-owned devices capture 24/7.
-2. Send `ownership` to the agent; show Disconnect only on personal devices.
-3. Capture the list of open applications with each screenshot and show it beside the image.
+---
 
-### Phase 6 — Remaining protection gaps *(backend)*
-1. Surface `would_sandbox` as "pending deep analysis" in the UI; wire the CAPE backend behind config.
-2. Emit one device-posture activity event per device per day.
+## Part 5 — Status
 
-### Phase 7 — Release
-Build and publish connector **2.5.0** via the `agent-packages.yml` workflow, then verify the
-manifest and the auto-update path.
+### Done
+
+**Company portal shape**
+- Sidebar matches the requested list exactly. Global Policies, SSL Inspection,
+  Shadow IT and CASB removed; both inbound links to the deleted Policies page
+  repointed; dead API helpers dropped.
+- **Web Gateway** rebuilt: creates policies by domain, domain pattern or
+  category, block or alert, targeted at everyone / teams / employees, with a
+  server-paginated policy list — and the activity log it never had, carrying
+  all seven required fields.
+- **DLP** rebuilt as a pure log with the six required fields and no policy
+  builder.
+- **Activity** gained per-source tabs (Web Gateway, DLP, Applications,
+  Downloads, Device posture, Devices), backed by a real server-side `source`
+  filter rather than a client-side slice of one page.
+- **Application Control** rebuilt employee-first on the new inventory, with
+  per-employee Network block / App block switches.
+
+**DLP is monitor-only** (requirement 7), in both agents and on the server. The
+scoring pipeline still computes a full block/alert/allow band — that band is
+the severity the company reads — but nothing acts on it. Incidents now carry
+request source (app vs browser, from the User-Agent, with Electron explicitly
+ruled out of "browser"), destination and content kind (text vs file-upload).
+Malware download blocking is untouched; that is a different decision and only
+one of them was reversed.
+
+**Software inventory** (requirement 4), which did not exist in any form. A
+device reports its full installed-application list, the server diffs the
+snapshot to detect installs and uninstalls, and an install writes one activity
+event. Windows registry (all three hives), macOS bundles, Linux
+dpkg/rpm/snap/flatpak, plus manually downloaded binaries in `bin` directories —
+the case a package database can never see.
+
+**Defaults** (requirements 6, 7): screenshot capture is on for every
+organization, with a once-ever migration for existing orgs that cannot
+override an admin's later choice; SSL Inspection is on unless explicitly
+disabled; device ownership rides the heartbeat so reclassifying a device takes
+effect without a connector restart.
+
+**Device posture** is now one event per device per day instead of one per
+heartbeat.
+
+**Rust connector** gained inventory collection, application control with a
+desktop notification naming the app and the reason, and a company-branded
+block page that also escapes what it interpolates — host and reason previously
+reached the page raw from the network and rendered as live markup.
+
+Two bugs found by probing a real machine rather than by reading: the inventory
+collector's subprocess helper deadlocked on any output over the 64KB pipe
+buffer, so Linux package collection silently returned nothing (dpkg emits
+~68KB); and collecting every dpkg package returned ~790 rows of libraries,
+where `apt-mark showmanual` gives 140 that reflect what somebody chose to
+install.
+
+### Remaining
+
+| # | Work | Why it is not done |
+|---|---|---|
+| 1 | Screenshots + input-activity monitoring in Rust | New platform code per OS (screen capture, global input hooks) with permission prompts that need real hardware to verify |
+| 2 | Open-application list beside each screenshot | Needs window enumeration per OS, plus a column on `Screenshot` |
+| 3 | Tray + desktop window in Rust, Disconnect shown only on personal devices | The server now sends `ownership`; the Rust connector has no UI yet to act on it. The Python connector still shows Disconnect unconditionally |
+| 4 | Auto-update, uninstall flow, connect/disconnect lifecycle in Rust | Python-only today |
+| 5 | Posture collection in Rust | Python-only; the server side already handles it |
+| 6 | Rust connector packaging, signing, CI | All three build scripts are PyInstaller; the Rust agent has none |
+| 7 | `/internal/agent/rules` and `/internal/agent/scan-dlp` extracted to Rust | Separate from the feature work; needs a routing decision in front of admin-api |
+| 8 | Sandbox detonation surfaced (`would_sandbox`) | Needs a CAPE/Cuckoo cluster — an infrastructure decision, not code |
+| 9 | Connector release 2.5.0 | Gated on 1–6 |
 
 ---
 
 ## Appendix — verification evidence
 
-- `go build ./...` and `go test ./...` in `services/admin-api`: **all packages pass** (14 test packages green).
-- Live containers: admin-api, dlp, malware, extract, threatintel, posture, shadowit, casb, clamav,
-  postgres, redis, all three frontends — all healthy.
-- Database: 43 tables. No `installed_applications` table exists. `screenshots` = 0 rows.
-  `threat_intel_domains` = 10,746. `domain_risk_assessments` = 482.
-- Policies present: 2 × `url_category/block`, 2 × `domain/block`, 1 × `dlp/block`.
-- Activity events: `web_request/allowed` 3978, `policy_violation/alerted` 382,
-  `policy_violation/blocked` 313, `web_request/blocked` 106, `device_connect/logged` 8.
+- `go build ./...` and `go test ./...` in `services/admin-api`: all packages
+  pass, with new coverage for the DLP classifiers, domain normalisation, the
+  activity source taxonomy and the SSL-inspection default.
+- `cargo test` in `services/endpoint-agent`: 80 passing (was 64). `cargo
+  clippy --all-targets`: clean.
+- `pytest` in `scripts/agent`: 123 passing, including the check that
+  admin-api's embedded copy of the agent stays byte-identical.
+- `npx tsc --noEmit` and `npm run build` in `frontend/company-dashboard`:
+  clean, 27 routes.
+- Inventory collector probed on this host: 140 applications after filtering
+  (790 before), correctly finding snaps, dpkg packages and `~/.local/bin`
+  binaries.
+- Live containers: admin-api, dlp, malware, extract, threatintel, posture,
+  shadowit, casb, clamav, postgres, redis and all three frontends healthy.
 
-**Not verified end-to-end:** browser-level click-through of each dashboard tab against a live login.
-Doing that needs a company-dashboard account password; the audit above is from live database state,
-live service health, the passing test suite, and reading the code paths.
+**Not verified end-to-end:** browser click-through of each dashboard tab
+against a live login, and any agent behaviour on real macOS or Windows
+hardware. The audit above is from live database state, live service health,
+the passing test suites, and reading the code paths.

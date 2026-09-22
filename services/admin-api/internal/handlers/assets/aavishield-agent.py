@@ -745,6 +745,260 @@ class _ChainedReader:
 
 # ─── Application control (process watcher) ────────────────────────────────────
 
+class InventoryCollector:
+    """Reports what software is installed on this machine.
+
+    Application control (below) only ever notices an app that is *running* and
+    that somebody already catalogued. That leaves the company blind to the
+    thing it most wants to know: an employee installed something. This walks
+    the OS's own record of installed software and sends the whole list, so a
+    remote-access tool that has never been launched is still visible, and so is
+    a binary that came from a browser download rather than a package manager.
+
+    A full snapshot is sent every time, not a delta — the server diffs it (see
+    ReportInventory) and that is what makes uninstalls detectable without the
+    agent having to remember what it last sent across restarts and upgrades.
+
+    Deliberately shell-out based, like the rest of this file: the agent ships
+    as a single file with no psutil and no platform SDK bindings, so every
+    collector below uses a tool the OS already has.
+    """
+
+    # Long, because installing software is a rare event and enumerating it is
+    # the most expensive thing this agent does periodically. The first report
+    # goes out shortly after startup; after that, hourly is well inside the
+    # resolution anyone reads this data at.
+    INTERVAL = 3600
+    FIRST_DELAY = 90
+
+    def __init__(self, config: dict):
+        self.config = config
+        self.system = platform.system()
+
+    def loop(self):
+        time.sleep(self.FIRST_DELAY)
+        while True:
+            try:
+                self.report()
+            except Exception as exc:  # noqa: BLE001 - never kill the thread
+                log.debug("inventory report failed: %s", exc)
+            time.sleep(self.INTERVAL)
+
+    def report(self):
+        # Enumerating someone's personal laptop's software outside working
+        # hours is the same intrusion the gate exists to prevent everywhere
+        # else. A company machine is always 'full', so this only ever skips on
+        # BYOD, and only outside its window.
+        if not GATE.logs("activity"):
+            return
+        apps = self.collect()
+        if not apps:
+            return
+        payload = json.dumps({"applications": apps}).encode("utf-8")
+        try:
+            req = _agent_request(self.config, "/internal/agent/inventory",
+                                 method="POST", body=payload)
+            with _DIRECT_OPENER.open(req, timeout=30):
+                pass
+            log.info("Software inventory reported: %d application(s)", len(apps))
+        except (urllib.error.URLError, OSError) as exc:
+            mark_revoked_if_auth_error(exc)
+            log.debug("inventory upload failed: %s", exc)
+
+    def collect(self) -> List[dict]:
+        if self.system == "Windows":
+            apps = self._windows()
+        elif self.system == "Darwin":
+            apps = self._macos()
+        else:
+            apps = self._linux()
+        # Sorted so a truncated report (the server caps the list) is the same
+        # subset every time rather than an arbitrary one that churns.
+        return sorted(apps, key=lambda a: a.get("name", "").lower())
+
+    # ── Windows ───────────────────────────────────────────────────────────
+    def _windows(self) -> List[dict]:
+        """Both registry views plus the per-user hive.
+
+        Three paths, not one: 64-bit installers write to the native Uninstall
+        key, 32-bit ones are redirected to WOW6432Node, and anything installed
+        without admin rights lands under HKCU — which is exactly where a
+        manually downloaded tool ends up, so omitting it would miss the case
+        this feature is for.
+        """
+        script = (
+            "$paths = @("
+            "'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',"
+            "'HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',"
+            "'HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*');"
+            "Get-ItemProperty $paths -ErrorAction SilentlyContinue | "
+            "Where-Object { $_.DisplayName } | "
+            "ForEach-Object { [PSCustomObject]@{"
+            "name=$_.DisplayName; version=$_.DisplayVersion; vendor=$_.Publisher;"
+            "identifier=$_.PSChildName; install_path=$_.InstallLocation;"
+            "installed_at=$_.InstallDate } } | ConvertTo-Json -Compress -Depth 2"
+        )
+        rc, out = _run_long(["powershell", "-NoProfile", "-Command", script])
+        if rc != 0:
+            return []
+        return self._from_json(out, "registry")
+
+    # ── macOS ─────────────────────────────────────────────────────────────
+    def _macos(self) -> List[dict]:
+        """Every .app bundle, read from its own Info.plist.
+
+        system_profiler SPApplicationsDataType would give the same answer, but
+        it routinely takes 30+ seconds and spins the CPU while it does. Walking
+        the three application directories and reading the plists directly is
+        near-instant and yields the identifier that actually matters here — the
+        CFBundleIdentifier.
+        """
+        apps: List[dict] = []
+        roots = ["/Applications", "/Applications/Utilities",
+                 os.path.expanduser("~/Applications")]
+        for root in roots:
+            if not os.path.isdir(root):
+                continue
+            try:
+                entries = os.listdir(root)
+            except OSError:
+                continue
+            for entry in entries:
+                if not entry.endswith(".app"):
+                    continue
+                bundle = os.path.join(root, entry)
+                info = os.path.join(bundle, "Contents", "Info.plist")
+                name = entry[:-4]
+                identifier, version, installed_at = "", "", ""
+                try:
+                    with open(info, "rb") as fh:
+                        plist = plistlib.load(fh)
+                    identifier = plist.get("CFBundleIdentifier", "") or ""
+                    version = (plist.get("CFBundleShortVersionString")
+                               or plist.get("CFBundleVersion") or "")
+                    name = plist.get("CFBundleName") or name
+                except (OSError, ValueError, plistlib.InvalidFileException):
+                    pass
+                try:
+                    # macOS records no install date, so the bundle's own
+                    # creation time is the closest honest answer.
+                    installed_at = _rfc3339(os.path.getctime(bundle))
+                except OSError:
+                    installed_at = ""
+                apps.append({
+                    "name": str(name), "version": str(version),
+                    "identifier": str(identifier), "install_path": bundle,
+                    "vendor": "", "source": "applications",
+                    "installed_at": installed_at,
+                })
+        return apps + self._unix_manual_binaries()
+
+    # ── Linux ─────────────────────────────────────────────────────────────
+    def _linux(self) -> List[dict]:
+        apps: List[dict] = []
+
+        rc, out = _run_long(["dpkg-query", "-W", "-f=${Package}\\t${Version}\\t${Maintainer}\\n"])
+        if rc == 0:
+            for line in out.splitlines():
+                parts = line.split("\t")
+                if len(parts) >= 2 and parts[0].strip():
+                    apps.append({"name": parts[0].strip(), "version": parts[1].strip(),
+                                 "vendor": parts[2].strip() if len(parts) > 2 else "",
+                                 "identifier": parts[0].strip(), "install_path": "",
+                                 "source": "dpkg", "installed_at": ""})
+
+        rc, out = _run_long(["rpm", "-qa", "--queryformat", "%{NAME}\\t%{VERSION}\\t%{VENDOR}\\n"])
+        if rc == 0:
+            for line in out.splitlines():
+                parts = line.split("\t")
+                if len(parts) >= 2 and parts[0].strip():
+                    apps.append({"name": parts[0].strip(), "version": parts[1].strip(),
+                                 "vendor": parts[2].strip() if len(parts) > 2 else "",
+                                 "identifier": parts[0].strip(), "install_path": "",
+                                 "source": "rpm", "installed_at": ""})
+
+        for cmd, source in ((["snap", "list"], "snap"), (["flatpak", "list", "--columns=application,version"], "flatpak")):
+            rc, out = _run_long(cmd)
+            if rc != 0:
+                continue
+            for line in out.splitlines()[1:] if source == "snap" else out.splitlines():
+                parts = line.split()
+                if len(parts) >= 1 and parts[0] and not parts[0].startswith("-"):
+                    apps.append({"name": parts[0], "version": parts[1] if len(parts) > 1 else "",
+                                 "vendor": "", "identifier": f"{source}:{parts[0]}",
+                                 "install_path": "", "source": source, "installed_at": ""})
+
+        return apps + self._unix_manual_binaries()
+
+    # ── Manually installed binaries (macOS + Linux) ───────────────────────
+    def _unix_manual_binaries(self) -> List[dict]:
+        """Executables in the places a manual download actually lands.
+
+        A package database by definition knows nothing about a binary someone
+        curl'd into ~/.local/bin or /usr/local/bin — which is precisely how
+        developer tooling gets installed, and precisely the blind spot the
+        requirement calls out. Only regular executable files are reported, and
+        only one directory level deep, so this stays a bounded scan rather than
+        a filesystem crawl.
+        """
+        apps: List[dict] = []
+        roots = ["/usr/local/bin", os.path.expanduser("~/.local/bin"),
+                 os.path.expanduser("~/bin")]
+        for root in roots:
+            if not os.path.isdir(root):
+                continue
+            try:
+                entries = os.listdir(root)
+            except OSError:
+                continue
+            for entry in entries[:500]:
+                full = os.path.join(root, entry)
+                try:
+                    # Symlinks here are almost always a package manager's
+                    # shim pointing back at something already reported.
+                    if os.path.islink(full) or not os.path.isfile(full):
+                        continue
+                    if not os.access(full, os.X_OK):
+                        continue
+                    installed_at = _rfc3339(os.path.getmtime(full))
+                except OSError:
+                    continue
+                apps.append({
+                    "name": entry, "version": "", "vendor": "",
+                    "identifier": full, "install_path": full,
+                    "source": "path", "installed_at": installed_at,
+                })
+        return apps
+
+    @staticmethod
+    def _from_json(raw: str, source: str) -> List[dict]:
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            return []
+        # ConvertTo-Json emits a bare object, not a list, when there is exactly
+        # one result — a real case on a nearly-empty machine.
+        if isinstance(data, dict):
+            data = [data]
+        out = []
+        for item in data if isinstance(data, list) else []:
+            if not isinstance(item, dict):
+                continue
+            name = (item.get("name") or "").strip()
+            if not name:
+                continue
+            out.append({
+                "name": name,
+                "version": str(item.get("version") or "").strip(),
+                "vendor": str(item.get("vendor") or "").strip(),
+                "identifier": str(item.get("identifier") or "").strip(),
+                "install_path": str(item.get("install_path") or "").strip(),
+                "installed_at": str(item.get("installed_at") or "").strip(),
+                "source": source,
+            })
+        return out
+
+
 class AppControlWatcher:
     """Blocks applications, not just their websites.
 
@@ -3184,7 +3438,7 @@ def collect_posture() -> dict:
     return signals
 
 
-def send_heartbeat(config: dict):
+def send_heartbeat(config: dict, state: "Optional[AgentState]" = None):
     payload = json.dumps({
         "status":     "online",
         "ip_address": get_local_ip(),
@@ -3217,6 +3471,14 @@ def send_heartbeat(config: dict):
         apply_enforcement_transition(changed)
     SCREENSHOT.apply(body.get("screenshots"))
 
+    # Ownership rides the heartbeat because it is the one piece of device
+    # state an admin changes while the connector is already running, and the
+    # UI turns on it: a personal device offers Disconnect, a company one does
+    # not. Reading it here means a reclassification takes effect within a
+    # beat instead of waiting for the employee to restart the connector.
+    if state is not None:
+        state.set_ownership(body.get("ownership") or "company")
+
 
 def seed_enforcement(config: dict, state: "Optional[AgentState]" = None):
     """One-shot fetch of the working-hours verdict at startup.
@@ -3247,9 +3509,9 @@ def seed_enforcement(config: dict, state: "Optional[AgentState]" = None):
         )
 
 
-def heartbeat_loop(config: dict):
+def heartbeat_loop(config: dict, state: "Optional[AgentState]" = None):
     while True:
-        send_heartbeat(config)
+        send_heartbeat(config, state)
         time.sleep(HEARTBEAT_INTERVAL)
 
 
@@ -3588,6 +3850,11 @@ class AgentState:
         self._employee_name = ""
         self._connected_at: Optional[float] = None
         self._uninstall_allowed = False
+        # "company" or "personal". Company is the default and the stricter of
+        # the two: enforced around the clock, and no Disconnect offered. Only
+        # the server can move a device to "personal", and it re-states this on
+        # every heartbeat so a reclassification takes effect without a restart.
+        self._ownership = "company"
         # macOS only: is the org CA trusted, i.e. can HTTPS block pages show?
         # None means "not applicable" (other platforms, or SSL Inspection off).
         self._https_ready: Optional[bool] = None
@@ -3651,6 +3918,14 @@ class AgentState:
         self._set(org_name=org_name, employee_name=employee_name,
                   uninstall_allowed=uninstall_allowed)
 
+    def set_ownership(self, ownership: str):
+        """Records whether this is company or personal hardware.
+
+        Anything other than an explicit "personal" is treated as company —
+        a missing or unrecognised value must not be what hands somebody a way
+        to switch protection off on a company laptop."""
+        self._set(ownership="personal" if ownership == "personal" else "company")
+
     def snapshot(self) -> dict:
         with self._lock:
             uptime = ""
@@ -3665,6 +3940,7 @@ class AgentState:
                 "employee_name": self._employee_name,
                 "uptime": uptime,
                 "uninstall_allowed": self._uninstall_allowed,
+                "ownership": self._ownership,
                 "https_ready": self._https_ready,
                 "version": AGENT_VERSION,
             }
@@ -5131,13 +5407,18 @@ def run_agent(config: dict, state: AgentState, block: bool = True):
         if system_proxy_active():
             clear_system_proxy()
 
-    threading.Thread(target=heartbeat_loop, args=(config,), daemon=True).start()
+    threading.Thread(target=heartbeat_loop, args=(config, state), daemon=True).start()
     threading.Thread(target=cache.loop_refresh, daemon=True).start()
     threading.Thread(target=reporter.loop_flush, daemon=True).start()
     threading.Thread(target=mitm.loop_refresh, daemon=True).start()
     threading.Thread(target=ProxyWatchdog(config, reporter).loop, daemon=True).start()
     threading.Thread(target=AutoUpdater(config).loop, daemon=True).start()
     threading.Thread(target=AppControlWatcher(config).loop, daemon=True).start()
+    # Software inventory — what is installed, not just what is running.
+    # Its own slow loop rather than riding the heartbeat: enumerating
+    # installed software is orders of magnitude more expensive than a
+    # heartbeat and changes orders of magnitude less often.
+    threading.Thread(target=InventoryCollector(config).loop, daemon=True).start()
 
     # macOS: whether HTTPS block pages can be shown depends on the org CA
     # being trusted. Rather than installing it unannounced (a certificate

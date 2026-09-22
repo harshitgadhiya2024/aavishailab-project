@@ -89,15 +89,21 @@ type Screenshot struct {
 	Employee *Employee `gorm:"foreignKey:EmployeeID" json:"employee,omitempty"`
 }
 
-// ScreenshotSettings is one organization's monitoring configuration. Capture
-// is off by default: recording someone's screen is intrusive enough that it
-// should be a deliberate choice, not something that happens because the agent
-// was installed.
+// ScreenshotSettings is one organization's monitoring configuration.
+//
+// Capture is ON by default, and a device is company-owned by default. The
+// consent argument that used to make this opt-in is carried by device
+// ownership instead, which is the more accurate place for it: a company
+// laptop is company equipment and is watched around the clock, while marking
+// a device personal moves it onto its working-hours schedule and hands the
+// employee a Disconnect control in their connector. That is a real,
+// per-device choice rather than one global switch that had to be defaulted
+// one way or the other for everybody.
 type ScreenshotSettings struct {
 	Base
 	OrgID uuid.UUID `gorm:"type:uuid;not null;uniqueIndex" json:"org_id"`
 
-	Enabled bool `gorm:"default:false" json:"enabled"`
+	Enabled bool `gorm:"default:true" json:"enabled"`
 
 	// Random interval bounds, in seconds. A screenshot is taken at a random
 	// point in [Min, Max] so it can't be predicted and idled around. Defaults
@@ -121,7 +127,7 @@ type ScreenshotSettings struct {
 func DefaultScreenshotSettings(orgID uuid.UUID) ScreenshotSettings {
 	return ScreenshotSettings{
 		OrgID:                orgID,
-		Enabled:              false,
+		Enabled:              true,
 		MinIntervalSeconds:   60,
 		MaxIntervalSeconds:   420,
 		IdleThresholdPercent: 1,

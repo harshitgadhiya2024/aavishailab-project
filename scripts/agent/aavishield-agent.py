@@ -3438,7 +3438,7 @@ def collect_posture() -> dict:
     return signals
 
 
-def send_heartbeat(config: dict):
+def send_heartbeat(config: dict, state: "Optional[AgentState]" = None):
     payload = json.dumps({
         "status":     "online",
         "ip_address": get_local_ip(),
@@ -3471,6 +3471,14 @@ def send_heartbeat(config: dict):
         apply_enforcement_transition(changed)
     SCREENSHOT.apply(body.get("screenshots"))
 
+    # Ownership rides the heartbeat because it is the one piece of device
+    # state an admin changes while the connector is already running, and the
+    # UI turns on it: a personal device offers Disconnect, a company one does
+    # not. Reading it here means a reclassification takes effect within a
+    # beat instead of waiting for the employee to restart the connector.
+    if state is not None:
+        state.set_ownership(body.get("ownership") or "company")
+
 
 def seed_enforcement(config: dict, state: "Optional[AgentState]" = None):
     """One-shot fetch of the working-hours verdict at startup.
@@ -3501,9 +3509,9 @@ def seed_enforcement(config: dict, state: "Optional[AgentState]" = None):
         )
 
 
-def heartbeat_loop(config: dict):
+def heartbeat_loop(config: dict, state: "Optional[AgentState]" = None):
     while True:
-        send_heartbeat(config)
+        send_heartbeat(config, state)
         time.sleep(HEARTBEAT_INTERVAL)
 
 
@@ -3842,6 +3850,11 @@ class AgentState:
         self._employee_name = ""
         self._connected_at: Optional[float] = None
         self._uninstall_allowed = False
+        # "company" or "personal". Company is the default and the stricter of
+        # the two: enforced around the clock, and no Disconnect offered. Only
+        # the server can move a device to "personal", and it re-states this on
+        # every heartbeat so a reclassification takes effect without a restart.
+        self._ownership = "company"
         # macOS only: is the org CA trusted, i.e. can HTTPS block pages show?
         # None means "not applicable" (other platforms, or SSL Inspection off).
         self._https_ready: Optional[bool] = None
@@ -3905,6 +3918,14 @@ class AgentState:
         self._set(org_name=org_name, employee_name=employee_name,
                   uninstall_allowed=uninstall_allowed)
 
+    def set_ownership(self, ownership: str):
+        """Records whether this is company or personal hardware.
+
+        Anything other than an explicit "personal" is treated as company —
+        a missing or unrecognised value must not be what hands somebody a way
+        to switch protection off on a company laptop."""
+        self._set(ownership="personal" if ownership == "personal" else "company")
+
     def snapshot(self) -> dict:
         with self._lock:
             uptime = ""
@@ -3919,6 +3940,7 @@ class AgentState:
                 "employee_name": self._employee_name,
                 "uptime": uptime,
                 "uninstall_allowed": self._uninstall_allowed,
+                "ownership": self._ownership,
                 "https_ready": self._https_ready,
                 "version": AGENT_VERSION,
             }
@@ -5385,13 +5407,18 @@ def run_agent(config: dict, state: AgentState, block: bool = True):
         if system_proxy_active():
             clear_system_proxy()
 
-    threading.Thread(target=heartbeat_loop, args=(config,), daemon=True).start()
+    threading.Thread(target=heartbeat_loop, args=(config, state), daemon=True).start()
     threading.Thread(target=cache.loop_refresh, daemon=True).start()
     threading.Thread(target=reporter.loop_flush, daemon=True).start()
     threading.Thread(target=mitm.loop_refresh, daemon=True).start()
     threading.Thread(target=ProxyWatchdog(config, reporter).loop, daemon=True).start()
     threading.Thread(target=AutoUpdater(config).loop, daemon=True).start()
     threading.Thread(target=AppControlWatcher(config).loop, daemon=True).start()
+    # Software inventory — what is installed, not just what is running.
+    # Its own slow loop rather than riding the heartbeat: enumerating
+    # installed software is orders of magnitude more expensive than a
+    # heartbeat and changes orders of magnitude less often.
+    threading.Thread(target=InventoryCollector(config).loop, daemon=True).start()
 
     # macOS: whether HTTPS block pages can be shown depends on the org CA
     # being trusted. Rather than installing it unannounced (a certificate

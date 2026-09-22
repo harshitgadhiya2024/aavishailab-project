@@ -453,7 +453,32 @@ func (h *AgentHandler) Heartbeat(c *gin.Context) {
 	// anchor it needs to hold the answer until the next beat.
 	resp["enforcement"] = h.enforcementFor(deviceID, orgID, empID, now)
 	resp["screenshots"] = screenshotConfigFor(h.db, orgID)
+	// Ownership rides the heartbeat, not just /config, because it is the one
+	// piece of device state an admin changes *while the connector is already
+	// running* — and the connector's behaviour turns on it: a company machine
+	// is enforced around the clock and offers no Disconnect, a personal one
+	// follows its schedule and does. Sending it only at startup would mean an
+	// employee had to restart the connector before a reclassification took
+	// effect, which is exactly when they are least likely to.
+	resp["ownership"] = h.deviceOwnership(deviceID, orgID)
 	c.JSON(http.StatusOK, resp)
+}
+
+// deviceOwnership is "company" or "personal" for one device.
+//
+// Defaults to company on any read failure rather than personal: a company
+// device is the stricter of the two (enforced around the clock, no employee
+// Disconnect), and a transient database error must not hand someone a way to
+// switch protection off.
+func (h *AgentHandler) deviceOwnership(deviceID, orgID uuid.UUID) string {
+	var dev models.Device
+	if err := h.db.Select("ownership").Where("id = ? AND org_id = ?", deviceID, orgID).First(&dev).Error; err != nil {
+		return models.OwnershipCompany
+	}
+	if dev.Ownership == models.OwnershipPersonal {
+		return models.OwnershipPersonal
+	}
+	return models.OwnershipCompany
 }
 
 // postureLoggedToday reports whether this device already has a posture event
@@ -1346,8 +1371,23 @@ func sensitiveMITMBypassDomains(db *gorm.DB) []string {
 	return domains
 }
 
+// mitmSettingsFromOrg resolves an org's SSL Inspection state.
+//
+// Absent means ON. SSL Inspection is what lets DLP see an upload at all —
+// without it the only inspectable traffic is plain HTTP, which in practice is
+// none of it — and it is also the only way an HTTPS block can render the
+// company's own page instead of a browser connection error. Both of those are
+// now required behaviour for every company rather than an opt-in, so "never
+// configured" has to resolve to enabled.
+//
+// An org that has explicitly set it to false still gets false: the key is
+// present in that case, so this only changes what silence means.
 func mitmSettingsFromOrg(org *models.Organization) (enabled bool, bypass []string) {
-	enabled, _ = org.Settings["mitm_enabled"].(bool)
+	if raw, ok := org.Settings["mitm_enabled"]; ok {
+		enabled, _ = raw.(bool)
+	} else {
+		enabled = true
+	}
 	if extra, ok := org.Settings["mitm_bypass_domains"].([]any); ok {
 		for _, v := range extra {
 			if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
