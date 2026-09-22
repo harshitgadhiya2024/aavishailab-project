@@ -44,6 +44,49 @@ func categoryDomainsBySlug(db *gorm.DB, orgID uuid.UUID, slugs []string) map[str
 	return result
 }
 
+// normalizePolicyDomain turns what an admin typed into the Web Gateway policy
+// builder into the form the agent's rule cache matches on.
+//
+// The agent matches an exact host and then walks parent domains
+// (cdn.openai.com → openai.com), so a suffix wildcard is already the *default*
+// behaviour of a bare domain. That means "*.openai.com" and "openai.com" want
+// to become the same rule, and stripping the wildcard is the whole job — a
+// literal "*.openai.com" key would match no host at all and the policy would
+// silently do nothing, which is the worst possible outcome for a block rule.
+//
+// Anything else (a scheme, a path, a port, uppercase, a trailing dot) is
+// trimmed down to the bare host for the same reason: an admin pasting
+// "https://chatgpt.com/" means the site, and a rule stored under that exact
+// string would never fire.
+func normalizePolicyDomain(raw string) string {
+	d := strings.ToLower(strings.TrimSpace(raw))
+	if d == "" {
+		return ""
+	}
+	if i := strings.Index(d, "://"); i >= 0 {
+		d = d[i+3:]
+	}
+	d = strings.TrimPrefix(d, "*.")
+	// Credentials, path, query and fragment all end the host.
+	if i := strings.IndexAny(d, "/?#"); i >= 0 {
+		d = d[:i]
+	}
+	if i := strings.LastIndex(d, "@"); i >= 0 {
+		d = d[i+1:]
+	}
+	// Port, but not an IPv6 literal's colons.
+	if !strings.Contains(d, "]") {
+		if i := strings.LastIndex(d, ":"); i >= 0 {
+			d = d[:i]
+		}
+	}
+	d = strings.TrimSuffix(strings.TrimSpace(d), ".")
+	// "www." is stripped by the agent before matching, so a rule stored with
+	// it would only ever be reachable via the parent-domain walk.
+	d = strings.TrimPrefix(d, "www.")
+	return d
+}
+
 // policyTargetMatches reports whether a policy (by its Targets jsonb) applies
 // to an employee in the given team. Missing Targets or an explicit "all"
 // scope always matches (the default every policy gets on creation) — this
@@ -99,7 +142,7 @@ func resolvePolicyDomains(db *gorm.DB, p models.Policy, domainsBySlug map[string
 	seen := make(map[string]bool)
 	var out []string
 	add := func(domain string) {
-		domain = strings.TrimSpace(domain)
+		domain = normalizePolicyDomain(domain)
 		if domain == "" || seen[domain] {
 			return
 		}

@@ -183,10 +183,21 @@ func (h *SWGHandler) DeleteDomainRule(c *gin.Context) {
 
 // ─── URL Categories ────────────────────────────────────────────────────────────
 
-// ListCategories handles GET /swg/categories
+// ListCategories handles GET /swg/categories — feeds the policy builder's
+// category picker, so a category this org deleted (CategoryHandler.Delete)
+// must not be offerable as a new policy condition either.
 func (h *SWGHandler) ListCategories(c *gin.Context) {
+	orgID, _ := uuid.Parse(c.GetString("scoped_org_id"))
+
+	var hiddenIDs []uuid.UUID
+	h.db.Model(&models.CategoryExclusion{}).Where("org_id = ?", orgID).Pluck("category_id", &hiddenIDs)
+
+	q := h.db.Order("name ASC")
+	if len(hiddenIDs) > 0 {
+		q = q.Where("id NOT IN ?", hiddenIDs)
+	}
 	var categories []models.URLCategory
-	h.db.Order("name ASC").Find(&categories)
+	q.Find(&categories)
 	c.JSON(http.StatusOK, categories)
 }
 

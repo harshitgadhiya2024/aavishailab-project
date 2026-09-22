@@ -95,10 +95,11 @@ async fn handle_connect(mut req: Request<Incoming>, deps: Arc<Deps>) -> Response
         if let Some(leaf) = leaf {
             let upgrade_fut = hyper::upgrade::on(&mut req);
             let (host2, reason, category) = (host.clone(), er.reason.clone(), er.category.clone());
+            let deps2 = deps.clone();
             tokio::spawn(async move {
                 match upgrade_fut.await {
                     Ok(upgraded) => {
-                        if let Err(e) = crate::tls_proxy::serve_block_page(TokioIo::new(upgraded), &host2, &leaf, &reason, &category).await {
+                        if let Err(e) = crate::tls_proxy::serve_block_page(&deps2, TokioIo::new(upgraded), &host2, &leaf, &reason, &category).await {
                             tracing::debug!(error = %e, host = %host2, "block-page MITM failed");
                         }
                     }
@@ -156,7 +157,7 @@ async fn handle_plain_http(req: Request<Incoming>, deps: Arc<Deps>) -> Response<
         tracing::info!(%host, reason = %er.reason, "BLOCK http");
         let kind = if er.category == "threat_intelligence" { "security" } else { "activity" };
         deps.reporter.record(&req.uri().to_string(), &host, "blocked", er.as_rule_like(), "web_request", kind);
-        return html_response(StatusCode::FORBIDDEN, &block_page_html(&host, &er.reason, &er.category));
+        return html_response(StatusCode::FORBIDDEN, &block_page_html(&deps, &host, &er.reason, &er.category));
     }
     let report_action = if er.action == "alert" { "alerted" } else { "allowed" };
     deps.reporter.record(&req.uri().to_string(), &host, report_action, er.as_rule_like(), "web_request", "activity");
@@ -188,14 +189,15 @@ async fn forward_plain_http(req: Request<Incoming>, host: &str, port: u16, path_
     let content_type = parts.headers.get(hyper::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
     let content_disposition = parts.headers.get(hyper::header::CONTENT_DISPOSITION).and_then(|v| v.to_str().ok());
     let filename = crate::scan::upload_filename(content_disposition, &path);
+    let user_agent = parts.headers.get(hyper::header::USER_AGENT).and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
 
     let body_bytes = body.collect().await.map_err(std::io::Error::other)?.to_bytes();
 
+    // Recorded, never blocked — see upload_verdict. The result is
+    // deliberately not branched on: DLP is monitor-only, so there is no
+    // outcome here that stops the request reaching its upstream.
     if matches!(method.as_str(), "POST" | "PUT" | "PATCH") && body_bytes.len() <= crate::scan::MAX_SCAN_BODY {
-        let verdict = crate::scan::upload_verdict(&deps.client, &deps.casb, &deps.gate, host, &path, method.as_str(), &content_type, &filename, &body_bytes).await;
-        if verdict.blocked {
-            return Ok(html_response(StatusCode::FORBIDDEN, &block_page_html(host, &verdict.reason, "Data Loss Prevention")));
-        }
+        crate::scan::upload_verdict(&deps.client, &deps.casb, &deps.gate, host, &path, method.as_str(), &content_type, &filename, &user_agent, &body_bytes).await;
     }
 
     let mut upstream_req = Request::builder().method(method).uri(path_and_query);
@@ -211,7 +213,7 @@ async fn forward_plain_http(req: Request<Incoming>, host: &str, port: u16, path_
     if resp_parts.status.is_success() && resp_bytes.len() <= crate::scan::MAX_SCAN_BODY {
         let verdict = crate::scan::download_verdict(&deps.client, &deps.gate, host, &path, &resp_bytes).await;
         if verdict.blocked {
-            return Ok(html_response(StatusCode::FORBIDDEN, &block_page_html(host, &verdict.reason, "Malware Protection")));
+            return Ok(html_response(StatusCode::FORBIDDEN, &block_page_html(deps, host, &verdict.reason, "Malware Protection")));
         }
     }
 
@@ -233,10 +235,10 @@ pub fn html_response(status: StatusCode, html: &str) -> Response<BoxBody> {
     Response::builder().status(status).header("content-type", "text/html; charset=utf-8").body(full_body(html.to_string())).unwrap()
 }
 
-pub fn block_page_html(domain: &str, reason: &str, category: &str) -> String {
-    format!(
-        "<!doctype html><html><head><title>Blocked</title></head><body style=\"font-family:sans-serif;text-align:center;padding:80px\">\
-        <h1>Access to this site is blocked</h1><p><strong>{domain}</strong></p>\
-        <p>{reason}</p><p style=\"color:#888\">Category: {category}</p></body></html>"
-    )
+/// The company-branded block page. Kept as a thin wrapper over
+/// `block_page::render` so the four call sites across proxy.rs and
+/// tls_proxy.rs all pick up branding and escaping without each having to
+/// reach into the cache themselves.
+pub fn block_page_html(deps: &Deps, domain: &str, reason: &str, category: &str) -> String {
+    crate::block_page::render(&deps.branding.get(), domain, reason, category)
 }

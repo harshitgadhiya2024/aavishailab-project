@@ -745,6 +745,298 @@ class _ChainedReader:
 
 # ─── Application control (process watcher) ────────────────────────────────────
 
+class InventoryCollector:
+    """Reports what software is installed on this machine.
+
+    Application control (below) only ever notices an app that is *running* and
+    that somebody already catalogued. That leaves the company blind to the
+    thing it most wants to know: an employee installed something. This walks
+    the OS's own record of installed software and sends the whole list, so a
+    remote-access tool that has never been launched is still visible, and so is
+    a binary that came from a browser download rather than a package manager.
+
+    A full snapshot is sent every time, not a delta — the server diffs it (see
+    ReportInventory) and that is what makes uninstalls detectable without the
+    agent having to remember what it last sent across restarts and upgrades.
+
+    Deliberately shell-out based, like the rest of this file: the agent ships
+    as a single file with no psutil and no platform SDK bindings, so every
+    collector below uses a tool the OS already has.
+    """
+
+    # Long, because installing software is a rare event and enumerating it is
+    # the most expensive thing this agent does periodically. The first report
+    # goes out shortly after startup; after that, hourly is well inside the
+    # resolution anyone reads this data at.
+    INTERVAL = 3600
+    FIRST_DELAY = 90
+
+    def __init__(self, config: dict):
+        self.config = config
+        self.system = platform.system()
+
+    def loop(self):
+        time.sleep(self.FIRST_DELAY)
+        while True:
+            try:
+                self.report()
+            except Exception as exc:  # noqa: BLE001 - never kill the thread
+                log.debug("inventory report failed: %s", exc)
+            time.sleep(self.INTERVAL)
+
+    def report(self):
+        # Enumerating someone's personal laptop's software outside working
+        # hours is the same intrusion the gate exists to prevent everywhere
+        # else. A company machine is always 'full', so this only ever skips on
+        # BYOD, and only outside its window.
+        if not GATE.logs("activity"):
+            return
+        apps = self.collect()
+        if not apps:
+            return
+        payload = json.dumps({"applications": apps}).encode("utf-8")
+        try:
+            req = _agent_request(self.config, "/internal/agent/inventory",
+                                 method="POST", body=payload)
+            with _DIRECT_OPENER.open(req, timeout=30):
+                pass
+            log.info("Software inventory reported: %d application(s)", len(apps))
+        except (urllib.error.URLError, OSError) as exc:
+            mark_revoked_if_auth_error(exc)
+            log.debug("inventory upload failed: %s", exc)
+
+    def collect(self) -> List[dict]:
+        if self.system == "Windows":
+            apps = self._windows()
+        elif self.system == "Darwin":
+            apps = self._macos()
+        else:
+            apps = self._linux()
+        # Sorted so a truncated report (the server caps the list) is the same
+        # subset every time rather than an arbitrary one that churns.
+        return sorted(apps, key=lambda a: a.get("name", "").lower())
+
+    # ── Windows ───────────────────────────────────────────────────────────
+    def _windows(self) -> List[dict]:
+        """Both registry views plus the per-user hive.
+
+        Three paths, not one: 64-bit installers write to the native Uninstall
+        key, 32-bit ones are redirected to WOW6432Node, and anything installed
+        without admin rights lands under HKCU — which is exactly where a
+        manually downloaded tool ends up, so omitting it would miss the case
+        this feature is for.
+        """
+        script = (
+            "$paths = @("
+            "'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',"
+            "'HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',"
+            "'HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*');"
+            "Get-ItemProperty $paths -ErrorAction SilentlyContinue | "
+            "Where-Object { $_.DisplayName } | "
+            "ForEach-Object { [PSCustomObject]@{"
+            "name=$_.DisplayName; version=$_.DisplayVersion; vendor=$_.Publisher;"
+            "identifier=$_.PSChildName; install_path=$_.InstallLocation;"
+            "installed_at=$_.InstallDate } } | ConvertTo-Json -Compress -Depth 2"
+        )
+        rc, out = _run_long(["powershell", "-NoProfile", "-Command", script])
+        if rc != 0:
+            return []
+        return self._from_json(out, "registry")
+
+    # ── macOS ─────────────────────────────────────────────────────────────
+    def _macos(self) -> List[dict]:
+        """Every .app bundle, read from its own Info.plist.
+
+        system_profiler SPApplicationsDataType would give the same answer, but
+        it routinely takes 30+ seconds and spins the CPU while it does. Walking
+        the three application directories and reading the plists directly is
+        near-instant and yields the identifier that actually matters here — the
+        CFBundleIdentifier.
+        """
+        apps: List[dict] = []
+        roots = ["/Applications", "/Applications/Utilities",
+                 os.path.expanduser("~/Applications")]
+        for root in roots:
+            if not os.path.isdir(root):
+                continue
+            try:
+                entries = os.listdir(root)
+            except OSError:
+                continue
+            for entry in entries:
+                if not entry.endswith(".app"):
+                    continue
+                bundle = os.path.join(root, entry)
+                info = os.path.join(bundle, "Contents", "Info.plist")
+                name = entry[:-4]
+                identifier, version, installed_at = "", "", ""
+                try:
+                    with open(info, "rb") as fh:
+                        plist = plistlib.load(fh)
+                    identifier = plist.get("CFBundleIdentifier", "") or ""
+                    version = (plist.get("CFBundleShortVersionString")
+                               or plist.get("CFBundleVersion") or "")
+                    name = plist.get("CFBundleName") or name
+                except (OSError, ValueError, plistlib.InvalidFileException):
+                    pass
+                try:
+                    # macOS records no install date, so the bundle's own
+                    # creation time is the closest honest answer.
+                    installed_at = _rfc3339(os.path.getctime(bundle))
+                except OSError:
+                    installed_at = ""
+                apps.append({
+                    "name": str(name), "version": str(version),
+                    "identifier": str(identifier), "install_path": bundle,
+                    "vendor": "", "source": "applications",
+                    "installed_at": installed_at,
+                })
+        return apps + self._unix_manual_binaries()
+
+    # ── Linux ─────────────────────────────────────────────────────────────
+    def _linux(self) -> List[dict]:
+        apps: List[dict] = []
+
+        rc, out = _run_long(["dpkg-query", "-W", "-f=${Package}\\t${Version}\\t${Maintainer}\\n"])
+        if rc == 0:
+            for line in out.splitlines():
+                parts = line.split("\t")
+                if len(parts) >= 2 and parts[0].strip():
+                    apps.append({"name": parts[0].strip(), "version": parts[1].strip(),
+                                 "vendor": parts[2].strip() if len(parts) > 2 else "",
+                                 "identifier": parts[0].strip(), "install_path": "",
+                                 "source": "dpkg", "installed_at": ""})
+
+        rc, out = _run_long(["rpm", "-qa", "--queryformat", "%{NAME}\\t%{VERSION}\\t%{VENDOR}\\n"])
+        if rc == 0:
+            for line in out.splitlines():
+                parts = line.split("\t")
+                if len(parts) >= 2 and parts[0].strip():
+                    apps.append({"name": parts[0].strip(), "version": parts[1].strip(),
+                                 "vendor": parts[2].strip() if len(parts) > 2 else "",
+                                 "identifier": parts[0].strip(), "install_path": "",
+                                 "source": "rpm", "installed_at": ""})
+
+        for cmd, source in ((["snap", "list"], "snap"), (["flatpak", "list", "--columns=application,version"], "flatpak")):
+            rc, out = _run_long(cmd)
+            if rc != 0:
+                continue
+            for line in out.splitlines()[1:] if source == "snap" else out.splitlines():
+                parts = line.split()
+                if len(parts) >= 1 and parts[0] and not parts[0].startswith("-"):
+                    apps.append({"name": parts[0], "version": parts[1] if len(parts) > 1 else "",
+                                 "vendor": "", "identifier": f"{source}:{parts[0]}",
+                                 "install_path": "", "source": source, "installed_at": ""})
+
+        return apps + self._unix_manual_binaries()
+
+    # ── Manually installed binaries (macOS + Linux) ───────────────────────
+    def _unix_manual_binaries(self) -> List[dict]:
+        """Executables in the places a manual download actually lands.
+
+        A package database by definition knows nothing about a binary someone
+        curl'd into ~/.local/bin or /usr/local/bin — which is precisely how
+        developer tooling gets installed, and precisely the blind spot the
+        requirement calls out. Only regular executable files are reported, and
+        only one directory level deep, so this stays a bounded scan rather than
+        a filesystem crawl.
+        """
+        apps: List[dict] = []
+        roots = ["/usr/local/bin", os.path.expanduser("~/.local/bin"),
+                 os.path.expanduser("~/bin")]
+        for root in roots:
+            if not os.path.isdir(root):
+                continue
+            try:
+                entries = os.listdir(root)
+            except OSError:
+                continue
+            for entry in entries[:500]:
+                full = os.path.join(root, entry)
+                try:
+                    # Symlinks here are almost always a package manager's
+                    # shim pointing back at something already reported.
+                    if os.path.islink(full) or not os.path.isfile(full):
+                        continue
+                    if not os.access(full, os.X_OK):
+                        continue
+                    installed_at = _rfc3339(os.path.getmtime(full))
+                except OSError:
+                    continue
+                apps.append({
+                    "name": entry, "version": "", "vendor": "",
+                    "identifier": full, "install_path": full,
+                    "source": "path", "installed_at": installed_at,
+                })
+        return apps
+
+    @staticmethod
+    def _from_json(raw: str, source: str) -> List[dict]:
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            return []
+        # ConvertTo-Json emits a bare object, not a list, when there is exactly
+        # one result — a real case on a nearly-empty machine.
+        if isinstance(data, dict):
+            data = [data]
+        out = []
+        for item in data if isinstance(data, list) else []:
+            if not isinstance(item, dict):
+                continue
+            name = (item.get("name") or "").strip()
+            if not name:
+                continue
+            out.append({
+                "name": name,
+                "version": str(item.get("version") or "").strip(),
+                "vendor": str(item.get("vendor") or "").strip(),
+                "identifier": str(item.get("identifier") or "").strip(),
+                "install_path": str(item.get("install_path") or "").strip(),
+                "installed_at": str(item.get("installed_at") or "").strip(),
+                "source": source,
+            })
+        return out
+
+
+def notify_app_blocked(app_name: str):
+    """Tells the person why an application just closed.
+
+    Best-effort and never fatal: a machine with no notification daemon, or a
+    locked screen, must not hold up or fail a sweep. Each platform below uses
+    a tool the OS already ships, for the same reason the rest of this file
+    does — the agent is distributed as a single file with no extra deps.
+    """
+    # Nothing an attacker controls reaches this string, but it is interpolated
+    # into an AppleScript/PowerShell literal, so quotes and newlines are
+    # stripped rather than escaped per-language.
+    safe = "".join(c for c in str(app_name) if c not in '"\\\'\r\n')[:80]
+    title = "Blocked by your company"
+    body = (f"{safe} is not allowed on this device. "
+            "Contact your IT administrator if you need access.")
+    try:
+        system = platform.system()
+        if system == "Darwin":
+            _run(["osascript", "-e",
+                  f'display notification "{body}" with title "{title}"'])
+        elif system == "Windows":
+            script = (
+                "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications,"
+                " ContentType=WindowsRuntime] > $null; "
+                "$t=[Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent(2); "
+                "$x=$t.GetElementsByTagName('text'); "
+                f"$x[0].AppendChild($t.CreateTextNode('{title}')) > $null; "
+                f"$x[1].AppendChild($t.CreateTextNode('{body}')) > $null; "
+                "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Aavishield')"
+                ".Show([Windows.UI.Notifications.ToastNotification]::new($t))"
+            )
+            _run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script])
+        else:
+            _run(["notify-send", title, body])
+    except Exception as exc:  # noqa: BLE001 - cosmetic; enforcement already happened
+        log.debug("could not show the app-block notice: %s", exc)
+
+
 class AppControlWatcher:
     """Blocks applications, not just their websites.
 
@@ -927,6 +1219,12 @@ class AppControlWatcher:
                 if self.reported.get(pid) != matcher.get("app_id"):
                     self.reported[pid] = matcher.get("app_id")
                     self._report(matcher, pid, os.path.basename(exe_path), exe_path, terminated)
+                    if terminated:
+                        # Told, not just stopped. An app that simply vanishes
+                        # is indistinguishable from a crash, and the employee
+                        # has no way to tell the difference or know what to do
+                        # about it.
+                        notify_app_blocked(matcher.get("name") or "This application")
                     log.info("APP %s: %s (pid %d)",
                              "BLOCKED" if terminated else "DETECTED",
                              matcher.get("name"), pid)
@@ -1444,44 +1742,141 @@ BLOCK_PAGE_HTML = """<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Aavishield — Access Blocked</title>
+  <title>{heading}</title>
   <style>
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-    body {{ font-family: 'Segoe UI', sans-serif; background: #f0f4fa; display: flex; align-items: center; justify-content: center; min-height: 100vh; }}
-    .card {{ background: white; border-radius: 12px; padding: 48px; max-width: 480px; width: 90%; box-shadow: 0 4px 24px rgba(0,72,160,0.12); text-align: center; }}
-    .shield {{ font-size: 64px; margin-bottom: 24px; }}
-    h1 {{ color: #0048A0; font-size: 24px; margin-bottom: 12px; }}
+    body {{ font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; background: #f0f4fa; display: flex; align-items: center; justify-content: center; min-height: 100vh; }}
+    .card {{ background: white; border-radius: 12px; padding: 48px 40px; max-width: 480px; width: 90%; box-shadow: 0 4px 24px rgba(0,72,160,0.12); text-align: center; }}
+    .logo {{ max-height: 44px; max-width: 180px; margin-bottom: 20px; }}
+    h1 {{ color: #0048A0; font-size: 22px; margin-bottom: 12px; }}
     p {{ color: #555; line-height: 1.6; margin-bottom: 8px; }}
-    .domain {{ font-weight: 600; color: #0048A0; }}
-    .policy {{ background: #f0f4fa; border-radius: 8px; padding: 12px 16px; margin: 16px 0; font-size: 14px; color: #333; }}
-    .footer {{ margin-top: 24px; font-size: 12px; color: #999; }}
+    .policy {{ background: #f0f4fa; border-radius: 8px; padding: 14px 16px; margin: 20px 0; font-size: 14px; color: #333; text-align: left; }}
+    .policy div + div {{ margin-top: 6px; }}
+    .contact a {{ color: #0048A0; }}
+    .footer {{ margin-top: 28px; font-size: 12px; color: #999; }}
   </style>
 </head>
 <body>
   <div class="card">
-    <div class="shield">\U0001F6E1</div>
-    <h1>Access Blocked</h1>
-    <p>This website has been blocked by your organization's security policy.</p>
+    {logo}
+    <h1>{heading}</h1>
+    <p>This site is not permitted on this device.</p>
     <div class="policy">
-      <strong>Domain:</strong> <span class="domain">{domain}</span><br>
-      <strong>Reason:</strong> {reason}<br>
-      <strong>Category:</strong> {category}
+      <div><strong>Site:</strong> {domain}</div>
+      <div><strong>Reason:</strong> {reason}</div>
+      <div><strong>Category:</strong> {category}</div>
     </div>
-    <p>If you believe this is a mistake, please contact your IT administrator.</p>
-    <div class="footer">Protected by <strong>Aavishield</strong> Zero Trust Security</div>
+    <p>{closing}</p>
+    {contact}
+    <div class="footer">{footer}</div>
   </div>
 </body>
 </html>"""
 
 
-# ─── In-page block notice (for XHR/fetch uploads a 403 body never reaches) ───
-# Gmail, Outlook Web, Slack and Teams upload attachments via fetch()/XHR, not
-# a form POST — their own JavaScript swallows a 403 response and shows a
-# generic "Upload failed", so BLOCK_PAGE_HTML above never renders for the
-# single case employees actually hit day to day. This tiny script is
-# injected into the *page* (not the blocked response) so it can watch every
-# fetch/XHR the page itself makes and render the real reason when one of
-# them carries the X-Aavishield-Block header _send_dlp_block sets below.
+class BrandingCache:
+    """The company's own name, logo and message for the block page.
+
+    A block page carrying the security vendor's name reads like malware to the
+    person being blocked; one carrying their employer's name reads like policy.
+    That is the whole reason this exists.
+
+    Starts empty and stays empty on any failure — render_block_page falls back
+    to neutral wording rather than showing a half-branded page, so an
+    unreachable server costs nothing visible.
+    """
+
+    REFRESH_INTERVAL = 300
+
+    def __init__(self, config: dict):
+        self.config = config
+        self._lock = threading.Lock()
+        self._data: dict = {}
+
+    def get(self) -> dict:
+        with self._lock:
+            return dict(self._data)
+
+    def refresh(self):
+        if AGENT_REVOKED.is_set():
+            return
+        try:
+            req = _agent_request(self.config, "/internal/agent/branding")
+            with _DIRECT_OPENER.open(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode("utf-8") or "{}")
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            mark_revoked_if_auth_error(exc)
+            log.debug("branding refresh failed: %s", exc)
+            return
+        if isinstance(data, dict):
+            with self._lock:
+                self._data = data
+
+    def loop_refresh(self):
+        while True:
+            time.sleep(self.REFRESH_INTERVAL)
+            self.refresh()
+
+
+BRANDING = BrandingCache({})
+
+
+def render_block_page(domain: str, reason: str, category: str) -> bytes:
+    """Builds the block page an employee sees, in their company's name.
+
+    Every interpolated value is escaped here, once, rather than at each of the
+    three call sites — `domain` and `reason` arrive from the network and from
+    server-supplied policy text, and this page is served inside the blocked
+    origin's own security context.
+    """
+    b = BRANDING.get()
+    company = html_escape((b.get("company_name") or "").strip())
+    logo_url = (b.get("logo_url") or "").strip()
+    message = (b.get("message") or "").strip()
+    contact_raw = (b.get("support_contact") or "").strip()
+
+    heading = f"Blocked by {company}" if company else "Access blocked"
+    footer = f"{company} security policy" if company else "Your organization's security policy"
+    logo = (
+        f'<img class="logo" src="{html_escape(logo_url)}" alt="{company or "Company logo"}">'
+        if logo_url else ""
+    )
+    closing = html_escape(message) if message else \
+        "If you believe this is a mistake, contact your IT administrator."
+
+    if not contact_raw:
+        contact = ""
+    elif "@" in contact_raw and " " not in contact_raw:
+        c = html_escape(contact_raw)
+        contact = f'<p class="contact"><a href="mailto:{c}">{c}</a></p>'
+    else:
+        contact = f'<p class="contact">{html_escape(contact_raw)}</p>'
+
+    return BLOCK_PAGE_HTML.format(
+        heading=heading,
+        logo=logo,
+        domain=html_escape(domain),
+        reason=html_escape(reason),
+        category=html_escape(category),
+        closing=closing,
+        contact=contact,
+        footer=footer,
+    ).encode("utf-8")
+
+
+# ─── In-page block notice (for XHR/fetch a 403 body never reaches) ───────────
+# A page's own JavaScript swallows a 403 response and shows a generic failure,
+# so BLOCK_PAGE_HTML never renders for a request the page made itself rather
+# than navigated to. This tiny script is injected into the *page* (not the
+# blocked response) so it can watch every fetch/XHR the page makes and render
+# the real reason when one of them carries an X-Aavishield-Block header.
+#
+# NOTE: DLP no longer blocks anything — uploads are recorded and allowed
+# through (see _record_upload_verdict) — so nothing on the upload path sets
+# that header any more and this shim stays dormant there. It remains in place
+# for web-policy blocks, which do still need an in-page explanation when the
+# blocked request came from a page's own fetch() rather than a navigation, and
+# is gated org-side by inject_notice_enabled() either way.
 #
 # The exact text of _BLOCK_SHIM_JS is what gets embedded AND what its CSP
 # hash is computed over (_shim_csp_hash) — derived from the same stripped
@@ -1927,11 +2322,7 @@ class ProxyConnection(threading.Thread):
             return
 
         try:
-            html = BLOCK_PAGE_HTML.format(
-                domain=html_escape(host),
-                reason=html_escape(rule.get("reason") or "Organization security policy"),
-                category=html_escape(rule.get("category") or "Blocked"),
-            ).encode("utf-8")
+            html = render_block_page(host, rule.get("reason") or "Organization security policy", rule.get("category") or "Blocked")
             response = (
                 b"HTTP/1.1 403 Forbidden\r\n"
                 b"Content-Type: text/html; charset=utf-8\r\n"
@@ -2015,18 +2406,12 @@ class ProxyConnection(threading.Thread):
                     if upload_spool is None:
                         return
 
-                    casb_verdict = self._casb_upload_verdict(host)
-                    if casb_verdict is not None and casb_verdict.get("action") == "block":
-                        upload_spool.close()
-                        self._send_dlp_block(client_sock, host, url_path, casb_verdict, headers_only)
-                        return
-
-                    verdict = self._scan_upload_spooled(
-                        host, url_path, headers_only, upload_spool, upload_size, method)
-                    if verdict is not None and verdict.get("action") == "block":
-                        upload_spool.close()
-                        self._send_dlp_block(client_sock, host, url_path, verdict, headers_only)
-                        return
+                    # Monitor-only: both of these record what left the company;
+                    # neither stops it. The upload always proceeds to the
+                    # upstream below. See _record_upload_verdict.
+                    self._record_upload_verdict(host, url_path, self._casb_upload_verdict(host))
+                    self._record_upload_verdict(host, url_path, self._scan_upload_spooled(
+                        host, url_path, headers_only, upload_spool, upload_size, method))
 
                     # A de-chunked body must be re-framed with Content-Length —
                     # we already hold the whole thing, and the upstream needs
@@ -2267,11 +2652,7 @@ class ProxyConnection(threading.Thread):
         rule = self._effective_rule(host)
         if rule is not None and rule.get("action") == "block":
             log.info("BLOCK http://%s (%s)", host, rule.get("reason", ""))
-            html = BLOCK_PAGE_HTML.format(
-                domain=html_escape(host),
-                reason=html_escape(rule.get("reason") or "Organization security policy"),
-                category=html_escape(rule.get("category") or "Blocked"),
-            ).encode("utf-8")
+            html = render_block_page(host, rule.get("reason") or "Organization security policy", rule.get("category") or "Blocked")
             response = (
                 b"HTTP/1.1 403 Forbidden\r\n"
                 b"Content-Type: text/html; charset=utf-8\r\n"
@@ -2302,17 +2683,10 @@ class ProxyConnection(threading.Thread):
                 if upload_spool is None:
                     return
                 url_path = self._request_path(data)
-                casb_verdict = self._casb_upload_verdict(host)
-                if casb_verdict is not None and casb_verdict.get("action") == "block":
-                    upload_spool.close()
-                    self._send_dlp_block(self.conn, host, url_path, casb_verdict, headers_only)
-                    return
-                verdict = self._scan_upload_spooled(
-                    host, url_path, headers_only, upload_spool, upload_size, method)
-                if verdict is not None and verdict.get("action") == "block":
-                    upload_spool.close()
-                    self._send_dlp_block(self.conn, host, url_path, verdict, headers_only)
-                    return
+                # Monitor-only — see the matching call in _serve_over_tls.
+                self._record_upload_verdict(host, url_path, self._casb_upload_verdict(host))
+                self._record_upload_verdict(host, url_path, self._scan_upload_spooled(
+                    host, url_path, headers_only, upload_spool, upload_size, method))
                 data = (self._replace_framing(headers_only, upload_size)
                         if chunked_upload else headers_only + b"\r\n\r\n")
 
@@ -2582,11 +2956,7 @@ class ProxyConnection(threading.Thread):
             sig = result.get("signature") or result.get("reason") or "malware"
             log.info("MALWARE BLOCKED: %s%s (%s, %d bytes)", host, url_path, sig, size)
             reason = result.get("reason") or f"Malware detected in downloaded file: {sig}"
-            html = BLOCK_PAGE_HTML.format(
-                domain=html_escape(host),
-                reason=html_escape(reason),
-                category="Malware Detection",
-            ).encode("utf-8")
+            html = render_block_page(host, reason, "Malware Detection")
             client_sock.sendall(
                 b"HTTP/1.1 403 Forbidden\r\n"
                 b"Content-Type: text/html; charset=utf-8\r\n"
@@ -2651,6 +3021,11 @@ class ProxyConnection(threading.Thread):
             "destination": host,
             "method": method,
             "path": url_path,
+            # Lets the server label the incident "app" or "browser" — the
+            # requesting client's own User-Agent is the only signal available
+            # at this layer that distinguishes a native app's upload from a
+            # browser tab's, and it is already in the headers we hold.
+            "user_agent": self._header_value(headers, "user-agent"),
         })
         spool.seek(0)
         body = _ChainedReader(carried_tail, spool) if carried_tail else spool
@@ -2669,59 +3044,22 @@ class ProxyConnection(threading.Thread):
         UPLOAD_CARRY.update(session_key, spool, size)
         return result
 
-    def _send_dlp_block(self, client_sock, host: str, url_path: str, verdict: dict, request_headers: bytes = b""):
-        reason = verdict.get("reason") or "Sensitive company data detected"
-        policy_name = verdict.get("policy_name") or "Data Loss Prevention"
-        category = "Data Loss Prevention"
-        log.info("DLP BLOCKED: upload to %s%s (%s)", host, url_path, reason)
-        html = BLOCK_PAGE_HTML.format(
-            domain=html_escape(host),
-            reason=html_escape(reason),
-            category=category,
-        ).encode("utf-8")
-        # These X-Aavishield-* headers are what let the in-page notice shim
-        # (see _inject_block_shim) render the REAL reason for an XHR/fetch
-        # upload a site's own JS otherwise reduces to a generic "Upload
-        # failed" — the 403 body above is what a plain form POST sees, this
-        # is what a modern web app's own request-handling code sees.
-        #
-        # Reflecting Origin (rather than a bare "*") lets a *cross*-origin
-        # upload's JS see this response at all — a fetch()/XHR to a
-        # cross-origin endpoint with no matching Access-Control-Allow-Origin
-        # never reaches .then()/'load' in the first place; it's rejected by
-        # the browser before user code sees anything. Same-origin uploads
-        # (the common case — Gmail/Slack/Teams all upload to their own
-        # origin) need none of this, but it costs nothing to add.
-        cors_headers = b""
-        origin = self._header_value(request_headers, "origin") if request_headers else ""
-        if origin:
-            cors_headers = (
-                b"Access-Control-Allow-Origin: " + _header_safe(origin).encode("utf-8") + b"\r\n"
-                b"Access-Control-Allow-Credentials: true\r\n"
-            )
-        incident_id = verdict.get("incident_id") or ""
-        incident_header = (
-            b"X-Aavishield-Incident: " + _header_safe(incident_id).encode("utf-8") + b"\r\n"
-            if incident_id else b""
-        )
-        response = (
-            b"HTTP/1.1 403 Forbidden\r\n"
-            b"Content-Type: text/html; charset=utf-8\r\n"
-            b"Content-Length: " + str(len(html)).encode() + b"\r\n"
-            b"X-Aavishield-Block: 1\r\n"
-            b"X-Aavishield-Reason: " + _header_safe(reason).encode("utf-8") + b"\r\n"
-            b"X-Aavishield-Policy: " + _header_safe(policy_name).encode("utf-8") + b"\r\n"
-            b"X-Aavishield-Category: " + _header_safe(category).encode("utf-8") + b"\r\n"
-            + incident_header +
-            b"Access-Control-Expose-Headers: X-Aavishield-Block, X-Aavishield-Reason, "
-            b"X-Aavishield-Policy, X-Aavishield-Category, X-Aavishield-Incident\r\n"
-            + cors_headers +
-            b"Connection: close\r\n\r\n" + html
-        )
-        try:
-            client_sock.sendall(response)
-        except (ssl.SSLError, OSError):
-            pass
+    def _record_upload_verdict(self, host: str, url_path: str, verdict: Optional[dict]):
+        """Logs a DLP/CASB finding on this device. Nothing is ever blocked.
+
+        Data-loss protection here is visibility, not interception: the company
+        sees that an employee sent something sensitive, and the employee's work
+        is not interrupted. The incident itself is recorded server-side by
+        /internal/agent/scan-dlp — this only leaves a trace in the device's own
+        log so the same finding is diagnosable from the endpoint too.
+        """
+        if not verdict:
+            return
+        reason = (verdict.get("reason")
+                  or ", ".join(verdict.get("detectors") or [])
+                  or "sensitive content")
+        log.info("DLP RECORDED: upload to %s%s (%s, score %s) — allowed through",
+                 host, url_path, reason, verdict.get("score"))
 
     @staticmethod
     def _parse_http_target(data: bytes) -> Optional[Tuple[str, int, bool]]:
@@ -2976,6 +3314,71 @@ class ActivityMonitor:
         }
 
 
+def open_application_names(limit: int = 12) -> List[str]:
+    """Which applications the person has open, as they would name them.
+
+    Shown beside each screenshot so a reviewer can tell what somebody was
+    working in without having to read the image. Deliberately *applications*,
+    not processes: a browser contributes dozens of helper processes out of one
+    bundle, and a list of forty "Google Chrome Helper (Renderer)" entries
+    answers nothing.
+
+    Windowed apps only, so background daemons and the agent's own helpers stay
+    out of it. Returns [] on any failure — this is context beside an image, and
+    a screenshot with no app list is far better than no screenshot.
+    """
+    system = platform.system()
+    names: List[str] = []
+    try:
+        if system == "Darwin":
+            # `System Events` lists exactly the processes with a UI, which is
+            # the definition we want and one macOS already maintains.
+            rc, out = _run([
+                "osascript", "-e",
+                'tell application "System Events" to get name of every process '
+                'whose background only is false',
+            ])
+            if rc == 0:
+                names = [n.strip() for n in out.split(",")]
+        elif system == "Windows":
+            rc, out = _run([
+                "powershell", "-NoProfile", "-NonInteractive", "-Command",
+                "Get-Process | Where-Object { $_.MainWindowTitle } | "
+                "ForEach-Object { if ($_.Description) { $_.Description } else { $_.ProcessName } }",
+            ])
+            if rc == 0:
+                names = [n.strip() for n in out.splitlines()]
+        else:
+            # wmctrl is the only widely available way to enumerate windows on
+            # X11 without a toolkit dependency; its absence is normal and
+            # simply yields no list.
+            rc, out = _run(["wmctrl", "-lx"])
+            if rc == 0:
+                for line in out.splitlines():
+                    parts = line.split(None, 3)
+                    if len(parts) >= 3 and "." in parts[2]:
+                        # WM_CLASS is "instance.Class" — the Class half is the
+                        # human-facing one ("Code", "Firefox").
+                        names.append(parts[2].split(".")[-1])
+    except Exception as exc:  # noqa: BLE001 - context only, never fatal
+        log.debug("could not list open applications: %s", exc)
+        return []
+
+    seen, out_names = set(), []
+    for name in names:
+        name = name.strip()
+        if not name or name.lower() in seen:
+            continue
+        # The agent's own window is not something a reviewer needs told about.
+        if "aavishield" in name.lower():
+            continue
+        seen.add(name.lower())
+        out_names.append(name[:60])
+        if len(out_names) >= limit:
+            break
+    return out_names
+
+
 def _capture_screen(blur: bool) -> Optional[Tuple[bytes, int, int]]:
     """Grabs the primary screen and returns (webp_bytes, width, height), or
     None if screen capture isn't available (no permission, headless, missing
@@ -3087,6 +3490,12 @@ class ScreenshotCapturer:
             "content_type": "image/webp",
             **{k: str(v) for k, v in stats.items()},
         }
+        # What was open at the moment of capture. Sent as a query param
+        # alongside the rest of the metadata, so the body stays exactly the
+        # image bytes — the same convention every other agent upload uses.
+        apps = open_application_names()
+        if apps:
+            params["open_apps"] = ",".join(apps)
         query = urllib.parse.urlencode(params)
         try:
             req = _agent_request(self.config, f"/internal/agent/screenshot?{query}",
@@ -3224,7 +3633,7 @@ def collect_posture() -> dict:
     return signals
 
 
-def send_heartbeat(config: dict):
+def send_heartbeat(config: dict, state: "Optional[AgentState]" = None):
     payload = json.dumps({
         "status":     "online",
         "ip_address": get_local_ip(),
@@ -3257,6 +3666,14 @@ def send_heartbeat(config: dict):
         apply_enforcement_transition(changed)
     SCREENSHOT.apply(body.get("screenshots"))
 
+    # Ownership rides the heartbeat because it is the one piece of device
+    # state an admin changes while the connector is already running, and the
+    # UI turns on it: a personal device offers Disconnect, a company one does
+    # not. Reading it here means a reclassification takes effect within a
+    # beat instead of waiting for the employee to restart the connector.
+    if state is not None:
+        state.set_ownership(body.get("ownership") or "company")
+
 
 def seed_enforcement(config: dict, state: "Optional[AgentState]" = None):
     """One-shot fetch of the working-hours verdict at startup.
@@ -3287,9 +3704,9 @@ def seed_enforcement(config: dict, state: "Optional[AgentState]" = None):
         )
 
 
-def heartbeat_loop(config: dict):
+def heartbeat_loop(config: dict, state: "Optional[AgentState]" = None):
     while True:
-        send_heartbeat(config)
+        send_heartbeat(config, state)
         time.sleep(HEARTBEAT_INTERVAL)
 
 
@@ -3628,6 +4045,11 @@ class AgentState:
         self._employee_name = ""
         self._connected_at: Optional[float] = None
         self._uninstall_allowed = False
+        # "company" or "personal". Company is the default and the stricter of
+        # the two: enforced around the clock, and no Disconnect offered. Only
+        # the server can move a device to "personal", and it re-states this on
+        # every heartbeat so a reclassification takes effect without a restart.
+        self._ownership = "company"
         # macOS only: is the org CA trusted, i.e. can HTTPS block pages show?
         # None means "not applicable" (other platforms, or SSL Inspection off).
         self._https_ready: Optional[bool] = None
@@ -3691,6 +4113,14 @@ class AgentState:
         self._set(org_name=org_name, employee_name=employee_name,
                   uninstall_allowed=uninstall_allowed)
 
+    def set_ownership(self, ownership: str):
+        """Records whether this is company or personal hardware.
+
+        Anything other than an explicit "personal" is treated as company —
+        a missing or unrecognised value must not be what hands somebody a way
+        to switch protection off on a company laptop."""
+        self._set(ownership="personal" if ownership == "personal" else "company")
+
     def snapshot(self) -> dict:
         with self._lock:
             uptime = ""
@@ -3705,6 +4135,7 @@ class AgentState:
                 "employee_name": self._employee_name,
                 "uptime": uptime,
                 "uninstall_allowed": self._uninstall_allowed,
+                "ownership": self._ownership,
                 "https_ready": self._https_ready,
                 "version": AGENT_VERSION,
             }
@@ -5171,13 +5602,25 @@ def run_agent(config: dict, state: AgentState, block: bool = True):
         if system_proxy_active():
             clear_system_proxy()
 
-    threading.Thread(target=heartbeat_loop, args=(config,), daemon=True).start()
+    # Load the company's block-page branding before anything can be blocked,
+    # so the very first block an employee sees already carries their own
+    # employer's name rather than falling back to neutral wording.
+    BRANDING.config = config
+    BRANDING.refresh()
+    threading.Thread(target=BRANDING.loop_refresh, daemon=True).start()
+
+    threading.Thread(target=heartbeat_loop, args=(config, state), daemon=True).start()
     threading.Thread(target=cache.loop_refresh, daemon=True).start()
     threading.Thread(target=reporter.loop_flush, daemon=True).start()
     threading.Thread(target=mitm.loop_refresh, daemon=True).start()
     threading.Thread(target=ProxyWatchdog(config, reporter).loop, daemon=True).start()
     threading.Thread(target=AutoUpdater(config).loop, daemon=True).start()
     threading.Thread(target=AppControlWatcher(config).loop, daemon=True).start()
+    # Software inventory — what is installed, not just what is running.
+    # Its own slow loop rather than riding the heartbeat: enumerating
+    # installed software is orders of magnitude more expensive than a
+    # heartbeat and changes orders of magnitude less often.
+    threading.Thread(target=InventoryCollector(config).loop, daemon=True).start()
 
     # macOS: whether HTTPS block pages can be shown depends on the org CA
     # being trusted. Rather than installing it unannounced (a certificate

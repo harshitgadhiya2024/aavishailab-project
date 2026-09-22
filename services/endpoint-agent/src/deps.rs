@@ -3,6 +3,7 @@
 //! the Python original (cache, reporter, threats, casb, mitm).
 
 use crate::activity::ActivityReporter;
+use crate::block_page::BrandingCache;
 use crate::casb_cache::CASBControlCache;
 use crate::enforcement::EnforcementGate;
 use crate::http_client::AgentClient;
@@ -19,4 +20,6 @@ pub struct Deps {
     pub mitm: Arc<MitmEngine>,
     pub reporter: Arc<ActivityReporter>,
     pub gate: Arc<EnforcementGate>,
+    /// The company's own name/logo/message for the block page.
+    pub branding: Arc<BrandingCache>,
 }

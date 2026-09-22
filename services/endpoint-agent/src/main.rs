@@ -56,10 +56,12 @@ async fn main() {
     let casb = Arc::new(CASBControlCache::new(client.clone()));
     let reporter = Arc::new(ActivityReporter::new(client.clone(), gate.clone()));
 
+    let branding = Arc::new(aavishield_agent::block_page::BrandingCache::new(client.clone()));
+
     let mitm_client = client.clone();
     let mitm = Arc::new(MitmEngine::new(mitm_client, Arc::new(aavishield_agent::config::mitm_ca_trusted)));
 
-    let deps = Arc::new(Deps { client: client.clone(), policy: policy.clone(), threats: threats.clone(), casb: casb.clone(), mitm: mitm.clone(), reporter: reporter.clone(), gate: gate.clone() });
+    let deps = Arc::new(Deps { client: client.clone(), policy: policy.clone(), threats: threats.clone(), casb: casb.clone(), mitm: mitm.clone(), reporter: reporter.clone(), gate: gate.clone(), branding: branding.clone() });
 
     // Seed the working-hours verdict before doing anything else — fails
     // open to "enforcing" (see heartbeat::seed_enforcement's doc comment).
@@ -70,6 +72,9 @@ async fn main() {
     // requests.
     policy.refresh().await;
     mitm.refresh().await;
+    // So the very first block an employee sees already carries their own
+    // company's name rather than falling back to neutral wording.
+    branding.refresh().await;
 
     // Background refresh loops.
     tokio::spawn({
@@ -82,8 +87,19 @@ async fn main() {
         }
     });
     tokio::spawn(mitm.clone().loop_refresh(MITM_CONFIG_REFRESH_INTERVAL));
+    tokio::spawn(branding.clone().loop_refresh(aavishield_agent::block_page::REFRESH_INTERVAL));
     tokio::spawn(reporter.clone().loop_flush(ACTIVITY_FLUSH_INTERVAL));
     tokio::spawn(aavishield_agent::heartbeat::loop_heartbeat(deps.clone(), HEARTBEAT_INTERVAL));
+    // Software inventory — what is installed, not just what is running.
+    // Own interval (hourly, after a startup delay) rather than riding the
+    // heartbeat: enumerating installed software is orders of magnitude more
+    // expensive than a heartbeat and changes orders of magnitude less often.
+    tokio::spawn(aavishield_agent::inventory::loop_report(client.clone(), gate.clone()));
+    // Application control — terminates controlled apps and tells the person
+    // why. The network half of the same rule already rides the policy feed.
+    tokio::spawn(
+        Arc::new(aavishield_agent::app_control::AppControlWatcher::new(client.clone(), gate.clone())).run(),
+    );
 
     // Arm the system proxy if enforcement starts in an intercepting mode.
     if gate.intercepts() {

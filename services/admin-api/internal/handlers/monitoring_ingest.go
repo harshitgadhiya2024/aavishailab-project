@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/aavishield/admin-api/internal/models"
@@ -190,6 +191,7 @@ func (h *MonitoringIngestHandler) UploadScreenshot(c *gin.Context) {
 		MouseCount:      atoiOr(q.Get("mouse"), 0),
 		ScrollCount:     atoiOr(q.Get("scroll"), 0),
 		State:           state,
+		OpenApps:        parseOpenApps(q.Get("open_apps")),
 	}
 	if err := h.db.Create(&shot).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to record the screenshot"})
@@ -201,6 +203,39 @@ func (h *MonitoringIngestHandler) UploadScreenshot(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"screenshot_id": shot.ID, "activity_percent": percent})
+}
+
+// maxOpenApps bounds what one upload can record. The agent already caps its
+// own list; this is the server not trusting it, since the value lands in a
+// jsonb column that a dashboard renders.
+const maxOpenApps = 20
+
+// parseOpenApps turns the agent's comma-separated list into the stored slice.
+//
+// Returns nil rather than an empty slice when there is nothing, so the column
+// stays JSON null and the dashboard's "no app list for this capture" branch is
+// the same one it takes for every screenshot recorded before this existed.
+func parseOpenApps(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	seen := make(map[string]bool)
+	var out []string
+	for _, part := range strings.Split(raw, ",") {
+		name := strings.TrimSpace(part)
+		if name == "" || seen[strings.ToLower(name)] {
+			continue
+		}
+		seen[strings.ToLower(name)] = true
+		if len(name) > 60 {
+			name = name[:60]
+		}
+		out = append(out, name)
+		if len(out) >= maxOpenApps {
+			break
+		}
+	}
+	return out
 }
 
 // refreshSessionRollup recomputes the session's totals from its screenshots so

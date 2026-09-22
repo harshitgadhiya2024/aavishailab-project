@@ -49,6 +49,13 @@ func (h *ActivityHandler) List(c *gin.Context) {
 	if eventType != "" {
 		q = q.Where("event_type = ?", eventType)
 	}
+	// source groups events the way the dashboard's tabs do — "which part of the
+	// product produced this". It is derived from (event_type, category) rather
+	// than stored, because every writer already sets those two consistently and
+	// a third denormalised column would only be one more thing to keep in sync.
+	if scope := activitySourceScope(c.Query("source")); scope != nil {
+		q = q.Where(scope.query, scope.args...)
+	}
 	// action accepts a comma-separated list ("blocked,alerted") so a caller can
 	// ask for several outcomes at once without dropping to no filter at all —
 	// which would pull in the allowed/logged telemetry that isn't an incident.
@@ -106,6 +113,62 @@ func (h *ActivityHandler) List(c *gin.Context) {
 		"limit": limit,
 		"pages": (total + int64(limit) - 1) / int64(limit),
 	})
+}
+
+// activitySourceFilter is one entry of the source taxonomy — the WHERE
+// fragment that isolates the events one dashboard tab is about.
+type activitySourceFilter struct {
+	query string
+	args  []any
+}
+
+// activitySourceScope maps a source name to its filter, or nil for "no
+// filter" (unknown name or empty). Deliberately nil rather than an error:
+// an unrecognised source showing everything is a far better failure than a
+// tab that renders empty and looks like a data loss.
+//
+// The categories below are exactly what the writers set — agents.go writes
+// "dlp", "malware_detection" and "device_posture"; appcontrol.go writes
+// "application_control"; the proxy's web telemetry writes "", "domain",
+// "url_category" or "threat_intelligence".
+func activitySourceScope(source string) *activitySourceFilter {
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case "web_gateway", "swg":
+		// Malware is excluded on purpose: a blocked download is download
+		// protection's event, not the web gateway's, and it has its own tab.
+		return &activitySourceFilter{
+			query: "event_type IN ? AND (category IS NULL OR category NOT IN ?)",
+			args: []any{
+				[]string{string(models.EventTypeWebRequest), string(models.EventTypeDNSQuery)},
+				[]string{"dlp", "malware", "malware_detection", "device_posture", "application_control"},
+			},
+		}
+	case "dlp":
+		return &activitySourceFilter{query: "category = ?", args: []any{"dlp"}}
+	case "malware", "download":
+		return &activitySourceFilter{query: "category IN ?", args: []any{[]string{"malware", "malware_detection"}}}
+	case "application", "app_control":
+		return &activitySourceFilter{
+			query: "event_type IN ? OR category = ?",
+			args: []any{
+				[]string{string(models.EventTypeProcessStart), string(models.EventTypeAppLaunch), string(models.EventTypeAppInstall)},
+				"application_control",
+			},
+		}
+	case "device_posture", "posture":
+		return &activitySourceFilter{query: "category = ?", args: []any{"device_posture"}}
+	case "device":
+		return &activitySourceFilter{
+			query: "event_type IN ?",
+			args: []any{[]string{
+				string(models.EventTypeDeviceConnect),
+				string(models.EventTypeDeviceDisconnect),
+				string(models.EventTypeDeviceUninstall),
+			}},
+		}
+	default:
+		return nil
+	}
 }
 
 // splitCSV turns "blocked, alerted" into ["blocked", "alerted"], dropping

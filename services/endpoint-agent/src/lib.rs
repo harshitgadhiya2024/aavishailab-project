@@ -14,6 +14,8 @@
 //! README for why.
 
 pub mod activity;
+pub mod app_control;
+pub mod block_page;
 pub mod casb_cache;
 pub mod config;
 pub mod deps;
@@ -21,6 +23,7 @@ pub mod enforcement;
 pub mod enroll;
 pub mod heartbeat;
 pub mod http_client;
+pub mod inventory;
 pub mod mitm;
 pub mod policy_cache;
 pub mod policy_sig;

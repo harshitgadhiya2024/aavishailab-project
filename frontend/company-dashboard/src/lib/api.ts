@@ -139,31 +139,6 @@ export const policyApi = {
   blockedEmployees: (id: string) => api.get(`/api/v1/policies/${id}/blocked-employees`),
 };
 
-// ─── CASB ─────────────────────────────────────────────────────────────────────
-export const casbApi = {
-  listRules: () => api.get("/api/v1/casb/rules"),
-  createRule: (data: any) => api.post("/api/v1/casb/rules", data),
-  updateRule: (id: string, data: any) => api.put(`/api/v1/casb/rules/${id}`, data),
-  toggleRule: (id: string) => api.patch(`/api/v1/casb/rules/${id}/toggle`),
-  deleteRule: (id: string) => api.delete(`/api/v1/casb/rules/${id}`),
-  appControl: (data: {
-    app?: string;
-    category?: string;
-    activity?: string;
-    sanctioned?: boolean;
-    risk_score?: number;
-  }) => api.post("/api/v1/casb/app-control", data),
-  oobAnalyze: (data: { provider?: string; files: any[] }) =>
-    api.post("/api/v1/casb/oob/analyze", data),
-};
-
-// ─── Shadow IT ─────────────────────────────────────────────────────────────────
-export const shadowItApi = {
-  apps: (params?: Record<string, any>) => api.get("/api/v1/shadow-it/apps", { params }),
-  sanction: (data: { domain: string; action: "sanction" | "unsanction" | "unreviewed" }) =>
-    api.post("/api/v1/shadow-it/apps/sanction", data),
-};
-
 // ─── DLP ─────────────────────────────────────────────────────────────────────
 export const dlpApi = {
   // "Test a sample": run pasted text through the org's DLP scoring (a specific
@@ -220,6 +195,8 @@ export const categoryApi = {
     api.post(`/api/v1/categories/${id}/domains`, data),
   deleteDomain: (id: string, domain: string) =>
     api.delete(`/api/v1/categories/${id}/domains`, { params: { domain } }),
+  delete: (id: string) => api.delete(`/api/v1/categories/${id}`),
+  restore: (id: string) => api.post(`/api/v1/categories/${id}/restore`),
 };
 
 // ─── Application control ─────────────────────────────────────────────────────
@@ -237,6 +214,12 @@ export const appControlApi = {
     api.patch(`/api/v1/applications/rules/${id}`, data),
   deleteRule: (id: string) => api.delete(`/api/v1/applications/rules/${id}`),
   events: () => api.get("/api/v1/applications/events"),
+  // Software inventory — what employees actually have installed, as opposed
+  // to the catalog of apps the platform knows how to control.
+  installed: (params?: Record<string, any>) =>
+    api.get("/api/v1/applications/installed", { params }),
+  setControl: (id: string, data: { block_network?: boolean; block_process?: boolean; all_employees?: boolean }) =>
+    api.post(`/api/v1/applications/installed/${id}/control`, data),
   createApplication: (data: {
     name: string;
     vendor?: string;
@@ -386,6 +369,10 @@ export const companyApi = {
   update: (data: any) => api.put("/api/v1/organization", data),
   timezones: () => api.get("/api/v1/organization/timezones"),
   updateNotifications: (data: any) => api.put("/api/v1/organization/notifications", data),
+  // What the block page an employee sees says, in the company's own words.
+  blockPage: () => api.get("/api/v1/organization/block-page"),
+  updateBlockPage: (data: { message: string; contact: string }) =>
+    api.put("/api/v1/organization/block-page", data),
 };
 
 // ─── Support tickets ──────────────────────────────────────────────────────────

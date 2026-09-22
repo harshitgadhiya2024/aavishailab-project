@@ -427,6 +427,19 @@ type CategoryDomainExclusion struct {
 	Domain     string    `gorm:"not null;uniqueIndex:idx_category_domain_exclusion" json:"domain"`
 }
 
+// CategoryExclusion is CategoryDomainExclusion's whole-category analog:
+// "delete this entire category" from one org's point of view. It never
+// touches the shared URLCategory row — every other org keeps seeing the
+// category exactly as before — it only makes this one org's category list
+// and policy-builder category picker stop showing it. Reversible (see
+// CategoryHandler.Restore), unlike an actual row delete would be, because
+// hiding a whole category is a much bigger blast radius than one domain.
+type CategoryExclusion struct {
+	Base
+	OrgID      uuid.UUID `gorm:"type:uuid;not null;index;uniqueIndex:idx_category_exclusion" json:"org_id"`
+	CategoryID uuid.UUID `gorm:"type:uuid;not null;index;uniqueIndex:idx_category_exclusion" json:"category_id"`
+}
+
 // ─── CASB app-control rule ────────────────────────────────────────────────────
 
 // CASBRule is one org-authored inline app-control rule: "for this kind of app,
@@ -471,6 +484,12 @@ const (
 	EventTypeDeviceConnect    EventType = "device_connect"
 	EventTypeDeviceDisconnect EventType = "device_disconnect"
 	EventTypeDeviceUninstall  EventType = "device_uninstall"
+
+	// EventTypeAppInstall is written once, the first time a device reports an
+	// application in its software inventory — see InstalledApplication. It is
+	// the "employee installed X" line on the Activity tab, distinct from
+	// EventTypeProcessStart, which is app control noticing X *running*.
+	EventTypeAppInstall EventType = "app_install"
 
 	EventActionBlocked EventAction = "blocked"
 	EventActionAllowed EventAction = "allowed"

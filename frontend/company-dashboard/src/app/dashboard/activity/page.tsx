@@ -60,10 +60,60 @@ const RANGES = [
 // event: allowed/logged rows are routine traffic telemetry, not security
 // activity, and they have no policy, category or risk score to show.
 const ACTIONS = [
+  // "" is no action filter at all — the only way to see the routine
+  // allowed/logged rows (app installs, the daily posture line, ordinary web
+  // traffic) that the incident-only filters below deliberately exclude.
+  { label: "Everything", value: "" },
   { label: "Blocked", value: "blocked" },
   { label: "Alerted", value: "alerted" },
-  { label: "All", value: "blocked,alerted" },
+  { label: "Incidents", value: "blocked,alerted" },
 ];
+
+// Which part of the product produced the event. Maps 1:1 onto the API's
+// `source` parameter (see activitySourceScope in the Go handler), so a tab
+// here is a server-side filter, not a client-side slice of one page.
+const SOURCES = [
+  { label: "All", value: "" },
+  { label: "Web Gateway", value: "web_gateway" },
+  { label: "DLP", value: "dlp" },
+  { label: "Applications", value: "application" },
+  { label: "Downloads", value: "malware" },
+  { label: "Device posture", value: "device_posture" },
+  { label: "Devices", value: "device" },
+];
+
+/**
+ * Client-side mirror of the API's `source` filter, used only for the live
+ * WebSocket feed — a pushed event has to be judged here because it never went
+ * through the query that already applied the filter server-side.
+ *
+ * Kept deliberately small and in the same order as the Go version: if the two
+ * ever disagree, the visible symptom is one live row appearing under the wrong
+ * tab until the next poll corrects it, not a wrong stored result.
+ */
+function matchesSource(source: string, ev: ActivityEvent): boolean {
+  if (!source) return true;
+  const cat = (ev.category ?? "").toLowerCase();
+  const type = ev.event_type ?? "";
+  switch (source) {
+    case "web_gateway":
+      return (type === "web_request" || type === "dns_query")
+        && !["dlp", "malware", "malware_detection", "device_posture", "application_control"].includes(cat);
+    case "dlp":
+      return cat === "dlp";
+    case "malware":
+      return cat === "malware" || cat === "malware_detection";
+    case "application":
+      return type === "process_start" || type === "app_launch" || type === "app_install"
+        || cat === "application_control";
+    case "device_posture":
+      return cat === "device_posture";
+    case "device":
+      return ["device_connect", "device_disconnect", "device_uninstall"].includes(type);
+    default:
+      return true;
+  }
+}
 
 export default function ActivityPage() {
   const { data: session } = useSession();
@@ -71,14 +121,21 @@ export default function ActivityPage() {
   const [days, setDays] = useState(7);
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
-  const [actionFilter, setActionFilter] = useState("blocked");
+  const [actionFilter, setActionFilter] = useState("");
+  const [source, setSource] = useState("");
   const [liveEvents, setLiveEvents] = useState<ActivityEvent[]>([]);
   const [wsConnected, setWsConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["activity", page, limit, search, days, actionFilter],
-    queryFn: () => activityApi.list({ page, limit, search: search || undefined, action: actionFilter || undefined, days }),
+    queryKey: ["activity", page, limit, search, days, actionFilter, source],
+    queryFn: () => activityApi.list({
+      page, limit,
+      search: search || undefined,
+      action: actionFilter || undefined,
+      source: source || undefined,
+      days,
+    }),
     refetchInterval: wsConnected ? undefined : 15_000,
   });
 
@@ -109,6 +166,7 @@ export default function ActivityPage() {
           // so the live feed has to match the same way the query does.
           const wanted = actionFilter.split(",").filter(Boolean);
           if (wanted.length > 0 && !wanted.includes(ev.action)) return;
+          if (!matchesSource(source, ev)) return;
           setLiveEvents(prev => [ev, ...prev].slice(0, 50));
         } catch {}
       };
@@ -116,7 +174,7 @@ export default function ActivityPage() {
 
     connect();
     return () => { cancelled = true; wsRef.current?.close(); };
-  }, [(session as any)?.accessToken, actionFilter]);
+  }, [(session as any)?.accessToken, actionFilter, source]);
 
   const events = Array.isArray(data?.data?.data) ? data.data.data : (data?.data?.events ?? []);
   const total = data?.data?.total ?? 0;
@@ -150,6 +208,29 @@ export default function ActivityPage() {
       )}
 
       <div className="bg-card rounded-xl border border-border shadow-sm">
+        {/* Source tabs — one row per part of the product, so "show me only the
+            DLP trail" or "only app installs" is one click rather than a
+            search. Scrolls horizontally on a narrow screen instead of
+            wrapping into a second confusing row of pills. */}
+        <div className="border-b border-border overflow-x-auto">
+          <div className="flex min-w-max">
+            {SOURCES.map(s => (
+              <button
+                key={s.value}
+                onClick={() => { setSource(s.value); setLiveEvents([]); setPage(1); }}
+                className={cn(
+                  "px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors",
+                  source === s.value
+                    ? "border-brand-500 text-brand-500"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Filters */}
         <div className="p-4 border-b border-border flex flex-wrap gap-3 items-center">
           <div className="relative flex-1 min-w-[200px]">

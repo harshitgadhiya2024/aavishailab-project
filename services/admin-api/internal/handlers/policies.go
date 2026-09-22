@@ -120,8 +120,15 @@ func (h *PolicyHandler) List(c *gin.Context) {
 	if limit > 100 { limit = 100 }
 
 	q := h.db.Where("org_id = ?", orgID)
+	// type accepts a comma-separated list ("domain,url_category") so the Web
+	// Gateway tab can ask for exactly the policy kinds it owns in one query,
+	// rather than firing one request per type and merging client-side.
 	if pType != "" {
-		q = q.Where("type = ?", pType)
+		if types := splitCSV(pType); len(types) > 1 {
+			q = q.Where("type IN ?", types)
+		} else {
+			q = q.Where("type = ?", pType)
+		}
 	}
 	if enabled != "" {
 		q = q.Where("enabled = ?", enabled == "true")

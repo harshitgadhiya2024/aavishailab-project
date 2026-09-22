@@ -407,7 +407,14 @@ func (h *AgentHandler) Heartbeat(c *gin.Context) {
 
 	// A device that drops below the posture pass line raises an incident so the
 	// admin sees non-compliant machines, mirroring how DLP/malware log events.
-	if postureResult != nil && postureResult.Status != "pass" {
+	//
+	// At most one per device per day. Posture is re-evaluated on every
+	// heartbeat (roughly every 30s), and a laptop that simply has FileVault off
+	// fails every single one of them — which previously wrote an event each
+	// time and buried every other kind of activity under hundreds of identical
+	// posture rows. The daily-digest shape is what the Activity tab wants:
+	// "this machine was non-compliant on this day", once.
+	if postureResult != nil && postureResult.Status != "pass" && !h.postureLoggedToday(orgID, deviceID, now) {
 		reason := "Device posture needs attention"
 		if len(postureResult.Reasons) > 0 {
 			reason = strings.Join(postureResult.Reasons, "; ")
@@ -446,7 +453,50 @@ func (h *AgentHandler) Heartbeat(c *gin.Context) {
 	// anchor it needs to hold the answer until the next beat.
 	resp["enforcement"] = h.enforcementFor(deviceID, orgID, empID, now)
 	resp["screenshots"] = screenshotConfigFor(h.db, orgID)
+	// Ownership rides the heartbeat, not just /config, because it is the one
+	// piece of device state an admin changes *while the connector is already
+	// running* — and the connector's behaviour turns on it: a company machine
+	// is enforced around the clock and offers no Disconnect, a personal one
+	// follows its schedule and does. Sending it only at startup would mean an
+	// employee had to restart the connector before a reclassification took
+	// effect, which is exactly when they are least likely to.
+	resp["ownership"] = h.deviceOwnership(deviceID, orgID)
 	c.JSON(http.StatusOK, resp)
+}
+
+// deviceOwnership is "company" or "personal" for one device.
+//
+// Defaults to company on any read failure rather than personal: a company
+// device is the stricter of the two (enforced around the clock, no employee
+// Disconnect), and a transient database error must not hand someone a way to
+// switch protection off.
+func (h *AgentHandler) deviceOwnership(deviceID, orgID uuid.UUID) string {
+	var dev models.Device
+	if err := h.db.Select("ownership").Where("id = ? AND org_id = ?", deviceID, orgID).First(&dev).Error; err != nil {
+		return models.OwnershipCompany
+	}
+	if dev.Ownership == models.OwnershipPersonal {
+		return models.OwnershipPersonal
+	}
+	return models.OwnershipCompany
+}
+
+// postureLoggedToday reports whether this device already has a posture event
+// for the current calendar day.
+//
+// "Day" is the server's day, not the device's. A per-device timezone would be
+// more faithful to the employee's experience, but posture rows are read on a
+// dashboard that shows one company's fleet on one calendar — one shared
+// boundary keeps the count of "non-compliant machines today" from depending on
+// whose laptop happened to cross midnight first.
+func (h *AgentHandler) postureLoggedToday(orgID, deviceID uuid.UUID, now time.Time) bool {
+	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	var count int64
+	h.db.Model(&models.ActivityEvent{}).
+		Where("org_id = ? AND device_id = ? AND category = ? AND timestamp >= ?",
+			orgID, deviceID, "device_posture", dayStart).
+		Count(&count)
+	return count > 0
 }
 
 // GetConfig handles GET /internal/agent/config
@@ -889,16 +939,19 @@ func (h *AgentHandler) ScanDLP(c *gin.Context) {
 		return
 	}
 
-	// Map the scoring band's action to an event action + the block/allow
-	// signal the agent acts on (it only stops an upload on "block"; alert/log
-	// are recorded but the upload proceeds).
+	// DLP is monitor-only. The scoring pipeline still computes a full
+	// block/alert/allow band — that band is the severity we show the company —
+	// but it is never turned into a block: the upload always proceeds and the
+	// company sees what went out. Stopping an employee mid-send was the
+	// previous behaviour and is deliberately gone; the value here is the
+	// record, not the interception.
+	//
+	// respAction is therefore pinned to "allow" and never read from v.action.
+	// A "block" band becomes an *alerted* event so it still sorts to the top
+	// of the incident list and still emails the admins, without anything on
+	// the endpoint refusing the request.
 	eventAction := models.EventActionLogged
-	respAction := "allow"
-	switch v.action {
-	case "block":
-		eventAction = models.EventActionBlocked
-		respAction = "block"
-	case "alert":
+	if v.action == "block" || v.action == "alert" {
 		eventAction = models.EventActionAlerted
 	}
 
@@ -922,6 +975,12 @@ func (h *AgentHandler) ScanDLP(c *gin.Context) {
 			"band":      v.band,
 			"method":    requestMethod,
 			"path":      requestPath,
+			// The three fields the DLP log is required to show beyond the
+			// generic activity columns. Derived here, at capture time, because
+			// the request that produced them is gone afterwards.
+			"request_source": classifyDLPRequestSource(c.Query("user_agent"), c.Query("source")),
+			"destination":    dlpDestinationLabel(destination),
+			"content_kind":   dlpContentKind(filename, contentType),
 		},
 		Timestamp: time.Now(),
 	}
@@ -929,15 +988,105 @@ func (h *AgentHandler) ScanDLP(c *gin.Context) {
 	events := []models.ActivityEvent{event}
 	attachEmployees(h.db, events)
 	h.hub.BroadcastActivityEvent(events[0])
-	h.alertAdmins(orgID, empID, "Sensitive data blocked on its way out", destination,
+	h.alertAdmins(orgID, empID, "Sensitive data left the company", destination,
 		strings.Join(v.detectors, ", "), v.score, v.action)
 
-	resp["action"] = respAction
+	// Always "allow": see the monitor-only note above. The agent keys its
+	// behaviour off this field alone, so leaving it at the initialised "allow"
+	// is what actually guarantees no upload is ever stopped, even if the
+	// scoring pipeline starts returning new band names later.
 	resp["policy_name"] = v.policyName
 	resp["detectors"] = v.detectors
 	resp["reason"] = v.reason
 	resp["incident_id"] = event.ID.String()
 	c.JSON(http.StatusOK, resp)
+}
+
+// ─── DLP log classification ──────────────────────────────────────────────────
+// Three small derivations that turn one scanned request into the columns the
+// DLP log is required to show. All three run once, at capture time, because
+// the originating request is not available again afterwards.
+
+// browserUAMarkers are the product tokens every mainstream browser puts in its
+// User-Agent. A native app's UA is either its own product string ("Slack/4.35",
+// "PostmanRuntime/7.x", "Electron/…") or absent entirely.
+//
+// Order matters only in that "mozilla" is last: it is the widest net (every
+// browser still sends it for historical reasons) and some Electron apps
+// inherit it too, so the specific tokens get to answer first.
+var browserUAMarkers = []string{"chrome/", "safari/", "firefox/", "edg/", "edge/", "opr/", "gecko/", "mozilla/"}
+
+// classifyDLPRequestSource answers "app or browser" for the DLP log.
+//
+// explicit wins when the agent could determine it directly (it knows which
+// local process owns the connection in some paths); otherwise this falls back
+// to the User-Agent. An unknown or missing UA is reported as "app", not
+// "browser": a request with no recognisable browser signature came from
+// something that is not a browser, and guessing "browser" would quietly
+// mislabel exactly the native-app traffic this column exists to surface.
+func classifyDLPRequestSource(userAgent, explicit string) string {
+	switch strings.ToLower(strings.TrimSpace(explicit)) {
+	case "browser", "app":
+		return strings.ToLower(strings.TrimSpace(explicit))
+	}
+
+	ua := strings.ToLower(strings.TrimSpace(userAgent))
+	if ua == "" {
+		return "app"
+	}
+	// Electron apps ship a full Chrome UA *plus* their own token, so an
+	// explicit Electron marker outranks the browser markers below.
+	if strings.Contains(ua, "electron/") {
+		return "app"
+	}
+	for _, marker := range browserUAMarkers {
+		if strings.Contains(ua, marker) {
+			return "browser"
+		}
+	}
+	return "app"
+}
+
+// dlpDestinationLabel is where the data was going, as a person would name it.
+// The agent already sends the request host; this only strips the noise ("www.",
+// a port) so the log reads "slack.com" and not "www.slack.com:443".
+func dlpDestinationLabel(destination string) string {
+	d := normalizePolicyDomain(destination)
+	if d == "" {
+		return strings.TrimSpace(destination)
+	}
+	return d
+}
+
+// dlpContentKind splits an incident into the two categories the log shows:
+// a file the person attached, or text they typed/pasted.
+//
+// A filename is the strongest signal and is checked first — a multipart body
+// carrying one is a file upload whatever its outer content type says. Absent
+// that, only an explicitly textual or form-encoded body counts as text; an
+// unrecognised binary type is treated as a file, because that is what it is.
+func dlpContentKind(filename, contentType string) string {
+	if strings.TrimSpace(filename) != "" {
+		return "file-upload"
+	}
+	ct := strings.ToLower(strings.TrimSpace(contentType))
+	if i := strings.Index(ct, ";"); i >= 0 {
+		ct = strings.TrimSpace(ct[:i])
+	}
+	switch {
+	case ct == "":
+		return "text"
+	case strings.HasPrefix(ct, "text/"),
+		ct == "application/json",
+		ct == "application/x-www-form-urlencoded",
+		ct == "application/xml",
+		ct == "application/graphql":
+		return "text"
+	case strings.HasPrefix(ct, "multipart/"):
+		return "file-upload"
+	default:
+		return "file-upload"
+	}
 }
 
 // dlpVerdict is the handler's unified DLP result, whether it came from the
@@ -1222,8 +1371,23 @@ func sensitiveMITMBypassDomains(db *gorm.DB) []string {
 	return domains
 }
 
+// mitmSettingsFromOrg resolves an org's SSL Inspection state.
+//
+// Absent means ON. SSL Inspection is what lets DLP see an upload at all —
+// without it the only inspectable traffic is plain HTTP, which in practice is
+// none of it — and it is also the only way an HTTPS block can render the
+// company's own page instead of a browser connection error. Both of those are
+// now required behaviour for every company rather than an opt-in, so "never
+// configured" has to resolve to enabled.
+//
+// An org that has explicitly set it to false still gets false: the key is
+// present in that case, so this only changes what silence means.
 func mitmSettingsFromOrg(org *models.Organization) (enabled bool, bypass []string) {
-	enabled, _ = org.Settings["mitm_enabled"].(bool)
+	if raw, ok := org.Settings["mitm_enabled"]; ok {
+		enabled, _ = raw.(bool)
+	} else {
+		enabled = true
+	}
 	if extra, ok := org.Settings["mitm_bypass_domains"].([]any); ok {
 		for _, v := range extra {
 			if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
@@ -1286,6 +1450,13 @@ func (h *AgentHandler) GetCACert(c *gin.Context) {
 
 	ca, err := mitm.EnsureOrgCA(h.db, orgID)
 	if err != nil {
+		// Logged server-side only — the client response stays generic
+		// (never echo crypto/DB internals to an agent), but this handler
+		// previously gave *zero* signal about which of EnsureOrgCA's several
+		// failure modes (missing/rotated CA_KEY_ENCRYPTION_KEY, corrupt row,
+		// DB error) actually happened, which made "the certificate could not
+		// be installed" on the client undiagnosable from the server side.
+		log.Printf("GetCACert: EnsureOrgCA failed for org %s: %v", orgID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load organization CA"})
 		return
 	}
@@ -1314,6 +1485,7 @@ func (h *AgentHandler) SignCert(c *gin.Context) {
 
 	ca, err := mitm.EnsureOrgCA(h.db, orgID)
 	if err != nil {
+		log.Printf("SignCert: EnsureOrgCA failed for org %s: %v", orgID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load organization CA"})
 		return
 	}
@@ -1855,4 +2027,46 @@ func (h *AgentHandler) alertAdmins(orgID uuid.UUID, empID *uuid.UUID, title, tar
 	}
 
 	mailer.SecurityAlert(admins, orgName, title, empName, target, detail, score)
+}
+
+// ─── Block-page branding ─────────────────────────────────────────────────────
+
+// GetBranding handles GET /internal/agent/branding — what the block page an
+// employee sees should say and look like.
+//
+// This exists because a block page carrying the security vendor's name reads
+// like malware to the person being blocked, while one carrying their own
+// employer's name reads like policy. The agent caches the response and
+// re-reads it every few minutes, so this is a small, cheap, high-frequency
+// endpoint: it deliberately returns four strings and nothing else.
+func (h *AgentHandler) GetBranding(c *gin.Context) {
+	deviceID, orgID, _ := h.authAgent(c)
+	if deviceID == uuid.Nil {
+		return
+	}
+
+	var org models.Organization
+	if err := h.db.Select("name, logo_url, settings").Where("id = ?", orgID).First(&org).Error; err != nil {
+		// An empty body is a valid answer: the agent falls back to neutral
+		// wording ("Access blocked", "Your organization's security policy")
+		// rather than showing a half-rendered page or no page at all.
+		c.JSON(http.StatusOK, gin.H{})
+		return
+	}
+
+	// Message and contact live in Settings rather than as columns: they are
+	// free text an admin edits, with no query or export ever filtering on
+	// them, which is exactly what Settings is for.
+	message, _ := org.Settings["block_page_message"].(string)
+	contact, _ := org.Settings["block_page_contact"].(string)
+	if contact == "" {
+		contact = org.ContactEmail
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"company_name":    org.Name,
+		"logo_url":        org.LogoURL,
+		"message":         strings.TrimSpace(message),
+		"support_contact": strings.TrimSpace(contact),
+	})
 }

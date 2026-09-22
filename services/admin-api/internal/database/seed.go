@@ -33,9 +33,6 @@ func SeedDevData(db *gorm.DB) error {
 	if err := seedURLCategories(db); err != nil {
 		return err
 	}
-	if err := seedDomainRules(db); err != nil {
-		return err
-	}
 	log.Println("✅ Development seed data ready")
 	return nil
 }
@@ -164,28 +161,3 @@ func seedURLCategories(db *gorm.DB) error {
 	return nil
 }
 
-func seedDomainRules(db *gorm.DB) error {
-	rules := []models.DomainRule{
-		{Domain: "instagram.com", Action: models.PolicyActionBlock, Category: "social_media", Reason: "Social media", Source: "manual", Enabled: true},
-		{Domain: "www.instagram.com", Action: models.PolicyActionBlock, Category: "social_media", Reason: "Social media", Source: "manual", Enabled: true},
-		{Domain: "web.whatsapp.com", Action: models.PolicyActionBlock, Category: "social_media", Reason: "Social media", Source: "manual", Enabled: true},
-		{Domain: "facebook.com", Action: models.PolicyActionBlock, Category: "social_media", Reason: "Social media", Source: "manual", Enabled: true},
-		{Domain: "www.facebook.com", Action: models.PolicyActionBlock, Category: "social_media", Reason: "Social media", Source: "manual", Enabled: true},
-		{Domain: "tiktok.com", Action: models.PolicyActionBlock, Category: "social_media", Reason: "Social media", Source: "manual", Enabled: true},
-		{Domain: "twitter.com", Action: models.PolicyActionBlock, Category: "social_media", Reason: "Social media", Source: "manual", Enabled: true},
-		{Domain: "x.com", Action: models.PolicyActionBlock, Category: "social_media", Reason: "Social media", Source: "manual", Enabled: true},
-	}
-
-	for _, rule := range rules {
-		var count int64
-		if err := db.Model(&models.DomainRule{}).Where("domain = ? AND org_id IS NULL", rule.Domain).Count(&count).Error; err != nil {
-			return err
-		}
-		if count == 0 {
-			if err := db.Create(&rule).Error; err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}

@@ -60,6 +60,7 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	otpH := handlers.NewOTPHandler(db)
 	companyH := handlers.NewCompanyHandler(db)
 	appH := handlers.NewAppControlHandler(db)
+	invH := handlers.NewInventoryHandler(db, wsHub)
 	enfH := handlers.NewEnforcementHandler(db)
 	monH := handlers.NewMonitoringHandler(db)
 	monIngestH := handlers.NewMonitoringIngestHandler(db, agentH)
@@ -384,6 +385,10 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 		apps.DELETE("/rules/:id", middleware.RequirePermission(models.PermPoliciesWrite), appH.DeleteRule)
 		apps.GET("/events", middleware.RequirePermission(models.PermActivityRead), appH.Events)
 		apps.POST("", middleware.RequirePermission(models.PermPoliciesWrite), appH.CreateApplication)
+		// Software inventory. Registered before the ":id" route so
+		// "installed" is not captured as an application id.
+		apps.GET("/installed", middleware.RequirePermission(models.PermPoliciesRead), invH.ListInstalled)
+		apps.POST("/installed/:id/control", middleware.RequirePermission(models.PermPoliciesWrite), invH.SetControl)
 		apps.DELETE("/:id", middleware.RequirePermission(models.PermPoliciesWrite), appH.DeleteApplication)
 	}
 
@@ -441,6 +446,10 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 		organization.PUT("", middleware.RequirePermission(models.PermSettingsWrite), companyH.Update)
 		organization.GET("/timezones", middleware.RequirePermission(models.PermSettingsRead), companyH.Timezones)
 		organization.PUT("/notifications", middleware.RequirePermission(models.PermSettingsWrite), companyH.UpdateNotifications)
+		// What the block page an employee sees should say, in the company's
+		// own words. Name and logo come from the profile above.
+		organization.GET("/block-page", middleware.RequirePermission(models.PermSettingsRead), companyH.GetBlockPage)
+		organization.PUT("/block-page", middleware.RequirePermission(models.PermSettingsWrite), companyH.UpdateBlockPage)
 	}
 
 	// Dashboard users: who else can sign in, with which role and teams.
@@ -481,6 +490,8 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 		categories.GET("/:id/domains", middleware.RequirePermission(models.PermCategoriesRead), catH.ListDomains)
 		categories.POST("/:id/domains", middleware.RequirePermission(models.PermCategoriesWrite), catH.AddDomains)
 		categories.DELETE("/:id/domains", middleware.RequirePermission(models.PermCategoriesWrite), catH.DeleteDomain)
+		categories.DELETE("/:id", middleware.RequirePermission(models.PermCategoriesWrite), catH.Delete)
+		categories.POST("/:id/restore", middleware.RequirePermission(models.PermCategoriesWrite), catH.Restore)
 	}
 
 	// SSL Inspection (org-level MITM config, needed for DLP over HTTPS)
@@ -531,6 +542,7 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 		portalProtected.Use(middleware.PortalRequired())
 		{
 			portalProtected.GET("/me", portalH.Me)
+			portalProtected.POST("/change-password", portalH.ChangePassword)
 			portalProtected.GET("/download/:os", portalH.DownloadInstaller)
 			portalProtected.GET("/uninstall/:os", portalH.DownloadUninstaller)
 			portalProtected.GET("/installer-info/:os", portalH.InstallerInfo)
@@ -562,12 +574,17 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 			// report when one is stopped.
 			agent.GET("/app-control", agentH.GetAppControl)
 			agent.POST("/app-block", agentH.ReportAppBlock)
+			// Software inventory: the device's full installed-app snapshot.
+			agent.POST("/inventory", invH.ReportInventory)
 			// Time-and-activity monitoring: sessions and screenshots.
 			agent.POST("/session/start", monIngestH.StartSession)
 			agent.POST("/session/end", monIngestH.EndSession)
 			agent.POST("/screenshot", monIngestH.UploadScreenshot)
 			agent.POST("/scan-dlp", agentH.ScanDLP)
 			agent.GET("/mitm-config", agentH.GetMITMConfig)
+			// What the employee's block page should say — the company's own
+			// name, logo and message, not the vendor's.
+			agent.GET("/branding", agentH.GetBranding)
 			agent.GET("/ca-cert", agentH.GetCACert)
 			agent.POST("/sign-cert", agentH.SignCert)
 			agent.GET("/threat-lookup", agentH.ThreatLookup)
