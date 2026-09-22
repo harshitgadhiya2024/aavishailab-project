@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { monitoringApi } from "@/lib/api";
 import {
   Camera, RefreshCw, Loader2, Trash2, X, ChevronDown, Clock,
-  Keyboard, MousePointer2, MoveVertical, CalendarDays, AlertTriangle,
+  Keyboard, MousePointer2, MoveVertical, CalendarDays, AlertTriangle, AppWindow,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -416,6 +416,43 @@ function SessionCard({
   );
 }
 
+/**
+ * What was open when the screenshot was taken.
+ *
+ * Applications rather than processes, captured on the agent at the moment of
+ * the shot — the window list a second later is a different answer. Renders
+ * nothing at all when the list is empty, which is normal: the enumeration
+ * needs a windowing system and, on Linux, a tool that may not be installed,
+ * and every screenshot recorded before this feature existed has no list
+ * either. An empty row of chips would read as "nothing was open", which is a
+ * different and wrong claim.
+ */
+function OpenApps({ apps, max }: { apps?: string[] | null; max?: number }) {
+  if (!apps || apps.length === 0) return null;
+  const limit = max ?? apps.length;
+  const shown = apps.slice(0, limit);
+  const rest = apps.length - shown.length;
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {shown.map(name => (
+        <span
+          key={name}
+          title={name}
+          className="inline-flex items-center gap-1 rounded bg-elevated px-1.5 py-0.5 text-[11px] text-muted-foreground max-w-[120px]"
+        >
+          <AppWindow className="w-3 h-3 flex-shrink-0" />
+          <span className="truncate">{name}</span>
+        </span>
+      ))}
+      {rest > 0 && (
+        <span className="text-[11px] text-subtle" title={apps.slice(limit).join(", ")}>
+          +{rest} more
+        </span>
+      )}
+    </div>
+  );
+}
+
 function Thumbnail({ shot, tz, onClick }: { shot: any; tz: string; onClick: () => void }) {
   const pct = shot.activity_percent ?? 0;
   const barColor = pct >= 50 ? "bg-green-500" : pct >= 20 ? "bg-yellow-500" : "bg-red-500";
@@ -438,6 +475,11 @@ function Thumbnail({ shot, tz, onClick }: { shot: any; tz: string; onClick: () =
           <div className={cn("h-full rounded-full", barColor)} style={{ width: `${pct}%` }} />
         </div>
         <span className="text-[11px] text-muted-foreground tabular-nums w-8 text-right">{pct}%</span>
+      </div>
+      {/* Two at a glance on the card; the rest are in the zoom view, so the
+          grid stays a grid of images rather than a wall of labels. */}
+      <div className="mt-1.5">
+        <OpenApps apps={shot.open_apps} max={2} />
       </div>
     </button>
   );
@@ -495,6 +537,12 @@ function ZoomModal({
             <MoveVertical className="w-4 h-4" /> {shot.scroll_count} scrolls
           </span>
         </div>
+        {shot.open_apps?.length > 0 && (
+          <div className="px-5 py-3 border-t border-border">
+            <p className="text-xs font-medium text-muted-foreground mb-1.5">Open at this moment</p>
+            <OpenApps apps={shot.open_apps} />
+          </div>
+        )}
       </div>
     </div>
   );

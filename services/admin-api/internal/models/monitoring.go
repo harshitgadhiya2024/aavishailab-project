@@ -86,6 +86,18 @@ type Screenshot struct {
 	// the employee portal can set them.
 	State string `gorm:"default:'active';index" json:"state"`
 
+	// Which applications were open when this was captured, shown beside the
+	// image so a reviewer can tell what somebody was working in without
+	// having to read the screen.
+	//
+	// Applications, not processes: one browser contributes dozens of helper
+	// processes out of a single bundle, and a list of forty "Chrome Helper"
+	// entries answers nothing. Captured on the agent at the moment of the
+	// screenshot, because the window list a second later is a different
+	// answer. Empty is normal and expected — the enumeration needs a windowing
+	// system and, on Linux, a tool that may not be installed.
+	OpenApps []string `gorm:"type:jsonb;serializer:json" json:"open_apps"`
+
 	Employee *Employee `gorm:"foreignKey:EmployeeID" json:"employee,omitempty"`
 }
 

@@ -3314,6 +3314,71 @@ class ActivityMonitor:
         }
 
 
+def open_application_names(limit: int = 12) -> List[str]:
+    """Which applications the person has open, as they would name them.
+
+    Shown beside each screenshot so a reviewer can tell what somebody was
+    working in without having to read the image. Deliberately *applications*,
+    not processes: a browser contributes dozens of helper processes out of one
+    bundle, and a list of forty "Google Chrome Helper (Renderer)" entries
+    answers nothing.
+
+    Windowed apps only, so background daemons and the agent's own helpers stay
+    out of it. Returns [] on any failure — this is context beside an image, and
+    a screenshot with no app list is far better than no screenshot.
+    """
+    system = platform.system()
+    names: List[str] = []
+    try:
+        if system == "Darwin":
+            # `System Events` lists exactly the processes with a UI, which is
+            # the definition we want and one macOS already maintains.
+            rc, out = _run([
+                "osascript", "-e",
+                'tell application "System Events" to get name of every process '
+                'whose background only is false',
+            ])
+            if rc == 0:
+                names = [n.strip() for n in out.split(",")]
+        elif system == "Windows":
+            rc, out = _run([
+                "powershell", "-NoProfile", "-NonInteractive", "-Command",
+                "Get-Process | Where-Object { $_.MainWindowTitle } | "
+                "ForEach-Object { if ($_.Description) { $_.Description } else { $_.ProcessName } }",
+            ])
+            if rc == 0:
+                names = [n.strip() for n in out.splitlines()]
+        else:
+            # wmctrl is the only widely available way to enumerate windows on
+            # X11 without a toolkit dependency; its absence is normal and
+            # simply yields no list.
+            rc, out = _run(["wmctrl", "-lx"])
+            if rc == 0:
+                for line in out.splitlines():
+                    parts = line.split(None, 3)
+                    if len(parts) >= 3 and "." in parts[2]:
+                        # WM_CLASS is "instance.Class" — the Class half is the
+                        # human-facing one ("Code", "Firefox").
+                        names.append(parts[2].split(".")[-1])
+    except Exception as exc:  # noqa: BLE001 - context only, never fatal
+        log.debug("could not list open applications: %s", exc)
+        return []
+
+    seen, out_names = set(), []
+    for name in names:
+        name = name.strip()
+        if not name or name.lower() in seen:
+            continue
+        # The agent's own window is not something a reviewer needs told about.
+        if "aavishield" in name.lower():
+            continue
+        seen.add(name.lower())
+        out_names.append(name[:60])
+        if len(out_names) >= limit:
+            break
+    return out_names
+
+
 def _capture_screen(blur: bool) -> Optional[Tuple[bytes, int, int]]:
     """Grabs the primary screen and returns (webp_bytes, width, height), or
     None if screen capture isn't available (no permission, headless, missing
@@ -3425,6 +3490,12 @@ class ScreenshotCapturer:
             "content_type": "image/webp",
             **{k: str(v) for k, v in stats.items()},
         }
+        # What was open at the moment of capture. Sent as a query param
+        # alongside the rest of the metadata, so the body stays exactly the
+        # image bytes — the same convention every other agent upload uses.
+        apps = open_application_names()
+        if apps:
+            params["open_apps"] = ",".join(apps)
         query = urllib.parse.urlencode(params)
         try:
             req = _agent_request(self.config, f"/internal/agent/screenshot?{query}",
