@@ -116,10 +116,56 @@ async fn run(ui: UiState, client_slot: ClientSlot, mut commands: tokio::sync::mp
         return;
     }
 
-    // Not enrolled. Sit idle until the GUI's Connect button sends a
-    // command — everything up to and including the proxy binding a port
-    // waits for that, exactly as it does when a person is watching the
-    // Python original's window.
+    // No saved config yet. A packaged/MDM-pushed install carries its
+    // enrollment token via AAVISHIELD_ENROLL_TOKEN or a drop file (see
+    // config::find_enroll_token) rather than a person opening the window
+    // and clicking Connect — try that silent path once, here, before
+    // falling back to waiting on the GUI. Mirrors Python's
+    // `ensure_enrolled()` exactly.
+    //
+    // Closes a real gap found by actually running this binary with
+    // AAVISHIELD_ENROLL_TOKEN set on real hardware: `enroll::
+    // ensure_enrolled` — which wraps exactly this token/drop-file lookup —
+    // existed and was fully implemented, but nothing in the GUI binary's
+    // own startup ever called it. A managed install with no person at the
+    // keyboard had no way to enroll itself; the window would sit on "Not
+    // connected" until someone clicked Connect and went through the
+    // interactive browser flow instead.
+    if let Some((token, admin_url, portal_url)) = crate::config::find_enroll_token().await {
+        let admin_url = admin_url.unwrap_or_else(|| crate::config::DEFAULT_ADMIN_URL.to_string());
+        let portal_url = portal_url.unwrap_or_else(|| crate::config::DEFAULT_PORTAL_URL.to_string());
+        match crate::enroll::enroll_with_token(&token, &admin_url, &portal_url).await {
+            Ok(config) => {
+                crate::config::discard_enroll_drops().await;
+                tracing::info!(device_id = %config.device_id, org_id = %config.org_id, "enrolled via token");
+                ui.set_connected("", "");
+                run_full_agent(config, ui, client_slot, commands).await;
+                return;
+            }
+            Err(crate::enroll::EnrollError::AlreadyEnrolled(msg)) => {
+                // Terminal, same as the interactive flow's own handling of
+                // this error a few lines below — only an administrator can
+                // clear it, so this falls through to the ordinary
+                // wait-for-commands loop with the window showing Blocked
+                // rather than retrying.
+                tracing::warn!(message = %msg, "token enrollment refused — device already registered");
+                ui.set_blocked(msg);
+            }
+            Err(e) => {
+                // Transient (network, server error): log and fall through
+                // to the normal wait-for-Connect state rather than
+                // retrying in a loop with no backoff — matches Python's
+                // ensure_enrolled(), which also just logs and returns
+                // None on failure, leaving the person to click Connect.
+                tracing::warn!(error = %e, "token enrollment failed — falling back to interactive Connect");
+            }
+        }
+    }
+
+    // Not enrolled (or the token path above just failed/was blocked). Sit
+    // idle until the GUI's Connect button sends a command — everything up
+    // to and including the proxy binding a port waits for that, exactly as
+    // it does when a person is watching the Python original's window.
     let cancel = Arc::new(AtomicBool::new(false));
     loop {
         let cmd = match commands.recv().await {
