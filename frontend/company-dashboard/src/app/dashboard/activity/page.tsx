@@ -56,13 +56,14 @@ const RANGES = [
   { label: "7d", days: 7 },
   { label: "30d", days: 30 },
 ];
-// "All" means every incident — blocked plus alerted — not literally every
-// event: allowed/logged rows are routine traffic telemetry, not security
-// activity, and they have no policy, category or risk score to show.
+// "Everything" is not literally every action: the server hard-excludes
+// "allowed" from every response to this endpoint regardless of what filter
+// is asked for (see the Go handler's List) — routine, allowed traffic is
+// never stored at all any more, so there is nothing for any filter value to
+// surface. "" here just means "no action filter", which in practice shows
+// blocked, alerted and logged rows (app installs, the daily posture line) —
+// everything that isn't routine passthrough traffic.
 const ACTIONS = [
-  // "" is no action filter at all — the only way to see the routine
-  // allowed/logged rows (app installs, the daily posture line, ordinary web
-  // traffic) that the incident-only filters below deliberately exclude.
   { label: "Everything", value: "" },
   { label: "Blocked", value: "blocked" },
   { label: "Alerted", value: "alerted" },
