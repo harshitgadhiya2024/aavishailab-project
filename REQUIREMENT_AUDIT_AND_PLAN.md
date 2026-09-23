@@ -224,10 +224,40 @@ by the Rust heartbeat loop even though every other piece of it existed —
 both fixed; see the commit history for the live verification against a
 real server with real admin credentials.
 
-### Phase 4 — Packaging the Rust connector
-Rewrite `packaging/{linux,macos,windows}` to wrap `cargo build --release`
-instead of PyInstaller, keeping WiX / pkgbuild / dpkg-deb exactly as they are.
-Add a Rust build+test job to CI.
+### Phase 4 — Packaging the Rust connector *(macOS + Linux done, live-tested; Windows written, unverified; CI wiring still open)*
+`packaging/macos/build-rust.sh` and `packaging/linux/build-rust.sh` wrap
+`cargo build --release` instead of PyInstaller, keeping pkgbuild/productbuild
+and dpkg-deb exactly as they were — same LaunchAgent/systemd-unit shape,
+same postinstall self-update chown fix, same enrollment-token contract.
+Both were built for real and installed for real, not just written:
+
+- **macOS**: an unsigned `.pkg` built on this Mac, expanded and inspected
+  (Info.plist, the real arm64 Mach-O binary, the LaunchAgent plist with its
+  `EnvironmentVariables` correctly carrying the deployment URLs), and the
+  extracted binary actually run to confirm it starts.
+- **Linux**: a real `.deb` built inside the same Docker image CI uses, then
+  installed with `apt-get install` into a *clean* `debian:bookworm`
+  container (not the build image) — which is what caught a genuinely
+  release-blocking bug: the connector's `Depends:` was hand-omitted, so the
+  first real install failed with `libgbm.so.1: cannot open shared object
+  file`. Fixed by computing `Depends:` with `dpkg-shlibdeps` instead of a
+  hand-written list (the GTK stack this links against pulls in ~80
+  transitive libraries — a hand list would only ever be an approximation,
+  and a wrong one fails exactly like this, only on an employee's machine
+  instead of here). Reinstalled clean afterward: `apt-get install` pulled
+  every dependency automatically, the binary loaded and ran, `dpkg -r`
+  removed cleanly.
+
+`packaging/windows/build-rust.ps1` is written (same WiX shape as the
+Python build, CA-trust scheduled task correctly omitted — Rust doesn't
+install the CA yet) but **unverified**: no Windows machine, and no way to
+even dry-run candle.exe, exists anywhere this was written. Marked as such
+in its own header, matching this codebase's existing standard for
+Windows/macOS code nobody has run.
+
+Still open: a Rust CI job in `agent-packages.yml` itself (unit tests run
+in `ci.yml` now — see the endpoint-agent CI addition earlier — but nothing
+builds/publishes the three Rust packages yet).
 
 ### Phase 5 — Release `2.6.0`
 Fix the workflow's version default so a dispatch can never publish backwards,
@@ -255,7 +285,7 @@ Updated as each phase lands.
 | 1 — No allowed, anywhere | ✅ Done — verified against a real registered company + employee account (not seeded fixtures), live SQL matching every handler's query, and a rebuilt/restarted admin-api confirming the boot-time purge |
 | 2 — Rust monitoring parity | ✅ Done — posture, screenshot capture, activity monitoring, open-app enumeration; 119 tests, clippy clean, live-verified under Xvfb (real screen capture, real `rdev` listener, real window render) |
 | 3 — Rust lifecycle parity | ✅ Done — auto-update, single-instance lock (live-verified with two real instances), and the uninstall flow (live-verified against a real server: correct rejection on a wrong password, correct authorization + device-offline transition on the real org_admin's) |
-| 4 — Rust packaging | Not started |
+| 4 — Rust packaging | ⚠️ Partial — macOS + Linux built and live-installed for real (one release-blocking Linux bug found and fixed: missing `Depends:`); Windows written but unverified; CI wiring still open |
 | 5 — Release 2.6.0 | Not started |
 | 6 — Cutover | Real macOS hardware is now available (a Rust toolchain was installed on this Mac this session) — no longer blocked on that specifically, but still needs Windows hardware, and Phase 4 packaging has to land first |
 
