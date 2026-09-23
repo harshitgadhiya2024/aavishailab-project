@@ -28,6 +28,14 @@ struct HeartbeatResponse {
     enforcement: Option<EnforcementPayload>,
     #[serde(default)]
     server_time: Option<String>,
+    /// "company" | "personal" — rides every heartbeat, not just the initial
+    /// config fetch, because it is the one piece of device state an admin
+    /// changes *while the connector is already running*. The desktop
+    /// window's Disconnect button reads this every frame (see ui_state.rs),
+    /// so reclassifying a device here takes effect within a minute instead
+    /// of needing a restart.
+    #[serde(default)]
+    ownership: Option<String>,
 }
 
 pub async fn send(deps: &Deps) {
@@ -49,8 +57,13 @@ pub async fn send(deps: &Deps) {
     };
     tracing::debug!("heartbeat sent");
 
+    if let Some(ownership) = &body.ownership {
+        deps.ui.set_ownership(ownership);
+    }
+
     if let Some(enforcement) = &body.enforcement {
         let changed = deps.gate.apply(enforcement, body.server_time.as_deref());
+        deps.ui.apply_mode(deps.gate.mode().as_str(), &deps.gate.reason());
         if let Some(mode) = changed {
             tracing::info!(mode = mode.as_str(), reason = %deps.gate.reason(), "enforcement mode changed");
             crate::system_proxy::apply_enforcement_transition(&mode).await;
@@ -74,11 +87,25 @@ pub async fn seed_enforcement(deps: &Deps) {
     struct ConfigResponse {
         #[serde(default)]
         enforcement: Option<EnforcementPayload>,
+        #[serde(default)]
+        org_name: String,
+        #[serde(default)]
+        employee_name: String,
+        #[serde(default)]
+        ownership: Option<String>,
     }
     if let Ok(body) = resp.json::<ConfigResponse>().await {
         if let Some(enforcement) = &body.enforcement {
             deps.gate.apply(enforcement, None);
         }
+        if let Some(ownership) = &body.ownership {
+            deps.ui.set_ownership(ownership);
+        }
+        // Connected the moment the very first server round-trip succeeds —
+        // the window shouldn't sit on "Connecting" a beat longer than it has
+        // to just because these two names arrived a fraction later.
+        deps.ui.set_connected(body.org_name, body.employee_name);
+        deps.ui.apply_mode(deps.gate.mode().as_str(), &deps.gate.reason());
     }
 }
 

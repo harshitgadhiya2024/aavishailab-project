@@ -36,6 +36,29 @@ directories = "5"
 rand = "0.8"
 time = { version = "0.3", features = ["parsing", "formatting"] }
 
+# ── Desktop UI ──────────────────────────────────────────────────────────────
+# Native rendering (eframe/egui), not a webview: wry/tao would mean three
+# different rendering engines across platforms (WebView2, WKWebView,
+# WebKitGTK), each with its own startup cost, memory footprint, and quirks —
+# and WebKitGTK specifically is a system package Linux desktop isn't
+# guaranteed to have installed, an outage source that scales with fleet size.
+# egui renders identically everywhere via wgpu/glow, ships as part of the
+# binary, and starts instantly.
+eframe = { version = "0.36", default-features = false, features = ["default_fonts", "glow", "persistence", "x11", "wayland"] }
+tray-icon = "0.25"
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+# Linux only: tray-icon's Linux backend goes through libappindicator/GTK,
+# which — unlike winit, the GUI toolkit itself — does not initialize
+# itself. Without an explicit gtk::init() plus periodically pumping its
+# main loop alongside winit's own, tray-icon panics the instant it touches
+# GTK ("GTK has not been initialized"), caught by actually running this
+# binary rather than by it merely compiling. Pinned to the same 0.18
+# series tray-icon's own gtk3 feature already pulls in, so there is one
+# copy of the crate in the dependency tree, not two.
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 

@@ -10,6 +10,7 @@ use crate::http_client::AgentClient;
 use crate::mitm::MitmEngine;
 use crate::policy_cache::PolicyCache;
 use crate::threat_cache::ThreatIntelCache;
+use crate::ui_state::UiState;
 use std::sync::Arc;
 
 pub struct Deps {
@@ -22,4 +23,9 @@ pub struct Deps {
     pub gate: Arc<EnforcementGate>,
     /// The company's own name/logo/message for the block page.
     pub branding: Arc<BrandingCache>,
+    /// What the desktop window shows. Updated from the heartbeat loop
+    /// (mode/org/employee/ownership) and read every frame by the GUI —
+    /// never the other way around, so a slow or absent GUI can never
+    /// delay enforcement.
+    pub ui: UiState,
 }

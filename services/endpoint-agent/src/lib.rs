@@ -15,12 +15,15 @@
 
 pub mod activity;
 pub mod app_control;
+pub mod background;
 pub mod block_page;
 pub mod casb_cache;
 pub mod config;
 pub mod deps;
 pub mod enforcement;
+pub mod gui;
 pub mod enroll;
+pub mod enroll_interactive;
 pub mod heartbeat;
 pub mod http_client;
 pub mod inventory;
@@ -33,4 +36,6 @@ pub mod rules;
 pub mod scan;
 pub mod system_proxy;
 pub mod threat_cache;
+pub mod tray;
+pub mod ui_state;
 pub mod tls_proxy;

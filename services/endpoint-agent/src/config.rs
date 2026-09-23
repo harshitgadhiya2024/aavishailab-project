@@ -46,6 +46,19 @@ fn default_portal_url() -> String {
     DEFAULT_PORTAL_URL.to_string()
 }
 
+/// The admin API URL a fresh (not-yet-enrolled) device should use: an
+/// operator override if one is set, otherwise the baked-in default. Used by
+/// interactive enrollment, which has no existing Config yet to read a URL
+/// out of — see `find_enroll_token` for the equivalent token-file path's
+/// own env-var precedence.
+pub fn resolved_admin_url() -> String {
+    std::env::var(ENROLL_ADMIN_ENV).unwrap_or_else(|_| DEFAULT_ADMIN_URL.to_string())
+}
+
+pub fn resolved_portal_url() -> String {
+    std::env::var(ENROLL_PORTAL_ENV).unwrap_or_else(|_| DEFAULT_PORTAL_URL.to_string())
+}
+
 /// Where the agent keeps its config, logs, and cached MITM leaf certs.
 /// Mirrors `~/.aavishield/` in the Python original.
 pub fn state_dir() -> PathBuf {
@@ -100,6 +113,19 @@ pub async fn save(config: &Config) -> std::io::Result<()> {
     let path = config_path();
     let body = serde_json::to_vec_pretty(config)?;
     write_private(&path, &body).await
+}
+
+/// Deletes the persisted config — a port of `os.remove(CONFIG_PATH)` in
+/// Python's `begin_disconnect`. So the next start comes up unenrolled
+/// rather than reloading credentials the employee just chose to drop.
+/// A config that was never written (already disconnected, or never
+/// enrolled) is not an error.
+pub async fn remove() -> std::io::Result<()> {
+    match tokio::fs::remove_file(config_path()).await {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e),
+    }
 }
 
 #[cfg(unix)]

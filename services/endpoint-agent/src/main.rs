@@ -1,114 +1,63 @@
-//! Entry point — wires config/enrollment, the caches, the enforcement
-//! gate, the activity reporter, the MITM engine, the heartbeat loop, and
-//! the local proxy together. A port of Python's `main()`, minus the tray
-//! UI and the pieces documented as out of scope in the README (screenshot
-//! capture, keystroke/mouse monitoring, the interactive browser-callback
-//! enrollment flow).
+//! Entry point.
+//!
+//! Two threads, split by what each one may never do to the other:
+//!
+//! - The **background thread** (`background::spawn`) owns a `tokio::
+//!   Runtime` and runs the entire data plane — proxy, MITM, DLP/malware
+//!   scan orchestration, policy/threat/CASB caching, activity reporting,
+//!   heartbeat, app control, inventory. Nothing here may ever block
+//!   waiting on the GUI.
+//! - The **real OS main thread**, below, runs the desktop window
+//!   (`eframe::run_native`, which blocks it) and the tray icon. This is
+//!   not a style choice: `eframe`'s winit backend requires the platform
+//!   event loop run on the actual main thread, and on macOS AppKit aborts
+//!   the process outright if touched from anywhere else — the same
+//!   constraint the Python original's tray/window code carries, for the
+//!   same reason.
+//!
+//! They talk in one direction each way: the GUI sends `Command`s
+//! (Connect/CancelConnect/Disconnect) down a channel, and reads `UiState`
+//! (written by the background thread) once per frame. Neither ever calls
+//! into the other directly.
 
-use aavishield_agent::activity::ActivityReporter;
-use aavishield_agent::casb_cache::CASBControlCache;
-use aavishield_agent::deps::Deps;
-use aavishield_agent::enforcement::EnforcementGate;
-use aavishield_agent::http_client::{AgentClient, AgentRevoked};
-use aavishield_agent::mitm::MitmEngine;
-use aavishield_agent::policy_cache::PolicyCache;
-use aavishield_agent::threat_cache::ThreatIntelCache;
-use std::net::SocketAddr;
-use std::sync::Arc;
-use std::time::Duration;
+fn main() {
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env().add_directive("aavishield_agent=info".parse().unwrap()))
+        .init();
 
-const RULES_REFRESH_INTERVAL: Duration = Duration::from_secs(10);
-const ACTIVITY_FLUSH_INTERVAL: Duration = Duration::from_secs(5);
-const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(60);
-const MITM_CONFIG_REFRESH_INTERVAL: Duration = Duration::from_secs(300);
+    let handles = aavishield_agent::background::spawn();
+    let tray = aavishield_agent::tray::build(handles.ui.clone());
 
-#[tokio::main]
-async fn main() {
-    // rustls 0.23 no longer auto-selects a crypto backend when more than
-    // one is reachable in the dependency graph (reqwest's rustls-tls
-    // feature and this crate's own tokio-rustls usage can each pull one
-    // in) — install one explicitly, once, before any TLS connection is
-    // attempted. Caught live: this panicked inside the first MITM'd
-    // connection's spawned task instead of at startup, which is exactly
-    // the kind of "only shows up under real traffic" bug this whole
-    // rewrite exists to catch before it ships.
-    let _ = rustls::crypto::CryptoProvider::install_default(rustls::crypto::aws_lc_rs::default_provider());
+    let viewport = eframe::egui::ViewportBuilder::default()
+        .with_title("Aavishield")
+        .with_inner_size([340.0, 460.0])
+        .with_resizable(false);
 
-    tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::from_default_env().add_directive("aavishield_agent=info".parse().unwrap())).init();
-
-    tracing::info!(version = aavishield_agent::config::AGENT_VERSION, "aavishield-agent starting");
-
-    let config = match aavishield_agent::enroll::ensure_enrolled().await {
-        Some(c) => c,
-        None => {
-            tracing::error!("no enrollment token found and no existing config — see README for enrollment options. Exiting.");
-            std::process::exit(1);
-        }
+    let native_options = eframe::NativeOptions {
+        viewport,
+        // The window closing must not end the process — the background
+        // thread (proxy, heartbeat, everything that matters) keeps running
+        // regardless of whether anyone is looking at it. gui.rs turns an
+        // OS close request into "hide" rather than "exit" for exactly this
+        // reason.
+        run_and_return: true,
+        ..Default::default()
     };
-    tracing::info!(device_id = %config.device_id, org_id = %config.org_id, "enrolled");
 
-    let revoked = AgentRevoked::default();
-    let client = AgentClient::new(config, revoked.clone());
-
-    let gate = Arc::new(EnforcementGate::default());
-    let policy = Arc::new(PolicyCache::new(client.clone()));
-    let threats = Arc::new(ThreatIntelCache::new(client.clone()));
-    let casb = Arc::new(CASBControlCache::new(client.clone()));
-    let reporter = Arc::new(ActivityReporter::new(client.clone(), gate.clone()));
-
-    let branding = Arc::new(aavishield_agent::block_page::BrandingCache::new(client.clone()));
-
-    let mitm_client = client.clone();
-    let mitm = Arc::new(MitmEngine::new(mitm_client, Arc::new(aavishield_agent::config::mitm_ca_trusted)));
-
-    let deps = Arc::new(Deps { client: client.clone(), policy: policy.clone(), threats: threats.clone(), casb: casb.clone(), mitm: mitm.clone(), reporter: reporter.clone(), gate: gate.clone(), branding: branding.clone() });
-
-    // Seed the working-hours verdict before doing anything else — fails
-    // open to "enforcing" (see heartbeat::seed_enforcement's doc comment).
-    aavishield_agent::heartbeat::seed_enforcement(&deps).await;
-
-    // Initial synchronous loads so the proxy doesn't start with an empty
-    // policy cache and zero SSL Inspection config on its very first
-    // requests.
-    policy.refresh().await;
-    mitm.refresh().await;
-    // So the very first block an employee sees already carries their own
-    // company's name rather than falling back to neutral wording.
-    branding.refresh().await;
-
-    // Background refresh loops.
-    tokio::spawn({
-        let policy = policy.clone();
-        async move {
-            loop {
-                tokio::time::sleep(RULES_REFRESH_INTERVAL).await;
-                policy.refresh().await;
-            }
-        }
-    });
-    tokio::spawn(mitm.clone().loop_refresh(MITM_CONFIG_REFRESH_INTERVAL));
-    tokio::spawn(branding.clone().loop_refresh(aavishield_agent::block_page::REFRESH_INTERVAL));
-    tokio::spawn(reporter.clone().loop_flush(ACTIVITY_FLUSH_INTERVAL));
-    tokio::spawn(aavishield_agent::heartbeat::loop_heartbeat(deps.clone(), HEARTBEAT_INTERVAL));
-    // Software inventory — what is installed, not just what is running.
-    // Own interval (hourly, after a startup delay) rather than riding the
-    // heartbeat: enumerating installed software is orders of magnitude more
-    // expensive than a heartbeat and changes orders of magnitude less often.
-    tokio::spawn(aavishield_agent::inventory::loop_report(client.clone(), gate.clone()));
-    // Application control — terminates controlled apps and tells the person
-    // why. The network half of the same rule already rides the policy feed.
-    tokio::spawn(
-        Arc::new(aavishield_agent::app_control::AppControlWatcher::new(client.clone(), gate.clone())).run(),
+    let result = eframe::run_native(
+        "Aavishield",
+        native_options,
+        Box::new(move |_cc| {
+            Ok(Box::new(aavishield_agent::gui::ConnectorApp::new(
+                handles.ui,
+                handles.client_slot,
+                handles.commands,
+                tray,
+            )))
+        }),
     );
 
-    // Arm the system proxy if enforcement starts in an intercepting mode.
-    if gate.intercepts() {
-        aavishield_agent::system_proxy::apply_system_proxy().await;
-    }
-
-    let addr = SocketAddr::from(([127, 0, 0, 1], aavishield_agent::config::LOCAL_PORT));
-    if let Err(e) = aavishield_agent::proxy::run(addr, deps).await {
-        tracing::error!(error = %e, "proxy listener exited");
-        std::process::exit(1);
+    if let Err(e) = result {
+        tracing::error!(error = %e, "desktop window exited with an error");
     }
 }
