@@ -302,7 +302,8 @@ func (h *ActivityHandler) Stats(c *gin.Context) {
 		e.risk_score,
 		COUNT(ae.id) as events
 		FROM employees e
-		LEFT JOIN activity_events ae ON ae.employee_id = e.id AND ae.timestamp >= ?`+
+		LEFT JOIN activity_events ae ON ae.employee_id = e.id AND ae.timestamp >= ?
+			AND ae.action != 'allowed'`+
 		strings.ReplaceAll(typeSQL, "event_type", "ae.event_type")+`
 		WHERE e.org_id = ?
 		GROUP BY e.id, e.first_name, e.last_name, e.risk_score
