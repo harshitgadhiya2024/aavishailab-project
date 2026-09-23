@@ -2,11 +2,13 @@
 //! working-hours verdict rides the heartbeat response (no extra poll, and
 //! it arrives anchored to the server's own clock).
 //!
-//! Posture collection (disk encryption / firewall / OS-update / screen-
-//! lock / antivirus probes) is out of scope for this port — see the
-//! README. This still reports `status`/`proxy_port`/`agent_version` and,
-//! critically, still applies the returned `enforcement` block, which is
-//! the security-relevant half of the heartbeat.
+//! Posture is collected fresh on every beat via `posture::collect` — the
+//! same signals the Python original's `collect_posture()` computes,
+//! serialized to match `postureclient.Signals` on the server exactly.
+//! Collection shells out to real OS tools, so it runs on a blocking
+//! thread (`spawn_blocking`) rather than inline in this async fn; a stuck
+//! probe must never be why the working-hours verdict — carried by this
+//! same request — arrives late.
 
 use crate::deps::Deps;
 use crate::enforcement::EnforcementPayload;
@@ -19,7 +21,9 @@ struct HeartbeatRequest {
     status: &'static str,
     proxy_port: u16,
     os_type: &'static str,
+    os_version: String,
     agent_version: &'static str,
+    posture: crate::posture::Signals,
 }
 
 #[derive(Deserialize)]
@@ -36,10 +40,34 @@ struct HeartbeatResponse {
     /// of needing a restart.
     #[serde(default)]
     ownership: Option<String>,
+    #[serde(default)]
+    screenshots: Option<ScreenshotPayload>,
+}
+
+/// Field names match `screenshotConfigFor` on the server exactly.
+#[derive(Deserialize)]
+struct ScreenshotPayload {
+    enabled: bool,
+    #[serde(default)]
+    min_interval_seconds: u64,
+    #[serde(default)]
+    max_interval_seconds: u64,
+    #[serde(default)]
+    blur: bool,
 }
 
 pub async fn send(deps: &Deps) {
-    let payload = HeartbeatRequest { status: "online", proxy_port: crate::config::LOCAL_PORT, os_type: os_type_str(), agent_version: crate::config::AGENT_VERSION };
+    // Real subprocess calls (fdesetup, ufw, netsh, …) — collected off the
+    // async runtime for the same reason inventory.rs collects there.
+    let posture = tokio::task::spawn_blocking(crate::posture::collect).await.unwrap_or_default();
+    let payload = HeartbeatRequest {
+        status: "online",
+        proxy_port: crate::config::LOCAL_PORT,
+        os_type: os_type_str(),
+        os_version: posture.os_version.clone(),
+        agent_version: crate::config::AGENT_VERSION,
+        posture,
+    };
 
     let resp = match deps.client.post_json("/internal/agent/heartbeat", &payload).await {
         Ok(r) => r,
@@ -59,6 +87,10 @@ pub async fn send(deps: &Deps) {
 
     if let Some(ownership) = &body.ownership {
         deps.ui.set_ownership(ownership);
+    }
+
+    if let Some(sc) = &body.screenshots {
+        deps.screenshots.apply(sc.enabled, sc.min_interval_seconds, sc.max_interval_seconds, sc.blur);
     }
 
     if let Some(enforcement) = &body.enforcement {
@@ -93,6 +125,8 @@ pub async fn seed_enforcement(deps: &Deps) {
         employee_name: String,
         #[serde(default)]
         ownership: Option<String>,
+        #[serde(default)]
+        screenshots: Option<ScreenshotPayload>,
     }
     if let Ok(body) = resp.json::<ConfigResponse>().await {
         if let Some(enforcement) = &body.enforcement {
@@ -100,6 +134,9 @@ pub async fn seed_enforcement(deps: &Deps) {
         }
         if let Some(ownership) = &body.ownership {
             deps.ui.set_ownership(ownership);
+        }
+        if let Some(sc) = &body.screenshots {
+            deps.screenshots.apply(sc.enabled, sc.min_interval_seconds, sc.max_interval_seconds, sc.blur);
         }
         // Connected the moment the very first server round-trip succeeds —
         // the window shouldn't sit on "Connecting" a beat longer than it has

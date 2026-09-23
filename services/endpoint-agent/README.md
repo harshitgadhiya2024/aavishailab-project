@@ -39,8 +39,16 @@ Python class/section:
 | `tls_proxy.rs` + `proxy.rs` | `ProxyConnection`, `_handle_https`/`_handle_mitm_tls`/`_serve_over_tls`/`_handle_http` | **Structurally different, not just translated** — see below. Both the MITM'd HTTPS path (`tls_proxy.rs::relay_one`) and the plain HTTP path (`proxy.rs::forward_plain_http`) call the same `scan.rs` functions, so upload/download scanning can't drift between the two transports |
 | `scan.rs` | the DLP/malware/CASB scan calls inside `ProxyConnection` | Same endpoints, same fail-open contract, same CASB-before-DLP ordering. `upload_verdict()`/`download_verdict()` are the single shared decision point both proxy paths call — see **Real-time DLP/CASB coverage** below |
 | `system_proxy.rs` | `system_proxy_active`/`clear_system_proxy`/`apply_system_proxy` | Same per-OS commands/registry keys |
-| `enroll.rs` | the token-file half of `ensure_enrolled` | Interactive browser-callback flow not ported — see Scope |
-| `heartbeat.rs` | `send_heartbeat`/`heartbeat_loop` | Posture collection not ported — see Scope |
+| `enroll.rs` + `enroll_interactive.rs` | the token-file half of `ensure_enrolled`, plus `browser_enroll` | Both flows ported — a tiny loopback HTTP listener plays the same role as Python's, verified with a constant-time state comparison |
+| `heartbeat.rs` + `posture.rs` | `send_heartbeat`/`heartbeat_loop`, `collect_posture` | Same signals (disk encryption / firewall / OS version / screen lock / antivirus), shelled out through `procutil::run` rather than a bare `subprocess.run` — see below |
+| `procutil.rs` | (no equivalent — Python's `subprocess.run` handles this internally) | Shared safe-drain-with-timeout subprocess helper. Extracted after a real deadlock: a pipe holds ~64KB before its writer blocks, and `dpkg-query` on an ordinary box emits ~68KB, so polling `try_wait()` without draining stdout first hangs until the timeout kills it |
+| `inventory.rs` | (new — no prior Rust or the requirement never existed before this feature) | Installed-application inventory: Windows registry (all three hives), macOS bundles, Linux dpkg/rpm/snap/flatpak, plus manually-downloaded binaries in `bin` directories |
+| `app_control.rs` | `AppControlWatcher` | Same process-sweep-and-terminate logic, plus a desktop notification (`osascript`/`notify-send`/Windows toast) naming the blocked app — Python gained the same notification in the same session |
+| `block_page.rs` | `BLOCK_PAGE_HTML` + `_serve_https_block_page` | Company-branded (name/logo/message/contact), with the same HTML-escaping discipline on every interpolated field — host and policy text both arrive from outside the process |
+| `screenshot.rs` + `screenshot_config.rs` + `open_apps.rs` | `ScreenshotCapturer`, `ScreenshotConfig`, `open_application_names` | Same random-interval capture loop, work-session lifecycle, and open-app enumeration. WebP encoding differs: `image-webp` (pure Rust, no libwebp) is lossless-only, where Python's PIL path encodes lossy at quality=55 — a full capture is larger than Python's ~150KB target |
+| `activity_monitor.rs` | `ActivityMonitor` | Same keyboard/mouse/scroll counting via a global listener (`rdev` in place of `pynput`), same 1-second move throttle, same "count only, never log a key" guarantee |
+| `update.rs` | `AutoUpdater` | Same manifest-poll/SHA-256-verify/swap sequence. Gated on `cfg!(debug_assertions)` rather than `sys.frozen` — the matching distinction for a language with no interpreter to freeze: a plain `cargo build`/`cargo run` never auto-updates, only `--release` does |
+| `gui.rs` + `tray.rs` | `DesktopUI`, the tray half of the Python original | Native egui window, not a webview — see **Why egui, not a webview** below |
 
 ### The one deliberately different piece: HTTP parsing
 
@@ -60,6 +68,29 @@ Length, chunked encoding, and keep-alive are hyper's problem now, not
 hand-rolled text parsing's. This removes that entire bug class by
 construction, which is as much the point of this rewrite as performance
 is.
+
+### Why egui, not a webview
+
+The desktop window and tray icon are native (`eframe`/`egui`), not
+`wry`/`tao` around the existing HTML UI. A webview means three
+different rendering engines across platforms (WebView2 on Windows,
+WKWebView on macOS, WebKitGTK on Linux), each with its own startup
+cost, memory footprint and quirks — and WebKitGTK specifically is a
+system package a Linux desktop is not guaranteed to have installed, an
+outage source that scales with fleet size, not a one-time integration
+cost. `egui` renders identically everywhere via `wgpu`/`glow`, ships
+inside the binary, and starts instantly.
+
+The cost is real: the existing `ui/main.html`/`bar.html` had to be
+rebuilt as Rust code rather than reused as-is. Screen capture (`xcap`)
+carries a matching cost on Linux specifically — it links against
+PipeWire and GBM for Wayland's screen-capture portal, which is why
+`Dockerfile.build` (and CI's `rust-test-endpoint-agent` job) installs
+`libpipewire-0.3-dev`/`libgbm-dev`/`libegl1-mesa-dev`/`libclang-dev` on
+top of the GTK/X11 set the tray and window already needed. All of it
+is a build-time-only cost on Linux; the resulting `.deb` depends on
+`libpipewire0.3`/`libgbm1` at runtime, both of which ship by default on
+any Wayland-era Linux desktop.
 
 ## Real-time DLP/CASB coverage
 
@@ -122,31 +153,28 @@ bare browser connection-error screen:
 
 ## Scope — what's NOT in this rewrite, and why
 
-Every one of these is a real, deliberate cut, not an oversight:
+Screenshot capture, activity monitoring, interactive enrollment, posture,
+inventory, app control, the branded block page, auto-update and the
+native desktop window/tray are now all ported — see the module table
+above. What's left, each a real deliberate cut, not an oversight:
 
-- **Screenshot capture, keystroke/mouse activity counting, the tray UI.**
-  Employee-monitoring/UX features, not core interception. Porting them
-  needs platform capture APIs (`mss`/`PIL` → something like `xcap`,
-  `pynput` → `rdev`, `pystray` → `tray-icon`) that are additional,
-  independent scope with no bearing on the actual security data plane.
-- **Interactive browser-callback enrollment** (`browser_enroll` — opens
-  a browser, listens on loopback :6119). Only **token-file enrollment**
-  is ported (env var or a drop file at `~/.aavishield/enroll.json` /
-  `/etc/aavishield/enroll.json`), which is what an actual managed
-  deployment (packaged installer, MDM push) uses. The interactive flow
-  is a first-run convenience for a human clicking through a manual
-  install.
-- **Posture collection** (disk encryption / firewall / OS-update /
-  screen-lock / antivirus probes). The heartbeat still fires and still
-  applies the returned enforcement verdict — the security-relevant half
-  — but doesn't report device posture signals.
+- **The uninstall flow** (`begin_uninstall` — prompts for a company
+  administrator's email/password, calls
+  `/internal/agent/lifecycle/authorize-uninstall`, then runs the
+  platform uninstaller). `ui_state.rs` already carries the
+  `uninstall_allowed` flag the server sends, but nothing in `gui.rs`
+  reads it yet — this needs a new GUI screen (email/password fields, a
+  confirm button) that hasn't been built.
 - **Actually installing the CA into the OS trust store**
   (`_install_ca_darwin`/`_install_ca_linux`/`_install_ca_windows`, and
   the privileged `--ca-trust-daemon` process). Only the **check**
   (`config::mitm_ca_trusted`) is ported. This is installer/packaging
   infrastructure, gated on code-signing/notarization this build
   environment doesn't have.
-- **CA-trust-daemon, root-privilege separation, packaging.** Same reason.
+- **CA-trust-daemon, root-privilege separation, packaging.** Same reason
+  — see REQUIREMENT_AUDIT_AND_PLAN.md at the repo root for the phased
+  plan that closes this (Phase 4), including why none of the three
+  platforms' installers can be built or signed from this environment.
 
 ## Verification status — read this before trusting any of it
 
@@ -231,17 +259,50 @@ as a checked-in, repeatable script rather than a one-off manual pass.
 ## Tests
 
 ```bash
-cargo test          # 56 unit/integration tests, no network
-cargo clippy --all-targets   # clean, zero warnings
+cargo test          # 119 unit/integration tests, no network
+cargo clippy --all-targets -- -D warnings   # clean, zero warnings
 ```
 
-56 tests across every module, largely mirroring the 51-test suite
+119 tests across every module, largely mirroring the equivalent suite
 written for the Python original (`scripts/agent/tests/`) so both
 implementations are checked against the same behavioral spec — domain-
 matching edge cases (TLD protection, org-vs-global precedence, `www.`
 stripping), the enforcement gate's full capability matrix per mode,
-RFC3339 edge cases, activity dedup, cache TTL/eviction, and MITM bypass-
-list matching (exact/wildcard/parent-domain).
+RFC3339 edge cases, activity dedup, cache TTL/eviction, MITM bypass-
+list matching (exact/wildcard/parent-domain), and the subprocess-drain
+helper (`procutil`) a real deadlock was found through.
+
+Five of those tests skip themselves (not fail) with no `DISPLAY` set:
+real screen capture, blurred capture, and the `rdev` input listener
+actually installing. Run them under Xvfb for the coverage that matters:
+
+```bash
+Xvfb :99 -screen 0 1024x768x24 &
+DISPLAY=:99 cargo test --release capture_screen -- --nocapture
+DISPLAY=:99 cargo test --release activity_monitor_start_installs -- --nocapture
+```
+
+This is how the "already enrolled but the window still says Not
+connected" bug below was found — not by code review, by watching a
+real window.
+
+### A real bug this live testing caught (this session)
+
+Running the actual binary under Xvfb with a pre-seeded config (already
+enrolled) and an unreachable admin URL — simulating a device that
+boots before its network is up — showed the desktop window stuck on
+"Not connected" with a "Connect" button, indefinitely. `background.rs`'s
+already-enrolled path went straight to `run_full_agent` without ever
+calling `ui.set_connected(..)`; the window only reached Connected once
+the first heartbeat round-trip succeeded. The Python original calls
+`state.set_connected()` synchronously the moment a config is found,
+before touching the network at all — this was a direct behavioral gap
+between the two connectors, not a missing feature. Fixed by matching
+Python's ordering; verified by rerunning the identical scenario and
+capturing the window: "Protected / Your device is connected and
+monitored", falling back to "Your company" / "This device" until the
+real names arrive on the first successful heartbeat (`gui.rs` already
+had that fallback — it was just never reached).
 
 ## Local development
 

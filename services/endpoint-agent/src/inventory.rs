@@ -141,64 +141,11 @@ pub fn collect() -> Vec<InstalledApp> {
 /// A collector for a package manager this machine does not have exits
 /// non-zero or is missing entirely; both are normal and silent here, because
 /// "rpm is not installed" is not an error on a Debian box.
+/// Thin wrapper pinning this module's own timeout — see procutil::run for
+/// why a hand-drained pipe is needed at all (the deadlock was found right
+/// here, on `dpkg-query`).
 fn run(cmd: &str, args: &[&str]) -> Option<String> {
-    use std::io::Read;
-    use std::process::{Command, Stdio};
-
-    let mut child = Command::new(cmd)
-        .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .stdin(Stdio::null())
-        .spawn()
-        .ok()?;
-
-    // stdout MUST be drained on its own thread while we wait for the exit.
-    //
-    // A pipe holds ~64KB before the writer blocks, and these collectors
-    // routinely exceed it — `dpkg-query` on an ordinary Ubuntu box emits
-    // ~68KB for ~790 packages. Polling `try_wait()` without reading first
-    // deadlocks: the child blocks writing, so it never exits, so the poll
-    // never completes, and the command is eventually killed at the timeout
-    // and reported as "not installed". That failure is silent and total —
-    // caught here by probing a real machine, where dpkg contributed zero
-    // rows while the much smaller `snap list` worked fine.
-    let mut stdout = child.stdout.take()?;
-    let reader = std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        let _ = stdout.read_to_end(&mut buf);
-        buf
-    });
-
-    // std::process has no built-in timeout, and a hung package manager would
-    // otherwise stall the collector indefinitely. Poll, then kill — killing
-    // closes the pipe, which is also what releases the reader thread.
-    let deadline = std::time::Instant::now() + COMMAND_TIMEOUT;
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break status,
-            Ok(None) => {
-                if std::time::Instant::now() >= deadline {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    let _ = reader.join();
-                    tracing::debug!(command = cmd, "inventory collector timed out");
-                    return None;
-                }
-                std::thread::sleep(Duration::from_millis(50));
-            }
-            Err(_) => {
-                let _ = reader.join();
-                return None;
-            }
-        }
-    };
-
-    let buf = reader.join().ok()?;
-    if !status.success() {
-        return None;
-    }
-    Some(String::from_utf8_lossy(&buf).into_owned())
+    crate::procutil::run(cmd, args, COMMAND_TIMEOUT)
 }
 
 // ─── Windows ─────────────────────────────────────────────────────────────

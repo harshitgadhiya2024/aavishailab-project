@@ -46,7 +46,23 @@ time = { version = "0.3", features = ["parsing", "formatting"] }
 # binary, and starts instantly.
 eframe = { version = "0.36", default-features = false, features = ["default_fonts", "glow", "persistence", "x11", "wayland"] }
 tray-icon = "0.25"
-image = { version = "0.25", default-features = false, features = ["png"] }
+# "webp" adds image-webp, a pure-Rust encoder — no libwebp system dependency,
+# consistent with why egui was chosen over a webview. It is lossless-only
+# (Python's mss/PIL path encodes lossy, quality=55): a full desktop capture
+# lands well over Python's ~150KB target. Acceptable for now — screenshots
+# are still small relative to a modern link — and worth a lossy pure-Rust
+# encoder if upload volume ever makes it not be.
+image = { version = "0.25", default-features = false, features = ["png", "webp"] }
+# Screen capture. Pure Rust, no libwebp/libjpeg-style system dependency on
+# any of the three platforms — same reasoning as the webview-vs-egui and
+# WebP choices above: one fewer thing that can be missing on a machine this
+# agent doesn't control the image for.
+xcap = "0.6"
+# Global keyboard/mouse/scroll listener for the activity percentage shown
+# beside each screenshot. Counts events only — see activity_monitor.rs for
+# why no key content is ever read, the same guarantee Python's pynput path
+# makes.
+rdev = "0.5"
 
 # Linux only: tray-icon's Linux backend goes through libappindicator/GTK,
 # which — unlike winit, the GUI toolkit itself — does not initialize

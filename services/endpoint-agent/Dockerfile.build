@@ -1,0 +1,62 @@
+# Build/test image for the Rust connector.
+#
+# Not a service image — the connector ships as a native installer, not a
+# container. This exists so the agent can be compiled and tested on a
+# machine without a Rust toolchain, and so CI and a developer's laptop
+# agree on the exact system libraries the GUI links against.
+#
+# The desktop UI (eframe/egui) and the tray icon pull in real system
+# dependencies on Linux: GTK3 and libappindicator for tray-icon, and
+# libxkbcommon-x11 for winit's X11 backend. Screen capture (xcap) goes
+# through PipeWire's XDG desktop portal on Wayland, which needs
+# libpipewire's own dev headers to even *compile* — not just to run —
+# because xcap's Linux backend links against it unconditionally rather
+# than probing for it at runtime. Missing any of these compiles fine for
+# everything except the one crate that needs it, and fails there with an
+# error that names a system library, not a Rust one — which is why they
+# are all pinned here rather than left to whatever the host happens to
+# have.
+# Rolling "latest stable" rather than a pinned minor: Cargo.lock already
+# carries crates that require edition2024 (stabilized in Rust 1.85), so
+# pinning an older toolchain here just reintroduces the mismatch this image
+# exists to avoid. CI's own agent-packages.yml doesn't pin a Rust version
+# either, for the same reason.
+FROM rust:bookworm
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      pkg-config \
+      libssl-dev \
+      libgtk-3-dev \
+      libayatana-appindicator3-dev \
+      libxkbcommon-dev \
+      libxkbcommon-x11-dev \
+      libxcb1-dev \
+      libxcb-render0-dev \
+      libxcb-shape0-dev \
+      libxcb-xfixes0-dev \
+      libwayland-dev \
+      libxdo-dev \
+      libpipewire-0.3-dev \
+      libdbus-1-dev \
+      libclang-dev \
+      clang \
+      libgbm-dev \
+      libegl1-mesa-dev \
+      dpkg-dev \
+      fakeroot \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN rustup component add clippy rustfmt
+
+WORKDIR /agent
+
+# Xvfb + tooling for smoke-testing the desktop window and screen capture
+# without real hardware — the same setup a previous session used to catch
+# a real GTK-init-ordering bug and a Cancel-button race that unit tests
+# could not have found (both were runtime-only failures on a live X
+# server). Not part of the release build, only this dev/test image.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      xvfb \
+      x11-apps \
+      imagemagick \
+    && rm -rf /var/lib/apt/lists/*

@@ -1,8 +1,9 @@
 //! The background agent thread — everything Python's `run_agent()` does
 //! (proxy, MITM, DLP/malware scan orchestration, policy/threat/CASB
-//! caching, activity reporting, heartbeat, app control, inventory) minus
-//! the GUI, which lives on the real main thread instead (see gui.rs and
-//! the module doc on why).
+//! caching, activity reporting, heartbeat, app control, inventory,
+//! screenshot capture, activity monitoring, auto-update) minus the GUI,
+//! which lives on the real main thread instead (see gui.rs and the
+//! module doc on why).
 //!
 //! Exactly one of these threads runs for the lifetime of the process. It
 //! owns its own `tokio::runtime::Runtime` — created here, not via
@@ -92,6 +93,25 @@ async fn run(ui: UiState, client_slot: ClientSlot, mut commands: tokio::sync::mp
     // immediately and skip the "waiting for Connect" state entirely.
     if let Some(config) = crate::config::load().await {
         tracing::info!(device_id = %config.device_id, org_id = %config.org_id, "already enrolled");
+        // Connected the instant a config is found, not after the first
+        // successful server round-trip. A machine that boots offline (WiFi
+        // not up yet, VPN still connecting) would otherwise sit on "Not
+        // connected" with a Connect button that makes no sense — there is
+        // nothing left to connect, the device already has credentials.
+        // This is a direct port of the Python original's `main()`, which
+        // calls `state.set_connected()` synchronously the moment
+        // `ensure_enrolled()` returns a config, before `run_agent` ever
+        // touches the network. Caught here — not in unit tests — by
+        // actually running the binary under Xvfb against an unreachable
+        // admin URL and watching the window stay on "Not connected"
+        // indefinitely; `gui.rs` already falls back org_name/employee_name
+        // to "Your company"/"This device" while empty, so the only piece
+        // missing was this call. `seed_enforcement`, inside
+        // `run_full_agent` below, overwrites both names with the real
+        // ones on the first successful response — `set_connected` is
+        // idempotent about `connected_at`, so calling it twice doesn't
+        // reset the uptime clock.
+        ui.set_connected("", "");
         run_full_agent(config, ui, client_slot, commands).await;
         return;
     }
@@ -183,6 +203,8 @@ async fn run_full_agent(config: Config, ui: UiState, client_slot: ClientSlot, mu
     let reporter = Arc::new(ActivityReporter::new(client.clone(), gate.clone()));
     let branding = Arc::new(crate::block_page::BrandingCache::new(client.clone()));
     let mitm = Arc::new(MitmEngine::new(client.clone(), Arc::new(crate::config::mitm_ca_trusted)));
+    let screenshots = crate::screenshot_config::ScreenshotConfig::new();
+    let activity_monitor = crate::activity_monitor::ActivityMonitor::new();
 
     let deps = Arc::new(Deps {
         client: client.clone(),
@@ -194,6 +216,7 @@ async fn run_full_agent(config: Config, ui: UiState, client_slot: ClientSlot, mu
         gate: gate.clone(),
         branding: branding.clone(),
         ui: ui.clone(),
+        screenshots: screenshots.clone(),
     });
 
     crate::heartbeat::seed_enforcement(&deps).await;
@@ -217,6 +240,20 @@ async fn run_full_agent(config: Config, ui: UiState, client_slot: ClientSlot, mu
     tokio::spawn(crate::heartbeat::loop_heartbeat(deps.clone(), HEARTBEAT_INTERVAL));
     tokio::spawn(crate::inventory::loop_report(client.clone(), gate.clone()));
     tokio::spawn(Arc::new(crate::app_control::AppControlWatcher::new(client.clone(), gate.clone())).run());
+    // Activity monitoring only ever touches the OS input APIs once the org
+    // has screenshots on — start_when_enabled polls for that rather than
+    // starting eagerly, so a device that is never monitored never triggers
+    // the Input Monitoring permission prompt at all.
+    tokio::spawn({
+        let activity_monitor = activity_monitor.clone();
+        let screenshots = screenshots.clone();
+        let gate = gate.clone();
+        async move { activity_monitor.start_when_enabled(&screenshots, &gate).await }
+    });
+    tokio::spawn(
+        Arc::new(crate::screenshot::ScreenshotCapturer::new(client.clone(), screenshots.clone(), gate.clone(), activity_monitor.clone())).run(),
+    );
+    tokio::spawn(crate::update::loop_check(client.clone()));
 
     if gate.intercepts() {
         crate::system_proxy::apply_system_proxy().await;

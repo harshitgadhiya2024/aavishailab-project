@@ -48,9 +48,10 @@ jobs:
         run: cargo test
 
   # A separate job, not folded into the matrix above: the connector's native
-  # desktop window and tray icon (eframe/egui, tray-icon) link against real
-  # system libraries — GTK3/libappindicator for the tray, libxkbcommon-x11
-  # for winit's X11 backend — that dlp-service-rust and malware-service-rust
+  # desktop window, tray icon and screen capture (eframe/egui, tray-icon,
+  # xcap) link against real system libraries — GTK3/libappindicator for the
+  # tray, libxkbcommon-x11 for winit's X11 backend, PipeWire/D-Bus for
+  # xcap's Wayland portal — that dlp-service-rust and malware-service-rust
   # don't need. This had no CI coverage at all before now; a change here
   # could break and nobody would notice until packaging.
   rust-test-endpoint-agent:
@@ -66,7 +67,8 @@ jobs:
             pkg-config libssl-dev libgtk-3-dev libayatana-appindicator3-dev \
             libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev \
             libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
-            libwayland-dev libxdo-dev
+            libwayland-dev libxdo-dev libpipewire-0.3-dev libdbus-1-dev \
+            libclang-dev clang libgbm-dev libegl1-mesa-dev
       - name: cargo clippy
         working-directory: services/endpoint-agent
         run: cargo clippy --all-targets -- -D warnings

@@ -165,31 +165,26 @@ button and a tray menu, so that cost is small and one-time.
 
 ### Where the Rust connector actually stands
 
-Present and tested: proxy, MITM/TLS, policy cache, threat cache, CASB cache,
-enforcement gate, activity reporting (with the allowed-event guard), DLP
-monitor-only scanning, malware scan calls, heartbeat, token enrollment,
-**interactive browser enrollment**, **software inventory**, **app control with
-desktop notification**, **company-branded block page**, **egui desktop window**,
-**tray icon**.
+Present and tested (119 unit/integration tests, clippy clean, plus real
+Xvfb runs — not just compiled): proxy, MITM/TLS, policy cache, threat
+cache, CASB cache, enforcement gate, activity reporting (with the
+allowed-event guard), DLP monitor-only scanning, malware scan calls,
+heartbeat, device posture, token enrollment, interactive browser
+enrollment, software inventory, app control with desktop notification,
+company-branded block page, egui desktop window, tray icon,
+**screenshot capture + work sessions + open-app enumeration**,
+**keyboard/mouse/scroll activity counting**, and **auto-update**.
+
+The already-enrolled-shows-"Not connected" regression flagged below was
+found and fixed this session — see Part 5.
 
 Missing, and this is the whole of the remaining work:
 
 | # | Missing from the Rust connector | Python equivalent |
 |---|---|---|
-| 1 | Screenshot capture + upload + work sessions | `ScreenshotCapturer` (line 3442) |
-| 2 | Input-activity counting (keyboard/mouse/scroll %) | `ActivityMonitor` (line 3200) |
-| 3 | Open-application list beside each screenshot | `open_application_names` (line 3328) |
-| 4 | Device posture collection | `collect_posture` (line 3605) |
-| 5 | Auto-update (manifest poll, SHA-256 verify, swap) | `AutoUpdater` (line 4812) |
-| 6 | Uninstall flow (the UI carries the flag, nothing executes it) | `uninstall` (line 5034) |
-| 7 | Single-instance lock + "show window" signal | `acquire_single_instance_lock` |
-| 8 | Packaging for all three platforms, and CI | `packaging/*`, `agent-packages.yml` |
-
-One item was left half-finished by the previous session and is carried into
-Phase 2 below: on an already-enrolled machine the Rust window waits for the
-first successful heartbeat before it says "Connected", where the Python original
-says it the moment a config file is found. That is a visible regression — a
-laptop that boots offline looks broken.
+| 1 | Uninstall flow — `ui_state.rs` carries `uninstall_allowed`, but `gui.rs` has no email/password screen to act on it | `begin_uninstall` (line 5287) |
+| 2 | Single-instance lock + "show window" signal | `acquire_single_instance_lock` |
+| 3 | Packaging for all three platforms, and CI for the packaging step itself (unit tests now run in CI — see Phase 4) | `packaging/*`, `agent-packages.yml` |
 
 ---
 
@@ -205,14 +200,18 @@ UI in the employee portal, retire the now-dead `allowed` chart colour and the
 Web Gateway action-colour branch, and purge the historical allowed rows that
 predate the storage fix.
 
-### Phase 2 — Rust connector: monitoring parity
-`posture.rs`, `screenshot.rs` (capture, work sessions, upload), `activity_monitor.rs`
-(input counting), and open-application enumeration. Plus the
-already-enrolled-shows-Connected fix.
+### Phase 2 — Rust connector: monitoring parity ✅ done
+`posture.rs`, `screenshot.rs` (capture, work sessions, upload),
+`activity_monitor.rs` (input counting), and `open_apps.rs`. Plus the
+already-enrolled-shows-Connected fix, found and fixed the same way the
+prior session found its GTK/Cancel-button bugs: by actually running the
+binary under Xvfb, not by reading the code.
 
-### Phase 3 — Rust connector: lifecycle parity
-`update.rs` (auto-update with SHA-256 verification), the uninstall flow behind
-the existing `uninstall_allowed` flag, and the single-instance lock.
+### Phase 3 — Rust connector: lifecycle parity *(partial)*
+`update.rs` ✅ done (auto-update with SHA-256 verification). Still open:
+the uninstall flow behind the existing `uninstall_allowed` flag — needs a
+new GUI screen (admin email/password) `gui.rs` doesn't have yet — and the
+single-instance lock.
 
 ### Phase 4 — Packaging the Rust connector
 Rewrite `packaging/{linux,macos,windows}` to wrap `cargo build --release`
@@ -242,9 +241,35 @@ Updated as each phase lands.
 
 | Phase | Status |
 |---|---|
-| 1 — No allowed, anywhere | In progress |
-| 2 — Rust monitoring parity | Not started |
-| 3 — Rust lifecycle parity | Not started |
+| 1 — No allowed, anywhere | ✅ Done — verified against a real registered company + employee account (not seeded fixtures), live SQL matching every handler's query, and a rebuilt/restarted admin-api confirming the boot-time purge |
+| 2 — Rust monitoring parity | ✅ Done — posture, screenshot capture, activity monitoring, open-app enumeration; 119 tests, clippy clean, live-verified under Xvfb (real screen capture, real `rdev` listener, real window render) |
+| 3 — Rust lifecycle parity | ⚠️ Partial — auto-update done; uninstall flow and single-instance lock still open (see Part 3) |
 | 4 — Rust packaging | Not started |
 | 5 — Release 2.6.0 | Not started |
 | 6 — Cutover | Blocked on real macOS/Windows hardware |
+
+### What "done" means for Phase 1 and 2, concretely
+
+**Phase 1.** Six more unguarded queries found beyond the original sweep
+(`portal.go`'s `Me`/activity-summary, `reports.go`'s `trendByDay`/
+`groupCount`/`topDetectors`/`hourlyPattern`, `activity.go`'s `Stats` and
+its `top_users` join, `employees.go`'s activity log, `organizations.go`'s
+platform counter, `shadowit.go`, `mitm_discovery.go`) — each found by
+either reading every `activity_events` query in the codebase or by
+actually inserting a test "allowed" row through a real company account
+and watching which numbers moved. A boot-time purge
+(`PurgeAllowedEvents`) now deletes historical allowed rows every start,
+not just a one-off migration. A real `Content-Type`-depends-on-the-host
+bug in `storage.go` was fixed along the way.
+
+**Phase 2.** Every new module has unit tests, but the two genuinely
+hardware-dependent paths — screen capture and the global input listener
+— were additionally run against a real X server (Xvfb), not left to
+"compiles, therefore works": both produce real, decodable output. The
+full binary was also run end-to-end with a pre-enrolled config and an
+unreachable admin URL (simulating a laptop that boots before its network
+is up), which is exactly how the already-enrolled-shows-"Not connected"
+regression was caught — a window that stayed broken indefinitely until
+`background.rs` was fixed to match Python's connect-before-network-call
+ordering, confirmed fixed by rerunning the identical scenario and
+capturing the window afterward.

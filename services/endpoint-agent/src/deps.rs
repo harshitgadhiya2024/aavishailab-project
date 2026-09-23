@@ -9,6 +9,7 @@ use crate::enforcement::EnforcementGate;
 use crate::http_client::AgentClient;
 use crate::mitm::MitmEngine;
 use crate::policy_cache::PolicyCache;
+use crate::screenshot_config::ScreenshotConfig;
 use crate::threat_cache::ThreatIntelCache;
 use crate::ui_state::UiState;
 use std::sync::Arc;
@@ -28,4 +29,10 @@ pub struct Deps {
     /// never the other way around, so a slow or absent GUI can never
     /// delay enforcement.
     pub ui: UiState,
+    /// Whether the org has screenshots on, and the random-interval bounds —
+    /// updated by every heartbeat/config response, read by
+    /// `screenshot::ScreenshotCapturer`'s loop. Already cheaply `Clone`
+    /// (an `Arc<Mutex<..>>` internally, like `UiState`), so it is not
+    /// wrapped in another `Arc` here.
+    pub screenshots: ScreenshotConfig,
 }
