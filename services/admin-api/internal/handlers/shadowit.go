@@ -61,7 +61,7 @@ func (h *ShadowITHandler) DiscoveredApps(c *gin.Context) {
 	var rows []aggRow
 	h.db.Model(&models.ActivityEvent{}).
 		Select("target_domain, count(*) as events, count(distinct employee_id) as users, min(timestamp) as first_seen, max(timestamp) as last_seen").
-		Where("org_id = ? AND target_domain <> ''", orgID).
+		Where("org_id = ? AND target_domain <> '' AND action != ?", orgID, models.EventActionAllowed).
 		Group("target_domain").
 		Order("events desc").
 		Limit(limit).

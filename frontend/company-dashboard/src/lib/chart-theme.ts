@@ -39,7 +39,6 @@ const DARK: ChartTheme = {
   action: {
     blocked: "#f87171",
     alerted: "#fbbf24",
-    allowed: "#4ade80",
     monitored: "#60a5fa",
   },
   neutral: "#6B6B6B",
@@ -60,7 +59,6 @@ const LIGHT: ChartTheme = {
   action: {
     blocked: "#dc2626",
     alerted: "#d97706",
-    allowed: "#16a34a",
     monitored: "#2563eb",
   },
   neutral: "#6B7280",

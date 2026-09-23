@@ -377,14 +377,15 @@ func (h *PortalHandler) Me(c *gin.Context) {
 	var devices []models.Device
 	h.db.Where("employee_id = ?", emp.ID).Order("last_seen_at DESC").Find(&devices)
 
-	var blockedCount, allowedCount int64
+	// Blocked only. "Allowed" activity is neither stored nor reported
+	// anywhere in the product, so a count of it could only ever be zero —
+	// and a stat reading "0 allowed" is a claim about this employee's
+	// traffic that happens to be false.
+	var blockedCount int64
 	since := time.Now().AddDate(0, 0, -7)
 	h.db.Model(&models.ActivityEvent{}).
 		Where("employee_id = ? AND timestamp >= ? AND action = 'blocked'", emp.ID, since).
 		Count(&blockedCount)
-	h.db.Model(&models.ActivityEvent{}).
-		Where("employee_id = ? AND timestamp >= ? AND action = 'allowed'", emp.ID, since).
-		Count(&allowedCount)
 
 	c.JSON(http.StatusOK, gin.H{
 		"employee": gin.H{
@@ -403,7 +404,6 @@ func (h *PortalHandler) Me(c *gin.Context) {
 		"devices": devices,
 		"stats_7d": gin.H{
 			"blocked": blockedCount,
-			"allowed": allowedCount,
 		},
 	})
 }
@@ -677,11 +677,9 @@ func (h *PortalHandler) ActivityStats(c *gin.Context) {
 	days, _ := strconv.Atoi(c.DefaultQuery("days", "7"))
 	since := time.Now().AddDate(0, 0, -days)
 
-	var blockedCount, allowedCount int64
+	var blockedCount int64
 	h.db.Model(&models.ActivityEvent{}).
 		Where("employee_id = ? AND timestamp >= ? AND action = 'blocked'", emp.ID, since).Count(&blockedCount)
-	h.db.Model(&models.ActivityEvent{}).
-		Where("employee_id = ? AND timestamp >= ? AND action = 'allowed'", emp.ID, since).Count(&allowedCount)
 
 	type DomainCount struct {
 		Domain string `json:"domain"`
@@ -698,20 +696,17 @@ func (h *PortalHandler) ActivityStats(c *gin.Context) {
 	type DayCount struct {
 		Date    string `json:"date"`
 		Blocked int    `json:"blocked"`
-		Allowed int    `json:"allowed"`
 	}
 	var byDay []DayCount
 	h.db.Raw(`
 		SELECT TO_CHAR(DATE(timestamp), 'YYYY-MM-DD') as date,
-		COUNT(*) FILTER (WHERE action = 'blocked') as blocked,
-		COUNT(*) FILTER (WHERE action = 'allowed') as allowed
+		COUNT(*) FILTER (WHERE action = 'blocked') as blocked
 		FROM activity_events
 		WHERE employee_id = ? AND timestamp >= ?
 		GROUP BY DATE(timestamp) ORDER BY date ASC`, emp.ID, since).Scan(&byDay)
 
 	c.JSON(http.StatusOK, gin.H{
 		"blocked":     blockedCount,
-		"allowed":     allowedCount,
 		"top_blocked": topBlocked,
 		"by_day":      byDay,
 		"period_days": days,

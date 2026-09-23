@@ -74,10 +74,16 @@ func delta(current, previous int64) *float64 {
 	return &rounded
 }
 
+// The allowed exclusion lives here rather than at each call site because this
+// helper is what "how many events" means for every report figure — a caller
+// passing where="" is asking for the total, and routine allowed traffic is
+// not part of any total this product reports. Rows predating the ingestion
+// fix are still on disk in older deployments, so this is a filter and not an
+// assumption.
 func (h *ReportHandler) countEvents(orgID string, from, to time.Time, where string, args ...any) int64 {
 	var n int64
 	q := h.db.Model(&models.ActivityEvent{}).
-		Where("org_id = ? AND timestamp >= ? AND timestamp < ?", orgID, from, to)
+		Where("org_id = ? AND timestamp >= ? AND timestamp < ? AND action <> 'allowed'", orgID, from, to)
 	if where != "" {
 		q = q.Where(where, args...)
 	}
@@ -166,12 +172,15 @@ func (h *ReportHandler) Overview(c *gin.Context) {
 	})
 }
 
+// No Allowed field: allowed activity is never stored (see dropAllowedEvents
+// in activity.go), so a per-day allowed count is structurally always zero.
+// Reporting it as a real series would draw a flat line that looks like
+// measured traffic rather than an absence of data.
 type dayPoint struct {
 	Date    string `json:"date"`
 	Total   int    `json:"total"`
 	Blocked int    `json:"blocked"`
 	Alerted int    `json:"alerted"`
-	Allowed int    `json:"allowed"`
 }
 
 // trendByDay returns one row per calendar day in the window, including days
@@ -183,16 +192,14 @@ func (h *ReportHandler) trendByDay(orgID string, w reportWindow) []dayPoint {
 		Total   int
 		Blocked int
 		Alerted int
-		Allowed int
 	}
 	var rows []row
 	h.db.Raw(`SELECT DATE(timestamp) as day,
 		COUNT(*) as total,
 		COUNT(*) FILTER (WHERE action = 'blocked') as blocked,
-		COUNT(*) FILTER (WHERE action = 'alerted') as alerted,
-		COUNT(*) FILTER (WHERE action = 'allowed') as allowed
+		COUNT(*) FILTER (WHERE action = 'alerted') as alerted
 		FROM activity_events
-		WHERE org_id = ? AND timestamp >= ? AND timestamp < ?
+		WHERE org_id = ? AND timestamp >= ? AND timestamp < ? AND action <> 'allowed'
 		GROUP BY DATE(timestamp) ORDER BY day ASC`, orgID, w.Start, w.End).Scan(&rows)
 
 	byDay := make(map[string]row, len(rows))
@@ -204,7 +211,7 @@ func (h *ReportHandler) trendByDay(orgID string, w reportWindow) []dayPoint {
 	for d := w.Start; d.Before(w.End); d = d.AddDate(0, 0, 1) {
 		key := d.Format("2006-01-02")
 		r := byDay[key]
-		out = append(out, dayPoint{Date: key, Total: r.Total, Blocked: r.Blocked, Alerted: r.Alerted, Allowed: r.Allowed})
+		out = append(out, dayPoint{Date: key, Total: r.Total, Blocked: r.Blocked, Alerted: r.Alerted})
 	}
 	return out
 }
@@ -228,6 +235,7 @@ func (h *ReportHandler) groupCount(orgID string, w reportWindow, column string) 
 	h.db.Raw(fmt.Sprintf(`SELECT %s::text as label, COUNT(*) as count
 		FROM activity_events
 		WHERE org_id = ? AND timestamp >= ? AND timestamp < ? AND %s::text <> ''
+		  AND action <> 'allowed'
 		GROUP BY %s::text ORDER BY count DESC`, column, column, column),
 		orgID, w.Start, w.End).Scan(&rows)
 	return rows
@@ -289,6 +297,7 @@ func (h *ReportHandler) topDetectors(orgID string, w reportWindow, limit int) []
 		FROM activity_events, LATERAL jsonb_array_elements_text(metadata->'detectors') as d
 		WHERE org_id = ? AND timestamp >= ? AND timestamp < ?
 		  AND jsonb_typeof(metadata->'detectors') = 'array'
+		  AND action <> 'allowed'
 		GROUP BY d ORDER BY count DESC LIMIT ?`,
 		orgID, w.Start, w.End, limit).Scan(&rows)
 	return rows
@@ -313,7 +322,7 @@ func (h *ReportHandler) hourlyPattern(orgID string, w reportWindow) []hourPoint 
 		COUNT(*) as total,
 		COUNT(*) FILTER (WHERE action IN ('blocked','alerted')) as incident
 		FROM activity_events
-		WHERE org_id = ? AND timestamp >= ? AND timestamp < ?
+		WHERE org_id = ? AND timestamp >= ? AND timestamp < ? AND action <> 'allowed'
 		GROUP BY hour ORDER BY hour`, orgID, w.Start, w.End).Scan(&rows)
 
 	byHour := make(map[int]row, len(rows))

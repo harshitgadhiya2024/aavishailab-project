@@ -127,6 +127,25 @@ func (b *localBackend) Open(_ context.Context, key string) (io.ReadCloser, strin
 	return f, contentTypeForKey(key), nil
 }
 
+// imageContentTypes pins the Content-Type for every extension this backend
+// actually stores. mime.TypeByExtension is deliberately not the first stop:
+// it reads the *host's* mime database (/etc/mime.types, /etc/apache2/
+// mime.types, the Windows registry), so the same .ico object is served as
+// "image/vnd.microsoft.icon" on one machine and "image/x-icon" on another
+// depending on which files that host happens to have installed. A response
+// header that changes with the deployment target is not something to leave
+// to chance, and a scratch container with no mime database at all would fall
+// through to the webp default and mislabel every icon.
+var imageContentTypes = map[string]string{
+	".webp": "image/webp",
+	".png":  "image/png",
+	".svg":  "image/svg+xml",
+	".jpg":  "image/jpeg",
+	".jpeg": "image/jpeg",
+	".gif":  "image/gif",
+	".ico":  "image/vnd.microsoft.icon",
+}
+
 // contentTypeForKey infers Content-Type from the key's own extension.
 // Every screenshot key ends in ".webp" (see screenshotKey in
 // handlers/monitoring_ingest.go), so that stays the fallback and existing
@@ -134,7 +153,14 @@ func (b *localBackend) Open(_ context.Context, key string) (io.ReadCloser, strin
 // backend (e.g. app-catalog icons, which can be .png/.svg/.jpg) need their
 // real type served, not a hardcoded one a browser may refuse to decode.
 func contentTypeForKey(key string) string {
-	if ct := mime.TypeByExtension(filepath.Ext(key)); ct != "" {
+	ext := strings.ToLower(filepath.Ext(key))
+	if ct, ok := imageContentTypes[ext]; ok {
+		return ct
+	}
+	// Anything outside the table is still worth asking the host about
+	// before falling back — a new object kind added later should not be
+	// silently served as webp just because this table was not updated.
+	if ct := mime.TypeByExtension(ext); ct != "" {
 		return ct
 	}
 	return "image/webp"

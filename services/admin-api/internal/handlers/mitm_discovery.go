@@ -241,7 +241,7 @@ func (h *AgentHandler) observedDomains(orgID, query string, platform *catalogPla
 	var rows []row
 	q := h.db.Model(&models.ActivityEvent{}).
 		Select("LOWER(target_domain) as domain, COUNT(*) as count").
-		Where("org_id = ? AND target_domain <> ''", orgID)
+		Where("org_id = ? AND target_domain <> '' AND action != ?", orgID, models.EventActionAllowed)
 
 	conds := h.db.Where("LOWER(target_domain) LIKE ?", patterns[0])
 	for _, p := range patterns[1:] {

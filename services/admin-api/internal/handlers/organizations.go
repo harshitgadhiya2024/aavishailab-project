@@ -269,7 +269,7 @@ func (h *OrgHandler) Stats(c *gin.Context) {
 	h.db.Model(&models.Organization{}).Where("status = 'active'").Count(&activeOrgs)
 	h.db.Model(&models.User{}).Where("org_id IS NOT NULL").Count(&totalUsers)
 	h.db.Model(&models.Employee{}).Count(&totalEmployees)
-	h.db.Model(&models.ActivityEvent{}).Count(&totalEvents)
+	h.db.Model(&models.ActivityEvent{}).Where("action != ?", models.EventActionAllowed).Count(&totalEvents)
 
 	type PlanCount struct {
 		Plan  string `json:"plan"`

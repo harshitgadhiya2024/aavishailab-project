@@ -190,7 +190,8 @@ func (h *EmployeeHandler) Get(c *gin.Context) {
 	// Get recent activity count
 	var activityCount int64
 	h.db.Model(&models.ActivityEvent{}).
-		Where("employee_id = ? AND timestamp > ?", emp.ID, time.Now().AddDate(0, 0, -30)).
+		Where("employee_id = ? AND timestamp > ? AND action != ?",
+			emp.ID, time.Now().AddDate(0, 0, -30), models.EventActionAllowed).
 		Count(&activityCount)
 
 	c.JSON(http.StatusOK, gin.H{
@@ -422,8 +423,12 @@ func (h *EmployeeHandler) GetActivity(c *gin.Context) {
 	var total int64
 	var events []models.ActivityEvent
 
-	h.db.Model(&models.ActivityEvent{}).Where("org_id = ? AND employee_id = ?", orgID, empID).Count(&total)
-	h.db.Where("org_id = ? AND employee_id = ?", orgID, empID).
+	// This is an activity log like any other, so it obeys the same rule: no
+	// allowed rows, and a total that counts exactly what the page lists.
+	h.db.Model(&models.ActivityEvent{}).
+		Where("org_id = ? AND employee_id = ? AND action != ?", orgID, empID, models.EventActionAllowed).
+		Count(&total)
+	h.db.Where("org_id = ? AND employee_id = ? AND action != ?", orgID, empID, models.EventActionAllowed).
 		Order("timestamp DESC").
 		Offset((page - 1) * limit).Limit(limit).
 		Find(&events)

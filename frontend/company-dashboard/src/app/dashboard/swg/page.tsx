@@ -80,10 +80,13 @@ function actionLabel(row: LogRow) {
   return "Web request";
 }
 
+// Only the two outcomes this table can contain. "allowed" is not styled
+// here on purpose: the server strips it from every activity response, so a
+// green "allowed" pill could only appear if that guard had broken — and it
+// should look wrong when it does, not blend in.
 function outcomeStyle(action: string) {
   if (action === "blocked") return "bg-red-500/10 text-danger";
   if (action === "alerted") return "bg-yellow-500/10 text-warning";
-  if (action === "allowed") return "bg-emerald-500/10 text-success";
   return "bg-elevated text-body";
 }
 

@@ -128,17 +128,23 @@ func connectStores() (*gorm.DB, *redis.Client, error) {
 		return nil, nil, fmt.Errorf("failed to migrate category domain indexes: %w", err)
 	}
 
-	// Category domain lists are real product config (needed for category-based
-	// policy blocking), not dev-only fixture data — unlike SeedDevData below,
-	// this runs in every environment, including production.
 	if err := database.MigrateScreenshotsDefaultOn(db); err != nil {
 		log.Fatalf("Screenshot default migration failed: %v", err)
+	}
+
+	// Runs after the schema is in place and before the API starts serving, so
+	// no request can read a row this is about to delete.
+	if err := database.PurgeAllowedEvents(db); err != nil {
+		log.Printf("⚠️  Could not purge historical allowed events: %v", err)
 	}
 
 	if err := database.MigrateAppControlIndexes(db); err != nil {
 		return nil, nil, fmt.Errorf("failed to migrate application control indexes: %w", err)
 	}
 
+	// Category domain lists are real product config (needed for category-based
+	// policy blocking), not dev-only fixture data — unlike SeedDevData below,
+	// this runs in every environment, including production.
 	if err := database.SeedDomainCategories(db); err != nil {
 		return nil, nil, fmt.Errorf("failed to seed domain categories: %w", err)
 	}

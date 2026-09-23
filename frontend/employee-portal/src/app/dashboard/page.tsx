@@ -7,7 +7,9 @@ import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { format, subDays } from "date-fns";
 
-type DayCount = { date: string; blocked: number; allowed: number };
+// No "allowed" member: allowed activity is neither stored nor returned by
+// the portal API, so a field for it would describe a number that is never sent.
+type DayCount = { date: string; blocked: number };
 type DomainCount = { domain: string; count: number; reason: string };
 
 export default function DashboardPage() {
@@ -25,7 +27,7 @@ export default function DashboardPage() {
     refetchInterval: 30_000,
   });
 
-  const stats = meData?.data?.stats_7d ?? { blocked: 0, allowed: 0 };
+  const stats = meData?.data?.stats_7d ?? { blocked: 0 };
   const devices = meData?.data?.devices ?? [];
   const onlineDevices = devices.filter((d: { status: string }) => d.status === "online").length;
 

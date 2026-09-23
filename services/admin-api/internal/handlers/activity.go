@@ -230,8 +230,12 @@ func (h *ActivityHandler) Stats(c *gin.Context) {
 		typeSQL = " AND event_type = ?"
 		typeArgs = append(typeArgs, eventType)
 	}
+	// Same hard exclusion the List handler applies: these counters sit at the
+	// top of the very page whose table can never contain an allowed row, so a
+	// "total events" that counted them would not match the rows underneath it.
 	scoped := func() *gorm.DB {
-		q := h.db.Model(&models.ActivityEvent{}).Where("org_id = ? AND timestamp >= ?", orgID, since)
+		q := h.db.Model(&models.ActivityEvent{}).
+			Where("org_id = ? AND timestamp >= ? AND action != ?", orgID, since, models.EventActionAllowed)
 		if eventType != "" {
 			q = q.Where("event_type = ?", eventType)
 		}
@@ -276,7 +280,8 @@ func (h *ActivityHandler) Stats(c *gin.Context) {
 	var topDetectors []DetectorCount
 	h.db.Raw(`SELECT d as detector, COUNT(*) as count
 		FROM activity_events, LATERAL jsonb_array_elements_text(metadata->'detectors') as d
-		WHERE org_id = ? AND timestamp >= ? AND jsonb_typeof(metadata->'detectors') = 'array'`+typeSQL+`
+		WHERE org_id = ? AND timestamp >= ? AND jsonb_typeof(metadata->'detectors') = 'array'
+		  AND action != 'allowed'`+typeSQL+`
 		GROUP BY d ORDER BY count DESC LIMIT 5`,
 		append([]any{orgID, since}, typeArgs...)...).
 		Scan(&topDetectors)
@@ -315,7 +320,7 @@ func (h *ActivityHandler) Stats(c *gin.Context) {
 		COUNT(*) as total,
 		COUNT(*) FILTER (WHERE action = 'blocked') as blocked
 		FROM activity_events
-		WHERE org_id = ? AND timestamp >= ?`+typeSQL+`
+		WHERE org_id = ? AND timestamp >= ? AND action != 'allowed'`+typeSQL+`
 		GROUP BY DATE(timestamp)
 		ORDER BY date ASC`, append([]any{orgID, since}, typeArgs...)...).Scan(&byDay)
 
@@ -330,7 +335,7 @@ func (h *ActivityHandler) Stats(c *gin.Context) {
 	var byType []TypeCount
 	h.db.Raw(`SELECT event_type, COUNT(*) as count
 		FROM activity_events
-		WHERE org_id = ? AND timestamp >= ?`+typeSQL+`
+		WHERE org_id = ? AND timestamp >= ? AND action != 'allowed'`+typeSQL+`
 		GROUP BY event_type ORDER BY count DESC`,
 		append([]any{orgID, since}, typeArgs...)...).Scan(&byType)
 
