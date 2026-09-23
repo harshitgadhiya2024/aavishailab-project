@@ -1,15 +1,16 @@
 //! Agent configuration — a faithful port of the Python agent's config
 //! loading (`load_config`, `ensure_enrolled`, `_find_enroll_token`).
 //!
-//! Enrollment scope note: this port implements **token-file enrollment**
-//! only (an enrollment token dropped by a packaged installer or MDM
-//! profile at a well-known path, or via env vars) — not the interactive
-//! browser-callback flow (`browser_enroll` in the Python original, which
-//! opens a browser and listens on loopback :6119 for the portal to hand
-//! the token back). Browser enrollment is a first-run UX convenience for
-//! a human clicking through a manual install; token-file enrollment is
-//! what an actual managed deployment (packaged installer, MDM push) uses,
-//! and is the one that matters for "production".
+//! Both enrollment paths are implemented: **token-file enrollment** (an
+//! enrollment token dropped by a packaged installer or MDM profile at a
+//! well-known path, or via env vars — this module's `find_enroll_token`,
+//! consulted from `background::run` before the GUI ever waits on a
+//! click) and **interactive browser enrollment** (`enroll_interactive.rs`,
+//! driven from the GUI's Connect button — a tiny loopback HTTP listener
+//! plays the same role as Python's `browser_enroll`). Token-file
+//! enrollment is what an actual managed deployment (packaged installer,
+//! MDM push) uses; browser enrollment is the first-run convenience for a
+//! human clicking through a manual install.
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
