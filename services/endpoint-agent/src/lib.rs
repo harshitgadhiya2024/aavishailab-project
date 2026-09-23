@@ -6,8 +6,9 @@
 //! enforcement gate, activity reporting, DLP/malware scan integration,
 //! heartbeat, device posture, token-file and interactive browser
 //! enrollment, software inventory, application control, screenshot
-//! capture with input-activity counting, auto-update, and the native
-//! (egui) desktop window + tray icon. System-proxy configuration is
+//! capture with input-activity counting, auto-update, the single-
+//! instance lock, and the native (egui) desktop window + tray icon.
+//! System-proxy configuration is
 //! implemented per-OS (Linux fully tested on this build host; macOS/
 //! Windows written from the Python original's logic but NOT verified on
 //! real hardware — no such hardware is available in this build
@@ -46,6 +47,7 @@ pub mod rules;
 pub mod scan;
 pub mod screenshot;
 pub mod screenshot_config;
+pub mod single_instance;
 pub mod system_proxy;
 pub mod threat_cache;
 pub mod tray;

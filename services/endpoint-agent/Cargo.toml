@@ -75,7 +75,10 @@ rdev = "0.5"
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"
 
-[target.'cfg(unix)'.dependencies]
+# Unconditional, not cfg(unix)-only: single_instance.rs needs it on every
+# platform — flock on Unix, the CRT's _locking (the same function Python's
+# msvcrt.locking wraps) on Windows. libc itself builds fine everywhere; it
+# just exposes a different symbol set per target.
 libc = "0.2"
 
 [target.'cfg(target_os = "windows")'.dependencies]

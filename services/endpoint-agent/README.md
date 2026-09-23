@@ -49,6 +49,7 @@ Python class/section:
 | `activity_monitor.rs` | `ActivityMonitor` | Same keyboard/mouse/scroll counting via a global listener (`rdev` in place of `pynput`), same 1-second move throttle, same "count only, never log a key" guarantee |
 | `update.rs` | `AutoUpdater` | Same manifest-poll/SHA-256-verify/swap sequence. Gated on `cfg!(debug_assertions)` rather than `sys.frozen` — the matching distinction for a language with no interpreter to freeze: a plain `cargo build`/`cargo run` never auto-updates, only `--release` does |
 | `gui.rs` + `tray.rs` | `DesktopUI`, the tray half of the Python original | Native egui window, not a webview — see **Why egui, not a webview** below |
+| `single_instance.rs` | `acquire_single_instance_lock` + `_signal_running_instance_to_show` | Same advisory-lock-plus-PID-file design; the two platforms' locking primitives differ enough (Unix `flock`, Windows exclusive `share_mode(0)` at open time) that this is two `open_exclusive` implementations behind one shared `acquire`, not a single ported function |
 
 ### The one deliberately different piece: HTTP parsing
 
@@ -259,11 +260,11 @@ as a checked-in, repeatable script rather than a one-off manual pass.
 ## Tests
 
 ```bash
-cargo test          # 119 unit/integration tests, no network
+cargo test          # 121 unit/integration tests, no network (1 more #[ignore]d, see below)
 cargo clippy --all-targets -- -D warnings   # clean, zero warnings
 ```
 
-119 tests across every module, largely mirroring the equivalent suite
+121 tests across every module, largely mirroring the equivalent suite
 written for the Python original (`scripts/agent/tests/`) so both
 implementations are checked against the same behavioral spec — domain-
 matching edge cases (TLD protection, org-vs-global precedence, `www.`
@@ -272,7 +273,7 @@ RFC3339 edge cases, activity dedup, cache TTL/eviction, MITM bypass-
 list matching (exact/wildcard/parent-domain), and the subprocess-drain
 helper (`procutil`) a real deadlock was found through.
 
-Five of those tests skip themselves (not fail) with no `DISPLAY` set:
+Three of those tests skip themselves (not fail) with no `DISPLAY` set:
 real screen capture, blurred capture, and the `rdev` input listener
 actually installing. Run them under Xvfb for the coverage that matters:
 
@@ -280,6 +281,15 @@ actually installing. Run them under Xvfb for the coverage that matters:
 Xvfb :99 -screen 0 1024x768x24 &
 DISPLAY=:99 cargo test --release capture_screen -- --nocapture
 DISPLAY=:99 cargo test --release activity_monitor_start_installs -- --nocapture
+```
+
+One more, `single_instance::tests::test_a_second_process_cannot_acquire_a_held_lock`,
+is `#[ignore]`d rather than DISPLAY-gated — it spawns a real second OS
+process (via `flock(1)`) to prove the lock is exclusive *across*
+processes, which a single test binary can't demonstrate on itself:
+
+```bash
+cargo test --release single_instance -- --ignored --nocapture
 ```
 
 This is how the "already enrolled but the window still says Not
@@ -303,6 +313,15 @@ capturing the window: "Protected / Your device is connected and
 monitored", falling back to "Your company" / "This device" until the
 real names arrive on the first successful heartbeat (`gui.rs` already
 had that fallback — it was just never reached).
+
+### The launchd race, reproduced
+
+`single_instance.rs`'s claim (a second instance exits quietly while the
+first keeps running) was checked by starting two real copies of the
+binary against the same enrolled config under Xvfb, not just unit-
+tested: the second process exited with code 0 and an empty log — it
+never got far enough to do anything — while the first kept its proxy
+listening and kept sending heartbeats throughout, undisturbed.
 
 ## Local development
 

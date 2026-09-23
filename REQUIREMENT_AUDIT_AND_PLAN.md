@@ -183,8 +183,13 @@ Missing, and this is the whole of the remaining work:
 | # | Missing from the Rust connector | Python equivalent |
 |---|---|---|
 | 1 | Uninstall flow — `ui_state.rs` carries `uninstall_allowed`, but `gui.rs` has no email/password screen to act on it | `begin_uninstall` (line 5287) |
-| 2 | Single-instance lock + "show window" signal | `acquire_single_instance_lock` |
-| 3 | Packaging for all three platforms, and CI for the packaging step itself (unit tests now run in CI — see Phase 4) | `packaging/*`, `agent-packages.yml` |
+| 2 | Packaging for all three platforms, and CI for the packaging step itself (unit tests now run in CI — see Phase 4) | `packaging/*`, `agent-packages.yml` |
+
+Single-instance lock + "show window" signal is done — `single_instance.rs`,
+verified by actually starting two real instances under Xvfb: the second
+exits cleanly (code 0) while the first keeps running its proxy and
+heartbeat undisturbed, the exact launchd race the Python original's own
+comment documents having hit on a real Mac.
 
 ---
 
@@ -208,10 +213,12 @@ prior session found its GTK/Cancel-button bugs: by actually running the
 binary under Xvfb, not by reading the code.
 
 ### Phase 3 — Rust connector: lifecycle parity *(partial)*
-`update.rs` ✅ done (auto-update with SHA-256 verification). Still open:
-the uninstall flow behind the existing `uninstall_allowed` flag — needs a
-new GUI screen (admin email/password) `gui.rs` doesn't have yet — and the
-single-instance lock.
+`update.rs` ✅ done (auto-update with SHA-256 verification). `single_instance.rs`
+✅ done (advisory file lock — flock on Unix, exclusive `share_mode(0)` open
+on Windows — plus the SIGUSR1 "show window" signal, wired into `main.rs`
+before anything else touches the network or the proxy port). Still open:
+the uninstall flow behind the existing `uninstall_allowed` flag, which
+needs a new GUI screen (admin email/password) `gui.rs` doesn't have yet.
 
 ### Phase 4 — Packaging the Rust connector
 Rewrite `packaging/{linux,macos,windows}` to wrap `cargo build --release`
@@ -243,7 +250,7 @@ Updated as each phase lands.
 |---|---|
 | 1 — No allowed, anywhere | ✅ Done — verified against a real registered company + employee account (not seeded fixtures), live SQL matching every handler's query, and a rebuilt/restarted admin-api confirming the boot-time purge |
 | 2 — Rust monitoring parity | ✅ Done — posture, screenshot capture, activity monitoring, open-app enumeration; 119 tests, clippy clean, live-verified under Xvfb (real screen capture, real `rdev` listener, real window render) |
-| 3 — Rust lifecycle parity | ⚠️ Partial — auto-update done; uninstall flow and single-instance lock still open (see Part 3) |
+| 3 — Rust lifecycle parity | ⚠️ Partial — auto-update and single-instance lock done, live-verified with two real instances under Xvfb; uninstall flow still open (see Part 3) |
 | 4 — Rust packaging | Not started |
 | 5 — Release 2.6.0 | Not started |
 | 6 — Cutover | Blocked on real macOS/Windows hardware |
