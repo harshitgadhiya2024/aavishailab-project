@@ -182,14 +182,15 @@ Missing, and this is the whole of the remaining work:
 
 | # | Missing from the Rust connector | Python equivalent |
 |---|---|---|
-| 1 | Uninstall flow — `ui_state.rs` carries `uninstall_allowed`, but `gui.rs` has no email/password screen to act on it | `begin_uninstall` (line 5287) |
-| 2 | Packaging for all three platforms, and CI for the packaging step itself (unit tests now run in CI — see Phase 4) | `packaging/*`, `agent-packages.yml` |
+| 1 | Packaging for all three platforms, and CI for the packaging step itself (unit tests now run in CI — see Phase 4) | `packaging/*`, `agent-packages.yml` |
 
-Single-instance lock + "show window" signal is done — `single_instance.rs`,
-verified by actually starting two real instances under Xvfb: the second
-exits cleanly (code 0) while the first keeps running its proxy and
-heartbeat undisturbed, the exact launchd race the Python original's own
-comment documents having hit on a real Mac.
+Everything else in the original gap list is done. Single-instance lock +
+"show window" signal (`single_instance.rs`) was verified by actually
+starting two real instances under Xvfb: the second exits cleanly (code 0)
+while the first keeps running its proxy and heartbeat undisturbed, the
+exact launchd race the Python original's own comment documents having hit
+on a real Mac. The uninstall flow (`uninstall.rs` + a `gui.rs` dialog) was
+verified against a real server with real admin credentials — see Part 5.
 
 ---
 
@@ -212,13 +213,16 @@ already-enrolled-shows-Connected fix, found and fixed the same way the
 prior session found its GTK/Cancel-button bugs: by actually running the
 binary under Xvfb, not by reading the code.
 
-### Phase 3 — Rust connector: lifecycle parity *(partial)*
-`update.rs` ✅ done (auto-update with SHA-256 verification). `single_instance.rs`
-✅ done (advisory file lock — flock on Unix, exclusive `share_mode(0)` open
-on Windows — plus the SIGUSR1 "show window" signal, wired into `main.rs`
-before anything else touches the network or the proxy port). Still open:
-the uninstall flow behind the existing `uninstall_allowed` flag, which
-needs a new GUI screen (admin email/password) `gui.rs` doesn't have yet.
+### Phase 3 — Rust connector: lifecycle parity ✅ done
+`update.rs` (auto-update with SHA-256 verification), `single_instance.rs`
+(advisory file lock — flock on Unix, exclusive `share_mode(0)` open on
+Windows — plus the SIGUSR1 "show window" signal), and the uninstall flow
+(`uninstall.rs` + a `gui.rs` dialog for a company administrator's email/
+password). The uninstall work also surfaced two more never-wired fields —
+`uninstall_allowed` was never sent by the server at all, and never applied
+by the Rust heartbeat loop even though every other piece of it existed —
+both fixed; see the commit history for the live verification against a
+real server with real admin credentials.
 
 ### Phase 4 — Packaging the Rust connector
 Rewrite `packaging/{linux,macos,windows}` to wrap `cargo build --release`
@@ -250,10 +254,10 @@ Updated as each phase lands.
 |---|---|
 | 1 — No allowed, anywhere | ✅ Done — verified against a real registered company + employee account (not seeded fixtures), live SQL matching every handler's query, and a rebuilt/restarted admin-api confirming the boot-time purge |
 | 2 — Rust monitoring parity | ✅ Done — posture, screenshot capture, activity monitoring, open-app enumeration; 119 tests, clippy clean, live-verified under Xvfb (real screen capture, real `rdev` listener, real window render) |
-| 3 — Rust lifecycle parity | ⚠️ Partial — auto-update and single-instance lock done, live-verified with two real instances under Xvfb; uninstall flow still open (see Part 3) |
+| 3 — Rust lifecycle parity | ✅ Done — auto-update, single-instance lock (live-verified with two real instances), and the uninstall flow (live-verified against a real server: correct rejection on a wrong password, correct authorization + device-offline transition on the real org_admin's) |
 | 4 — Rust packaging | Not started |
 | 5 — Release 2.6.0 | Not started |
-| 6 — Cutover | Blocked on real macOS/Windows hardware |
+| 6 — Cutover | Real macOS hardware is now available (a Rust toolchain was installed on this Mac this session) — no longer blocked on that specifically, but still needs Windows hardware, and Phase 4 packaging has to land first |
 
 ### What "done" means for Phase 1 and 2, concretely
 
@@ -280,3 +284,27 @@ regression was caught — a window that stayed broken indefinitely until
 `background.rs` was fixed to match Python's connect-before-network-call
 ordering, confirmed fixed by rerunning the identical scenario and
 capturing the window afterward.
+
+**Phase 3, plus real macOS hardware.** A Rust toolchain was installed on
+this Mac and the connector was built natively (`aarch64-apple-darwin`)
+for the first time ever — every prior build and test ran inside a Linux
+Docker container. That surfaced bugs Linux could not: `libc` had silently
+landed under the wrong `[target...]` section in Cargo.toml (resolved by
+coincidence on Linux, failed to link everywhere else) and three
+`clippy::needless_return` lints in `system_proxy.rs`'s macOS branches,
+never linted before because no platform that compiles them had ever run
+clippy. Then, going further than a clean build: a real enrollment token
+was minted against the real local admin-api and the actual compiled
+binary was run — which is how the single biggest gap of this session was
+found, **`AAVISHIELD_ENROLL_TOKEN` was implemented (`enroll::
+ensure_enrolled`) but never called from the GUI binary's own startup**,
+meaning a managed/MDM-pushed install with nobody at the keyboard had no
+way to enroll itself. Fixed, then verified: the binary enrolled for
+real, its policy-signing key pinned, its local proxy came up, and —
+checked directly with `networksetup` and `lsof`, not assumed — this
+Mac's real Wi-Fi system proxy flipped on and real applications already
+running (Chrome, Microsoft Teams, Cursor) immediately routed through it.
+Torn down immediately after and confirmed restored to the exact
+pre-test state. The uninstall flow that followed found two more
+instances of the identical "implemented, never connected" shape (see
+Part 3) before its own real-server verification.
