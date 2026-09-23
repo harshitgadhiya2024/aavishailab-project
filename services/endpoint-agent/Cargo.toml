@@ -12,6 +12,17 @@ name = "aavishield-agent"
 path = "src/main.rs"
 
 [dependencies]
+# Unconditional, not cfg(unix)-only: single_instance.rs and app_control.rs's
+# `kill()`-on-macOS path both need it on every platform — flock/kill on
+# Unix, the CRT's exclusive-open equivalent on Windows (see
+# single_instance.rs). libc itself builds fine everywhere; it just exposes
+# a different symbol set per target. This must live directly under
+# [dependencies], not tucked under a `[target...]` header — a real bug
+# found by actually building natively on macOS: it had silently landed
+# under `[target.'cfg(target_os = "linux")'.dependencies]` instead, so it
+# resolved on Linux by coincidence and failed to link on every other
+# platform despite the comment right next to it claiming "unconditional".
+libc = "0.2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "time", "sync", "fs", "signal", "process"] }
 hyper = { version = "1", features = ["full"] }
 hyper-util = { version = "0.1", features = ["full"] }
@@ -74,12 +85,6 @@ rdev = "0.5"
 # copy of the crate in the dependency tree, not two.
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"
-
-# Unconditional, not cfg(unix)-only: single_instance.rs needs it on every
-# platform — flock on Unix, the CRT's _locking (the same function Python's
-# msvcrt.locking wraps) on Windows. libc itself builds fine everywhere; it
-# just exposes a different symbol set per target.
-libc = "0.2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winreg = "0.52"

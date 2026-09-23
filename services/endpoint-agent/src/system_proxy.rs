@@ -32,7 +32,7 @@ pub async fn system_proxy_active() -> bool {
                 }
             }
         }
-        return false;
+        false
     }
     #[cfg(target_os = "windows")]
     {
@@ -59,7 +59,7 @@ pub async fn clear_system_proxy() -> bool {
             let _ = run(&["networksetup", "-setsecurewebproxystate", &svc, "off"]).await;
             ok = true;
         }
-        return ok;
+        ok
     }
     #[cfg(target_os = "windows")]
     {
@@ -85,7 +85,7 @@ pub async fn apply_system_proxy() -> bool {
             let _ = run(&["networksetup", "-setproxybypassdomains", &svc, "localhost", "127.0.0.1", "*.local", "169.254/16", "fe80::/10"]).await;
             applied = true;
         }
-        return applied;
+        applied
     }
     #[cfg(target_os = "windows")]
     {
