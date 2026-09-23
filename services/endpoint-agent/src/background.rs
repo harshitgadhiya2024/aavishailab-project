@@ -43,6 +43,17 @@ pub enum Command {
     /// Reports the disconnect, tears down local state, and stops
     /// enforcing — mirrors Python's `begin_disconnect`.
     Disconnect,
+    /// Removal needs a company administrator's credentials, verified by
+    /// the server — the employee cannot do this alone. `respond` carries
+    /// back `Ok(())` (the platform uninstaller has been kicked off — the
+    /// GUI should show a "removing…" confirmation) or `Err(message)` (the
+    /// credentials were rejected, or the server couldn't be reached) —
+    /// mirrors Python's `begin_uninstall` returning `{ok}` or `{error}`
+    /// for the window to render directly. A `oneshot`, not fire-and-
+    /// forget like Connect/Disconnect: unlike those, the GUI has
+    /// something specific to say back to the person depending on the
+    /// outcome.
+    Uninstall { email: String, password: String, respond: tokio::sync::oneshot::Sender<Result<(), String>> },
 }
 
 /// A live `AgentClient`, once one exists — the GUI needs this for
@@ -226,6 +237,15 @@ async fn run(ui: UiState, client_slot: ClientSlot, mut commands: tokio::sync::mp
                 // Nothing in flight to cancel, and nothing enrolled yet to
                 // disconnect — both are no-ops outside an active Connect.
             }
+            Command::Uninstall { respond, .. } => {
+                // Mirrors Python's begin_uninstall: nothing enrolled yet
+                // means nothing to remove. uninstall_allowed only becomes
+                // true once the server has said so on a heartbeat this
+                // device never got that far to receive, so the GUI's own
+                // gating should make this unreachable in practice — this
+                // is the same defensive answer Python gives regardless.
+                let _ = respond.send(Err("This device isn't connected, so there's nothing to remove.".to_string()));
+            }
         }
     }
 }
@@ -315,11 +335,26 @@ async fn run_full_agent(config: Config, ui: UiState, client_slot: ClientSlot, mu
     let disconnect_revoked = revoked.clone();
     tokio::spawn(async move {
         while let Some(cmd) = commands.recv().await {
-            if let Command::Disconnect = cmd {
-                handle_disconnect(&disconnect_client, &disconnect_ui, &disconnect_revoked).await;
+            match cmd {
+                Command::Disconnect => {
+                    handle_disconnect(&disconnect_client, &disconnect_ui, &disconnect_revoked).await;
+                }
+                Command::Uninstall { email, password, respond } => {
+                    // authorize_and_run resolves as soon as the server has
+                    // accepted or rejected the credentials — it spawns the
+                    // actual platform uninstaller as its own detached task
+                    // rather than waiting on it, the same shape Python's
+                    // begin_uninstall has (a background thread that
+                    // outlives the `{"ok": True}` response). The GUI
+                    // should never sit on "removing…" for as long as the
+                    // uninstaller itself takes.
+                    let result = crate::uninstall::authorize_and_run(&disconnect_client, &email, &password).await;
+                    let _ = respond.send(result);
+                }
+                // Connect/CancelConnect have nothing to do once already
+                // enrolled — the button that would send them isn't shown.
+                Command::Connect | Command::CancelConnect => {}
             }
-            // Connect/CancelConnect have nothing to do once already
-            // enrolled — the button that would send them isn't shown.
         }
     });
 

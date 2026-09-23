@@ -127,6 +127,8 @@ pub async fn seed_enforcement(deps: &Deps) {
         ownership: Option<String>,
         #[serde(default)]
         screenshots: Option<ScreenshotPayload>,
+        #[serde(default)]
+        uninstall_allowed: bool,
     }
     if let Ok(body) = resp.json::<ConfigResponse>().await {
         if let Some(enforcement) = &body.enforcement {
@@ -138,6 +140,17 @@ pub async fn seed_enforcement(deps: &Deps) {
         if let Some(sc) = &body.screenshots {
             deps.screenshots.apply(sc.enabled, sc.min_interval_seconds, sc.max_interval_seconds, sc.blur);
         }
+        // Only the company can enable removal, so the desktop UI has to
+        // learn it from the server rather than assume — the entry stays
+        // hidden (UiState's own default is `false`) until this arrives.
+        // Matches the Python original's `seed_enforcement` reading this
+        // same field from the same endpoint — see `uninstallAllowed()`'s
+        // doc comment on the server for why it is unconditionally true
+        // today. This was defined end-to-end (server field, `UiState::
+        // set_uninstall_allowed`, the GUI's own gate on it) but never
+        // actually connected here — the entry point could never have
+        // appeared until this line existed.
+        deps.ui.set_uninstall_allowed(body.uninstall_allowed);
         // Connected the moment the very first server round-trip succeeds —
         // the window shouldn't sit on "Connecting" a beat longer than it has
         // to just because these two names arrived a fraction later.

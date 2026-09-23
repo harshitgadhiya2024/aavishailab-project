@@ -27,7 +27,7 @@ const DANGER: egui::Color32 = egui::Color32::from_rgb(0xF8, 0x71, 0x71);
 
 pub struct ConnectorApp {
     ui_state: UiState,
-    #[allow(dead_code)] // wired up once Disconnect/Enable-HTTPS/Uninstall call the server directly from here
+    #[allow(dead_code)] // wired up once Enable-HTTPS calls the server directly from here
     client_slot: ClientSlot,
     commands: tokio::sync::mpsc::Sender<Command>,
     /// Set once "Run in background" (or the window's own close button) is
@@ -42,11 +42,37 @@ pub struct ConnectorApp {
     /// which is the correct behaviour on the one path that ends the
     /// process (an unrecoverable eframe error), and otherwise never runs.
     tray: Option<crate::tray::Tray>,
+    uninstall: UninstallState,
+}
+
+/// The uninstall confirmation dialog's own state — kept separate from the
+/// handful of top-level `ConnectorApp` fields because it is a small state
+/// machine of its own (closed → editing → pending → error), not a single
+/// flag like `confirm_disconnect`.
+#[derive(Default)]
+struct UninstallState {
+    showing: bool,
+    email: String,
+    password: String,
+    /// `Some` while a request is in flight — polled once per frame via
+    /// `try_recv`, which works outside a tokio runtime context because it
+    /// is non-blocking and touches no waker. Cleared the moment a result
+    /// arrives (`Ok` or `Err`), replaced by `error` for the failure case.
+    pending: Option<tokio::sync::oneshot::Receiver<Result<(), String>>>,
+    error: Option<String>,
 }
 
 impl ConnectorApp {
     pub fn new(ui_state: UiState, client_slot: ClientSlot, commands: tokio::sync::mpsc::Sender<Command>, tray: Option<crate::tray::Tray>) -> Self {
-        ConnectorApp { ui_state, client_slot, commands, running_in_background: Arc::new(AtomicBool::new(false)), confirm_disconnect: false, tray }
+        ConnectorApp {
+            ui_state,
+            client_slot,
+            commands,
+            running_in_background: Arc::new(AtomicBool::new(false)),
+            confirm_disconnect: false,
+            tray,
+            uninstall: UninstallState::default(),
+        }
     }
 
     fn send(&self, cmd: Command) {
@@ -154,11 +180,54 @@ impl eframe::App for ConnectorApp {
                         self.confirm_disconnect = true;
                     }
                 }
+
+                // A small text link, not a full button — removal is rare
+                // and deliberately less prominent than Disconnect, which
+                // an employee might reach for often on their own hardware.
+                // `uninstall_allowed` comes from the server (see
+                // ui_state.rs), so this simply doesn't render on a device
+                // the company hasn't granted removal on, rather than
+                // showing a button that would just answer "no" every time.
+                if live && snap.uninstall_allowed {
+                    ui.add_space(10.0);
+                    if ui.add(egui::Label::new(egui::RichText::new("Uninstall the connector").size(11.0).color(SUBTLE_FG)).sense(egui::Sense::click())).clicked() {
+                        self.uninstall.showing = true;
+                        self.uninstall.error = None;
+                    }
+                }
             });
         });
 
         if self.confirm_disconnect {
             self.render_disconnect_confirm(ui, &ctx);
+        }
+
+        // Polled here, once per frame, alongside the tray's own
+        // show_requested flag above — try_recv is non-blocking and needs
+        // no runtime context, so this is safe to call from the GUI's sync
+        // frame loop even though the sender lives on the background
+        // thread's tokio runtime.
+        if let Some(rx) = &mut self.uninstall.pending {
+            match rx.try_recv() {
+                Ok(Ok(())) => {
+                    self.uninstall.pending = None;
+                    self.uninstall.showing = false;
+                    self.uninstall.password.clear();
+                }
+                Ok(Err(message)) => {
+                    self.uninstall.pending = None;
+                    self.uninstall.error = Some(message);
+                }
+                Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
+                Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+                    self.uninstall.pending = None;
+                    self.uninstall.error = Some("Something went wrong. Please try again.".to_string());
+                }
+            }
+        }
+
+        if self.uninstall.showing {
+            self.render_uninstall_dialog(ui, &ctx);
         }
     }
 }
@@ -289,6 +358,66 @@ impl ConnectorApp {
                 });
             });
         let _ = ui; // the confirm dialog is drawn via ctx directly, above
+    }
+
+    /// Company administrator credentials, verified server-side before
+    /// anything is removed — mirrors Python's `begin_uninstall` dialog.
+    /// The employee cannot approve their own device's removal; this form
+    /// only ever succeeds against an org_admin account of the same
+    /// company (enforced by `AuthorizeUninstall` on the server, not by
+    /// anything client-side).
+    fn render_uninstall_dialog(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        let _ = ui; // drawn via ctx directly below, same as render_disconnect_confirm
+        let pending = self.uninstall.pending.is_some();
+        egui::Window::new("Remove the connector")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .show(ctx, |ui| {
+                ui.set_width(300.0);
+                ui.label(egui::RichText::new("Requires a company administrator's credentials.").size(12.0).color(SUBTLE_FG));
+                ui.add_space(8.0);
+
+                ui.add_enabled_ui(!pending, |ui| {
+                    ui.label("Administrator email");
+                    ui.add_sized([280.0, 24.0], egui::TextEdit::singleline(&mut self.uninstall.email));
+                    ui.add_space(6.0);
+                    ui.label("Password");
+                    ui.add_sized([280.0, 24.0], egui::TextEdit::singleline(&mut self.uninstall.password).password(true));
+                });
+
+                if let Some(err) = &self.uninstall.error {
+                    ui.add_space(8.0);
+                    ui.label(egui::RichText::new(err).size(12.0).color(DANGER));
+                }
+
+                ui.add_space(10.0);
+                ui.horizontal(|ui| {
+                    if ui.add_enabled(!pending, egui::Button::new("Cancel")).clicked() {
+                        self.uninstall.showing = false;
+                        self.uninstall.password.clear();
+                        self.uninstall.error = None;
+                    }
+                    let label = if pending { "Removing…" } else { "Remove" };
+                    let ready = !pending && !self.uninstall.email.trim().is_empty() && !self.uninstall.password.is_empty();
+                    let btn = egui::Button::new(egui::RichText::new(label).color(egui::Color32::WHITE)).fill(DANGER);
+                    if ui.add_enabled(ready, btn).clicked() {
+                        self.send_uninstall();
+                    }
+                });
+            });
+    }
+
+    /// Builds the response channel `Command::Uninstall` carries, sends the
+    /// command, and stashes the receiving half to be polled once per frame
+    /// — see the `try_recv` loop in `ui()`.
+    fn send_uninstall(&mut self) {
+        let email = self.uninstall.email.trim().to_string();
+        let password = std::mem::take(&mut self.uninstall.password);
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.uninstall.error = None;
+        self.uninstall.pending = Some(rx);
+        self.send(Command::Uninstall { email, password, respond: tx });
     }
 }
 

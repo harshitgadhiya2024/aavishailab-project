@@ -320,7 +320,11 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     diff == 0
 }
 
-fn open_in_browser(url: &str) {
+/// `pub(crate)`, not private: `uninstall.rs`'s Windows/Linux path reuses
+/// this too — removal there is the OS package manager's job, so all the
+/// agent does is open the portal's download page, the same action this
+/// function already exists for on the enrollment side.
+pub(crate) fn open_in_browser(url: &str) {
     let result = if cfg!(target_os = "macos") {
         std::process::Command::new("/usr/bin/open").arg(url).status()
     } else if cfg!(target_os = "windows") {

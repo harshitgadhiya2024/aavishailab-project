@@ -53,4 +53,5 @@ pub mod threat_cache;
 pub mod tray;
 pub mod ui_state;
 pub mod tls_proxy;
+pub mod uninstall;
 pub mod update;

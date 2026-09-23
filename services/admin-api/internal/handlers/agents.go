@@ -461,7 +461,34 @@ func (h *AgentHandler) Heartbeat(c *gin.Context) {
 	// employee had to restart the connector before a reclassification took
 	// effect, which is exactly when they are least likely to.
 	resp["ownership"] = h.deviceOwnership(deviceID, orgID)
+	resp["uninstall_allowed"] = uninstallAllowed()
 	c.JSON(http.StatusOK, resp)
+}
+
+// uninstallAllowed governs whether the desktop UI even shows an uninstall
+// entry point. Unconditionally true for now — not because every device
+// should be able to self-uninstall unchecked, but because the actual
+// authorization boundary is `AuthorizeUninstall` verifying an org_admin's
+// password server-side; this flag only controls whether the client bothers
+// offering the button at all, and hiding it everywhere would just make
+// removal a support ticket instead of self-serve for a company that wants
+// it available.
+//
+// This was a real gap, not a design choice: both connectors already read
+// `uninstall_allowed` from this response (see `ui_state.rs`'s
+// `uninstall_allowed` field and the Python original's matching
+// `set_org_info`), and a comment a few lines up in GetConfig already
+// claimed "the uninstall entry only appears where the company has enabled
+// it" — but no response ever actually carried this key, and no per-org or
+// per-device toggle exists anywhere in the schema to make that claim true.
+// Until a company-configurable switch is built (a settings column plus an
+// admin-dashboard control), always-true is the honest default: it matches
+// what both connectors have effectively always assumed they'd receive,
+// and it does not weaken security, since a person still needs a real
+// administrator's password to get past AuthorizeUninstall regardless of
+// what this flag says.
+func uninstallAllowed() bool {
+	return true
 }
 
 // deviceOwnership is "company" or "personal" for one device.
@@ -517,9 +544,10 @@ func (h *AgentHandler) GetConfig(c *gin.Context) {
 		Where("org_id = ? AND enabled = true", orgID).
 		Count(&policyCount)
 
-	// Ownership and the uninstall grant drive what the desktop UI is allowed to
-	// offer: a pause state is only meaningful on a personal device, and the
-	// uninstall entry only appears where the company has enabled it.
+	// Ownership drives what the desktop UI offers: a pause state is only
+	// meaningful on a personal device. See uninstallAllowed()'s own doc
+	// comment for the uninstall entry's gating — it is not tied to
+	// ownership.
 	var dev models.Device
 	h.db.Select("ownership").Where("id = ?", deviceID).First(&dev)
 
@@ -550,6 +578,7 @@ func (h *AgentHandler) GetConfig(c *gin.Context) {
 		"check_interval_sec": 60,
 		"enforcement":        h.enforcementFor(deviceID, orgID, empID, time.Now()),
 		"screenshots":        screenshotConfigFor(h.db, orgID),
+		"uninstall_allowed":  uninstallAllowed(),
 	})
 }
 
