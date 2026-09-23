@@ -49,6 +49,16 @@ impl ActivityReporter {
     /// Dropped, not queued, if off-hours: an event captured after the
     /// working day ended must never be uploaded later.
     pub fn record(&self, target_url: &str, domain: &str, action: &str, rule: Option<&dyn RuleLike>, event_type: &str, kind: &str) {
+        // "Allowed" is routine, ordinary browsing — every one of the
+        // hundreds of ordinary requests a workday produces. It is not an
+        // incident, nothing about it is ever shown to the company, and it
+        // must not even be stored: it previously became 83% of every row
+        // this platform kept (3,978 of 4,787 on a real org). Dropped here,
+        // before it is ever queued, batched, or sent.
+        if action == "allowed" {
+            return;
+        }
+
         if !self.gate.logs(kind) {
             return;
         }
@@ -130,26 +140,31 @@ mod tests {
         ActivityReporter::new(client, Arc::new(EnforcementGate::default()))
     }
 
+    // "alerted" stands in for "allowed" as the sample action in the dedup/
+    // queue tests below: "allowed" is now unconditionally dropped (see
+    // test_allowed_is_never_queued), so it can no longer exercise the dedup
+    // and off-hours logic these tests are actually about.
+
     #[test]
     fn test_records_a_single_event() {
         let r = reporter();
-        r.record("https://example.com/", "example.com", "allowed", None, "web_request", "activity");
+        r.record("https://example.com/", "example.com", "alerted", None, "web_request", "activity");
         assert_eq!(r.queue_len(), 1);
     }
 
     #[test]
     fn test_dedup_window_collapses_rapid_repeats() {
         let r = reporter();
-        r.record("https://example.com/a", "example.com", "allowed", None, "web_request", "activity");
-        r.record("https://example.com/b", "example.com", "allowed", None, "web_request", "activity");
-        r.record("https://example.com/c", "example.com", "allowed", None, "web_request", "activity");
+        r.record("https://example.com/a", "example.com", "alerted", None, "web_request", "activity");
+        r.record("https://example.com/b", "example.com", "alerted", None, "web_request", "activity");
+        r.record("https://example.com/c", "example.com", "alerted", None, "web_request", "activity");
         assert_eq!(r.queue_len(), 1);
     }
 
     #[test]
     fn test_different_action_is_not_deduped() {
         let r = reporter();
-        r.record("https://example.com/a", "example.com", "allowed", None, "web_request", "activity");
+        r.record("https://example.com/a", "example.com", "alerted", None, "web_request", "activity");
         r.record("https://example.com/b", "example.com", "blocked", None, "web_request", "activity");
         assert_eq!(r.queue_len(), 2);
     }
@@ -157,8 +172,8 @@ mod tests {
     #[test]
     fn test_dedup_key_ignores_www_prefix() {
         let r = reporter();
-        r.record("https://example.com/", "example.com", "allowed", None, "web_request", "activity");
-        r.record("https://www.example.com/", "www.example.com", "allowed", None, "web_request", "activity");
+        r.record("https://example.com/", "example.com", "alerted", None, "web_request", "activity");
+        r.record("https://www.example.com/", "www.example.com", "alerted", None, "web_request", "activity");
         assert_eq!(r.queue_len(), 1);
     }
 
@@ -166,6 +181,29 @@ mod tests {
     fn test_off_hours_activity_event_is_dropped_not_queued() {
         let r = reporter();
         r.gate.apply(&crate::enforcement::EnforcementPayload { mode: Some("security_only".to_string()), active: None, reason: None, until: None, source: None }, None);
+        r.record("https://example.com/", "example.com", "alerted", None, "web_request", "activity");
+        assert_eq!(r.queue_len(), 0);
+    }
+
+    /// The regression guard on the fix itself: "allowed" is routine, ordinary
+    /// browsing — every one of the hundreds of ordinary requests a workday
+    /// produces. It became 83% of every row this platform stored (3,978 of
+    /// 4,787 on a real org) before this, and it must never be queued again,
+    /// regardless of enforcement mode, dedup state, or anything else.
+    #[test]
+    fn test_allowed_is_never_queued() {
+        let r = reporter();
+        r.record("https://example.com/", "example.com", "allowed", None, "web_request", "activity");
+        r.record("https://other.com/", "other.com", "allowed", None, "web_request", "security");
+        assert_eq!(r.queue_len(), 0);
+    }
+
+    #[test]
+    fn test_allowed_is_dropped_even_during_full_enforcement() {
+        let r = reporter();
+        // Default gate mode is "full" — the most permissive-to-log state —
+        // and "allowed" must still never reach the queue.
+        assert_eq!(r.gate.mode(), crate::enforcement::Mode::Full);
         r.record("https://example.com/", "example.com", "allowed", None, "web_request", "activity");
         assert_eq!(r.queue_len(), 0);
     }

@@ -43,6 +43,14 @@ func (h *ActivityHandler) List(c *gin.Context) {
 	q := h.db.Where("org_id = ?", orgID)
 	q = applyEmployeeTeamScope(h.db, c, q, "employee_id")
 
+	// "Allowed" is never shown, anywhere, regardless of what the caller asks
+	// for — hard exclusion rather than something a filter value could opt
+	// back into. Both agents now stop sending it and every write path drops
+	// it (see dropAllowedEvents), so this is mainly for the rows already in
+	// the database from before that fix; an explicit ?action=allowed simply
+	// gets an empty result instead of a page of routine traffic.
+	q = q.Where("action != ?", models.EventActionAllowed)
+
 	if empID != "" {
 		q = q.Where("employee_id = ?", empID)
 	}
@@ -169,6 +177,29 @@ func activitySourceScope(source string) *activitySourceFilter {
 	default:
 		return nil
 	}
+}
+
+// dropAllowedEvents strips "allowed" rows before anything is persisted.
+//
+// "Allowed" is routine, ordinary traffic — every one of the hundreds of
+// ordinary requests a workday produces. It is never shown anywhere on the
+// dashboard (see activitySourceScope and the hard exclusion in List below),
+// and before this it was still written to disk on every single request: on
+// a real org, 3,978 of 4,787 stored rows (83%) were exactly this. Both
+// agents now stop sending it at the source, but this is where every write
+// path funnels through, so it is enforced here too regardless of what any
+// agent version — past, present, or a slow-to-update one — sends.
+//
+// Order-preserving, and safe to call on an empty or nil slice.
+func dropAllowedEvents(events []models.ActivityEvent) []models.ActivityEvent {
+	out := events[:0]
+	for _, ev := range events {
+		if ev.Action == models.EventActionAllowed {
+			continue
+		}
+		out = append(out, ev)
+	}
+	return out
 }
 
 // splitCSV turns "blocked, alerted" into ["blocked", "alerted"], dropping
@@ -327,6 +358,12 @@ func (h *ActivityHandler) createEvent(c *gin.Context) {
 		return
 	}
 
+	// "Allowed" is never stored — see dropAllowedEvents.
+	if event.Action == models.EventActionAllowed {
+		c.JSON(http.StatusCreated, gin.H{"id": nil})
+		return
+	}
+
 	if event.Timestamp.IsZero() {
 		event.Timestamp = time.Now()
 	}
@@ -351,6 +388,13 @@ func (h *ActivityHandler) BulkCreate(c *gin.Context) {
 	var events []models.ActivityEvent
 	if err := c.ShouldBindJSON(&events); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// "Allowed" is never stored — see dropAllowedEvents.
+	events = dropAllowedEvents(events)
+	if len(events) == 0 {
+		c.JSON(http.StatusCreated, gin.H{"created": 0})
 		return
 	}
 

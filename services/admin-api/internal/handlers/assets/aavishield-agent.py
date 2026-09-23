@@ -1485,6 +1485,16 @@ class ActivityReporter:
 
     def record(self, target_url: str, domain: str, action: str, rule: Optional[dict],
                event_type: str = "web_request", kind: str = "activity"):
+        # "Allowed" is routine, ordinary browsing — every one of the hundreds
+        # of ordinary requests a workday produces. It is not an incident,
+        # nothing about it is ever shown to the company, and it must not even
+        # be stored: the earlier design queued it anyway, and it became 83%
+        # of every row this platform kept (3,978 of 4,787 on a real org).
+        # Dropped here, before it is ever queued, batched, or sent — the
+        # cheapest possible place to not do the work at all.
+        if action == "allowed":
+            return
+
         # Dropped, not queued: an event captured after the working day ended
         # must never be uploaded later. Queuing it would mean the employee's
         # evening shows up on the dashboard the next morning.

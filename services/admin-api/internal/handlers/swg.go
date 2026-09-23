@@ -226,20 +226,21 @@ func (h *SWGHandler) Stats(c *gin.Context) {
 		WHERE org_id = ? AND action = 'blocked' AND target_domain != ''
 		GROUP BY target_domain ORDER BY count DESC LIMIT 10`, orgID).Scan(&topBlockedDomains)
 
-	var totalBlocked, totalAllowed int64
+	var totalBlocked int64
 	h.db.Model(&models.ActivityEvent{}).
 		Where("org_id = ? AND event_type IN ('web_request', 'dns_query') AND action = 'blocked'", orgID).
 		Count(&totalBlocked)
-	h.db.Model(&models.ActivityEvent{}).
-		Where("org_id = ? AND event_type IN ('web_request', 'dns_query') AND action = 'allowed'", orgID).
-		Count(&totalAllowed)
 
 	var ruleCount int64
 	h.db.Model(&models.DomainRule{}).Where("org_id = ? OR org_id IS NULL", orgID).Count(&ruleCount)
 
 	c.JSON(http.StatusOK, gin.H{
-		"total_blocked":          totalBlocked,
-		"total_allowed":          totalAllowed,
+		"total_blocked": totalBlocked,
+		// total_allowed is deliberately gone: "allowed" web requests are
+		// routine traffic that is no longer stored at all (see
+		// dropAllowedEvents), so a count of them would only ever be a
+		// historical figure frozen at whatever it was before that change —
+		// never a live number — which is worse than not showing one.
 		"top_blocked_categories": topBlocked,
 		"top_blocked_domains":    topBlockedDomains,
 		"rule_count":             ruleCount,

@@ -257,12 +257,13 @@ export default function SWGPage() {
   const toggleIn = (list: string[], id: string) =>
     list.includes(id) ? list.filter(x => x !== id) : [...list, id];
 
+  // No "Allowed requests" card: routine, allowed traffic is never stored (see
+  // dropAllowedEvents on the server), so there is nothing live to count.
   const statCards = useMemo(() => ([
     { label: "Policies", value: policyTotal, color: "bg-brand-500/10 text-brand-500", icon: Shield },
     { label: "Blocked requests", value: stats.total_blocked ?? 0, color: "bg-red-500/10 text-danger", icon: XCircle },
-    { label: "Allowed requests", value: stats.total_allowed ?? 0, color: "bg-purple-500/10 text-accent-purple", icon: Globe },
     { label: "Logged events", value: logTotal, color: "bg-green-500/10 text-success", icon: AlertCircle },
-  ]), [policyTotal, logTotal, stats.total_blocked, stats.total_allowed]);
+  ]), [policyTotal, logTotal, stats.total_blocked]);
 
   return (
     <div className="space-y-6">
@@ -458,10 +459,11 @@ export default function SWGPage() {
             onChange={e => { setLogAction(e.target.value); setLogPage(1); }}
             className="bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground"
           >
+            {/* No "Allowed" option: routine traffic is never stored or shown
+                here, so it would always return an empty page. */}
             <option value="">All outcomes</option>
             <option value="blocked">Blocked</option>
             <option value="alerted">Alerted</option>
-            <option value="allowed">Allowed</option>
           </select>
         </div>
 

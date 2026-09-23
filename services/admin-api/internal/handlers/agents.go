@@ -1724,6 +1724,15 @@ func (h *AgentHandler) ReportActivity(c *gin.Context) {
 		return
 	}
 
+	// Dropped before any enrichment work — both agents now stop sending
+	// "allowed" at the source, but this endpoint has to assume it may still
+	// hear from an older connector version that hasn't updated yet.
+	events = dropAllowedEvents(events)
+	if len(events) == 0 {
+		c.JSON(http.StatusCreated, gin.H{"created": 0})
+		return
+	}
+
 	var device models.Device
 	h.db.Select("ip_address", "metadata").
 		Where("id = ? AND org_id = ?", deviceID, orgID).

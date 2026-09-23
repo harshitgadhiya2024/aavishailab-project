@@ -634,6 +634,11 @@ func (h *PortalHandler) Activity(c *gin.Context) {
 	}
 
 	q := h.db.Where("employee_id = ?", emp.ID)
+	// "Allowed" — routine, ordinary browsing — is never shown, on either
+	// dashboard. The employee portal calls this page "Blocked Activity" for
+	// exactly that reason: it is a record of what was stopped, not a log of
+	// everything the person did.
+	q = q.Where("action != ?", models.EventActionAllowed)
 	if action != "" {
 		q = q.Where("action = ?", action)
 	}
