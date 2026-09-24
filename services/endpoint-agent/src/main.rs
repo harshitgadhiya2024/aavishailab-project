@@ -59,10 +59,7 @@ fn main() {
     }
 
     let handles = aavishield_agent::background::spawn();
-    // Filled in below, once eframe actually hands out a Context — see
-    // tray::build's own doc comment for why the tray needs this at all.
-    let ctx_cell: aavishield_agent::tray::SharedCtx = std::sync::Arc::new(std::sync::Mutex::new(None));
-    let tray = aavishield_agent::tray::build(handles.ui.clone(), ctx_cell.clone());
+    let tray = aavishield_agent::tray::build(handles.ui.clone());
 
     // Unix only, matching Python's own `platform.system() != "Windows"`
     // guard — Windows has no SIGUSR1, and `single_instance::
@@ -85,33 +82,6 @@ fn main() {
         }
     }
 
-    // A signal handler may only ever do the one atomic store above (see
-    // its own doc comment — nothing egui touches is async-signal-safe),
-    // so SIGUSR1 cannot itself call request_repaint() the way the tray's
-    // own MenuEvent handler now does. This plain OS thread is the
-    // SIGUSR1 path's equivalent escape hatch: it just polls the same
-    // flag and, once a Context exists to call it on, nudges the frame
-    // loop awake — a hidden window otherwise may not get `update()`
-    // called again at all, so nothing would ever notice the flag flipped.
-    // Harmless overlap with the tray handler's own request_repaint(): a
-    // spurious extra repaint costs nothing, and only gui.rs's own
-    // `swap(false, ...)` ever clears the flag, so this thread never
-    // races it into missing a click.
-    if let Some(t) = &tray {
-        let show_requested = t.show_requested.clone();
-        let ctx_cell = ctx_cell.clone();
-        std::thread::spawn(move || loop {
-            std::thread::sleep(std::time::Duration::from_millis(300));
-            if show_requested.load(std::sync::atomic::Ordering::SeqCst) {
-                if let Ok(guard) = ctx_cell.lock() {
-                    if let Some(ctx) = guard.as_ref() {
-                        ctx.request_repaint();
-                    }
-                }
-            }
-        });
-    }
-
     let viewport = eframe::egui::ViewportBuilder::default()
         .with_title("Aavishield")
         .with_inner_size([340.0, 460.0])
@@ -131,8 +101,7 @@ fn main() {
     let result = eframe::run_native(
         "Aavishield",
         native_options,
-        Box::new(move |cc| {
-            *ctx_cell.lock().unwrap() = Some(cc.egui_ctx.clone());
+        Box::new(move |_cc| {
             Ok(Box::new(aavishield_agent::gui::ConnectorApp::new(
                 handles.ui,
                 handles.client_slot,

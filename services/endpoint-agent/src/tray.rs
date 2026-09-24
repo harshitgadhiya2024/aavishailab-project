@@ -7,14 +7,7 @@
 
 use crate::ui_state::UiState;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-
-/// Where main.rs deposits the real `egui::Context` once eframe hands it one
-/// (inside the `run_native` closure) — `None` for the brief window before
-/// that, and forever after on a platform with no tray. See `build`'s
-/// MenuEvent handler for why this exists: a plain `show_requested` flag on
-/// its own is not enough.
-pub type SharedCtx = Arc<Mutex<Option<eframe::egui::Context>>>;
+use std::sync::Arc;
 use tray_icon::menu::{Menu, MenuEvent, MenuItem};
 use tray_icon::{TrayIcon, TrayIconBuilder};
 
@@ -31,12 +24,7 @@ pub struct Tray {
 /// Builds and shows the tray icon. Returns None on any failure — a missing
 /// notification-area host (some minimal Linux desktops, some CI/test
 /// environments) must degrade to "no tray", never to a crash.
-///
-/// `ctx_cell` is empty when this is called (main.rs builds the tray before
-/// eframe has handed out a `Context`) and filled in moments later — the
-/// MenuEvent handler below reads through it at click time, not at build
-/// time, so it always sees whatever main.rs has deposited by then.
-pub fn build(ui_state: UiState, ctx_cell: SharedCtx) -> Option<Tray> {
+pub fn build(ui_state: UiState) -> Option<Tray> {
     // Linux only: tray-icon's Linux backend goes through GTK, which —
     // unlike winit — does not initialize itself. Skipping this is what
     // "GTK has not been initialized" (a hard panic, not a graceful
@@ -68,24 +56,6 @@ pub fn build(ui_state: UiState, ctx_cell: SharedCtx) -> Option<Tray> {
         .build()
         .ok()?;
 
-    // Setting the flag alone used to be the whole story here — and on
-    // macOS that left the window unable to ever reopen: a hidden
-    // (Visible:false) window stops getting its egui `update()` called at
-    // anything close to the normal cadence once the OS decides nothing is
-    // drawing it, so the per-frame `show_requested` check in gui.rs (the
-    // only place that flag is ever read) could go uncalled indefinitely.
-    // request_repaint() is exactly the escape hatch egui provides for
-    // this — safe to call from any thread, including this callback,
-    // which tray-icon runs on its own dispatch thread, not egui's — and
-    // forces that next `update()` to actually happen regardless of what
-    // the OS thinks a hidden window deserves.
-    //
-    // Deliberately not also subscribed to TrayIconEvent (a left-click
-    // straight on the icon, bypassing this menu entirely) — that was
-    // tried and reverted: live testing after adding it showed the whole
-    // reopen flow, including this MenuEvent path below, stopped working.
-    // Left un-investigated rather than re-attempted under time pressure;
-    // worth another look with a clean, properly signed/installed build.
     let open_id = open_item.id().clone();
     let flag = show_requested.clone();
     // tray-icon delivers clicks on a global channel rather than a per-item
@@ -94,11 +64,6 @@ pub fn build(ui_state: UiState, ctx_cell: SharedCtx) -> Option<Tray> {
     MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
         if event.id == open_id {
             flag.store(true, Ordering::SeqCst);
-            if let Ok(guard) = ctx_cell.lock() {
-                if let Some(ctx) = guard.as_ref() {
-                    ctx.request_repaint();
-                }
-            }
         }
     }));
 
