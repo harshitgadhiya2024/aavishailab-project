@@ -155,8 +155,14 @@ export default function EmployeesPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (editEmp) updateMut.mutate({ id: editEmp.id, data: form });
-    else createMut.mutate(form);
+    // team_id is "" for "No team" (the <select>'s empty-value option), but
+    // the backend binds it into *uuid.UUID — uuid.Parse("") fails with
+    // "invalid UUID length: 0" instead of leaving the pointer nil the way
+    // a missing/null field would. Send undefined instead so the key is
+    // dropped from the JSON body entirely.
+    const payload = { ...form, team_id: form.team_id || undefined };
+    if (editEmp) updateMut.mutate({ id: editEmp.id, data: payload });
+    else createMut.mutate(payload);
   };
 
   const handleExport = async () => {

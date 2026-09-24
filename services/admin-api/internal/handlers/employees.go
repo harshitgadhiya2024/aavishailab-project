@@ -31,9 +31,16 @@ type EmployeeRequest struct {
 	Phone      string     `json:"phone"`
 	Department string     `json:"department"`
 	JobTitle   string     `json:"job_title"`
-	EmployeeID string     `json:"employee_id"`
-	TeamID     *uuid.UUID `json:"team_id"`
-	Status     string     `json:"status"`
+	EmployeeID string `json:"employee_id"`
+	// A plain string, not *uuid.UUID: the "No team" option in both
+	// dashboard forms submits "" for this field, and binding that
+	// straight into *uuid.UUID fails JSON unmarshaling itself (uuid.
+	// Parse("") -> "invalid UUID length: 0", surfaced to the person as a
+	// raw 400 on an empty "No team" selection) before the handler ever
+	// gets a chance to treat empty as "no team". Parsed defensively
+	// below, the same way EmployeeID already is.
+	TeamID string `json:"team_id"`
+	Status string `json:"status"`
 	AvatarURL  string     `json:"avatar_url"`
 }
 
@@ -135,6 +142,13 @@ func (h *EmployeeHandler) Create(c *gin.Context) {
 		badgeID = &id
 	}
 
+	var teamID *uuid.UUID
+	if req.TeamID != "" {
+		if parsed, err := uuid.Parse(req.TeamID); err == nil {
+			teamID = &parsed
+		}
+	}
+
 	emp := models.Employee{
 		OrgID:      orgUUID,
 		FirstName:  req.FirstName,
@@ -144,7 +158,7 @@ func (h *EmployeeHandler) Create(c *gin.Context) {
 		Department: req.Department,
 		JobTitle:   req.JobTitle,
 		EmployeeID: badgeID,
-		TeamID:     req.TeamID,
+		TeamID:     teamID,
 		Status:     status,
 		AvatarURL:  req.AvatarURL,
 	}
@@ -229,6 +243,13 @@ func (h *EmployeeHandler) Update(c *gin.Context) {
 		return
 	}
 
+	var teamID *uuid.UUID
+	if req.TeamID != "" {
+		if parsed, err := uuid.Parse(req.TeamID); err == nil {
+			teamID = &parsed
+		}
+	}
+
 	updates := map[string]any{
 		"first_name": req.FirstName,
 		"last_name":  req.LastName,
@@ -236,7 +257,7 @@ func (h *EmployeeHandler) Update(c *gin.Context) {
 		"phone":      req.Phone,
 		"department": req.Department,
 		"job_title":  req.JobTitle,
-		"team_id":    req.TeamID,
+		"team_id":    teamID,
 		"avatar_url": req.AvatarURL,
 	}
 	if req.EmployeeID != "" {
