@@ -1,69 +1,69 @@
 #!/usr/bin/env bash
 #
 # Dumps the Postgres database running in the aavishield-postgres container,
-# compresses it, and uploads it to Cloudflare R2 — then prunes backups older
-# than $RETENTION_DAYS from R2 so the bucket doesn't grow forever.
+# compresses it, and uploads it to R2 via admin-api's own /internal/admin/
+# backup-upload endpoint — not rclone directly: rclone's available apt
+# package (1.53.3, from 2021, predates R2) came back "403 AccessDenied" on
+# every upload attempted against this real bucket, while admin-api's own
+# hand-rolled SigV4 client (already proven live for screenshots) uploads to
+# the identical bucket/credentials with no issue. Going through admin-api
+# reuses that proven path instead of chasing rclone's exact incompatibility.
 #
-# Needs rclone on PATH (`apt-get install rclone` or https://rclone.org/install)
-# and these in the environment (already in .env — this script sources it):
-#   R2_ENDPOINT_URL, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME
-# Configured via RCLONE_CONFIG_* env vars rather than an rclone.conf file, so
-# there's nothing extra to keep in sync with .env or leave lying around with
-# credentials in it.
+# Needs BACKUP_UPLOAD_TOKEN set (in .env, passed to the admin-api container —
+# see docker-compose.yml) and admin-api reachable at ADMIN_API_LOCAL_URL.
 #
-# The bucket is shared with another application (see .env's own comment on
-# R2_BUCKET_NAME) — every object this script writes lives under
-# aavishield/db-backups/, matching SCREENSHOT_R2_PREFIX's reasoning for the
-# same bucket.
-#
-#   ./scripts/backup-db.sh              # dump, upload, prune
-#   ./scripts/backup-db.sh --list       # just list what's in R2
+#   ./scripts/backup-db.sh
 #
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_FILE="$ROOT/.env"
-[[ -f "$ENV_FILE" ]] && set -a && source "$ENV_FILE" && set +a
 
-: "${R2_ENDPOINT_URL:?R2_ENDPOINT_URL not set — check .env}"
-: "${R2_ACCESS_KEY_ID:?R2_ACCESS_KEY_ID not set — check .env}"
-: "${R2_SECRET_ACCESS_KEY:?R2_SECRET_ACCESS_KEY not set — check .env}"
-: "${R2_BUCKET_NAME:?R2_BUCKET_NAME not set — check .env}"
+# Not `source`d: .env values (an SMTP password, real-world secrets in
+# general) can contain characters like `$` or `<`/`>` that are perfectly
+# valid as literal data but get shell-interpreted the moment a line is
+# executed rather than just read — sourcing this file broke on exactly
+# that the first time this ran against production's real .env. Pulling
+# only the handful of keys this script actually needs, as plain text
+# after the first `=`, never executes a single line of the file.
+env_var() {
+    [[ -f "$ENV_FILE" ]] || return 0
+    grep -m1 "^$1=" "$ENV_FILE" | cut -d= -f2-
+}
+: "${BACKUP_UPLOAD_TOKEN:=$(env_var BACKUP_UPLOAD_TOKEN)}"
+: "${BACKUP_UPLOAD_TOKEN:?BACKUP_UPLOAD_TOKEN not set — check .env}"
 
-export RCLONE_CONFIG_R2_TYPE=s3
-export RCLONE_CONFIG_R2_PROVIDER=Cloudflare
-export RCLONE_CONFIG_R2_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
-export RCLONE_CONFIG_R2_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
-export RCLONE_CONFIG_R2_ENDPOINT="$R2_ENDPOINT_URL"
-export RCLONE_CONFIG_R2_REGION="${S3_REGION:-auto}"
-export RCLONE_CONFIG_R2_ACL=private
-
-REMOTE_DIR="R2:${R2_BUCKET_NAME}/aavishield/db-backups"
-RETENTION_DAYS="${DB_BACKUP_RETENTION_DAYS:-30}"
+ADMIN_API_LOCAL_URL="${ADMIN_API_LOCAL_URL:-http://127.0.0.1:7100}"
 CONTAINER="${POSTGRES_CONTAINER:-aavishield-postgres}"
-
-if [[ "${1:-}" == "--list" ]]; then
-    rclone lsl "$REMOTE_DIR"
-    exit 0
-fi
 
 DB_NAME="$(docker exec "$CONTAINER" printenv POSTGRES_DB)"
 DB_USER="$(docker exec "$CONTAINER" printenv POSTGRES_USER)"
+DB_PASSWORD="$(docker exec "$CONTAINER" printenv POSTGRES_PASSWORD)"
+# This deployment runs Postgres on a non-default port inside its own
+# container (docker-compose.yml maps 6432, not 5432) — pg_dump's default
+# unix-socket connection assumes 5432, so it must be told explicitly. -h
+# 127.0.0.1 makes this a TCP connection rather than the socket, which
+# needs the password even though it's the same container talking to
+# itself, so PGPASSWORD travels with the exec rather than relying on
+# trust auth that only covers the socket.
+DB_PORT="${POSTGRES_PORT:-6432}"
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 STAMP="$(date -u +%Y%m%d-%H%M%S)"
-DUMP_FILE="$TMP/aavishield-db-$STAMP.sql.gz"
+FILENAME="aavishield-db-$STAMP.sql.gz"
+DUMP_FILE="$TMP/$FILENAME"
 
 echo "==> Dumping $DB_NAME from $CONTAINER"
-docker exec "$CONTAINER" pg_dump -U "$DB_USER" -d "$DB_NAME" --no-owner --no-privileges \
+docker exec -e PGPASSWORD="$DB_PASSWORD" "$CONTAINER" \
+    pg_dump -h 127.0.0.1 -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" --no-owner --no-privileges \
     | gzip -9 > "$DUMP_FILE"
 
 SIZE="$(du -h "$DUMP_FILE" | cut -f1)"
-echo "==> Uploading ($SIZE) to $REMOTE_DIR/"
-rclone copyto "$DUMP_FILE" "$REMOTE_DIR/aavishield-db-$STAMP.sql.gz"
+echo "==> Uploading ($SIZE) to R2 via admin-api"
+RESPONSE="$(curl -fsSL -X POST "$ADMIN_API_LOCAL_URL/internal/admin/backup-upload" \
+    -H "Authorization: Bearer $BACKUP_UPLOAD_TOKEN" \
+    -F "file=@$DUMP_FILE;filename=$FILENAME")"
+echo "$RESPONSE"
 
-echo "==> Pruning backups older than $RETENTION_DAYS days"
-rclone delete --min-age "${RETENTION_DAYS}d" "$REMOTE_DIR"
-
-echo "Done: aavishield-db-$STAMP.sql.gz"
+echo "Done: $FILENAME"

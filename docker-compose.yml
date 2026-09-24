@@ -141,6 +141,10 @@ services:
       # Unset disables the upload endpoint entirely (404) — packages can still be
       # dropped into the volume by hand.
       AGENT_PACKAGE_UPLOAD_TOKEN: ${AGENT_PACKAGE_UPLOAD_TOKEN:-}
+      # Bearer token scripts/backup-db.sh presents to POST
+      # /internal/admin/backup-upload. Same shape as the token above; unset
+      # disables the endpoint entirely (404).
+      BACKUP_UPLOAD_TOKEN: ${BACKUP_UPLOAD_TOKEN:-}
       # Lets superadmin trigger the agent-packages CI workflow from the
       # dashboard. Both unset disables the trigger/status endpoints only —
       # CI itself is unaffected.

@@ -95,6 +95,11 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	// handlers.UploadAgentPackage.
 	r.POST("/internal/admin/agent-packages", handlers.UploadAgentPackage)
 
+	// Uploads a database backup to R2 (called by scripts/backup-db.sh). Same
+	// shared-bearer-token shape as the agent-packages upload just above —
+	// see handlers.UploadDBBackup for why this exists instead of rclone.
+	r.POST("/internal/admin/backup-upload", handlers.UploadDBBackup)
+
 	// Razorpay calls this directly — no session, gated entirely on the
 	// X-Razorpay-Signature header verified inside the handler.
 	r.POST("/webhooks/razorpay", billingH.Webhook)
