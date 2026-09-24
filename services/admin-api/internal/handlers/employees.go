@@ -142,12 +142,23 @@ func (h *EmployeeHandler) Create(c *gin.Context) {
 		badgeID = &id
 	}
 
-	var teamID *uuid.UUID
-	if req.TeamID != "" {
-		if parsed, err := uuid.Parse(req.TeamID); err == nil {
-			teamID = &parsed
-		}
+	// A team is mandatory on create: it's what scopes team managers'
+	// visibility and policy assignment, so an employee without one falls
+	// through both. Checked against the caller's own org so a team_id from
+	// another tenant can't be attached. (Update stays optional — employees
+	// created before this rule may legitimately have no team.)
+	teamUUID, err := uuid.Parse(req.TeamID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Team is required"})
+		return
 	}
+	var teamCount int64
+	h.db.Model(&models.Team{}).Where("id = ? AND org_id = ?", teamUUID, orgID).Count(&teamCount)
+	if teamCount == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Selected team does not exist"})
+		return
+	}
+	teamID := &teamUUID
 
 	emp := models.Employee{
 		OrgID:      orgUUID,

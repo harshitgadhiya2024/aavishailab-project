@@ -464,15 +464,19 @@ export default function EmployeesPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-body mb-1">Team</label>
+                  <label className="block text-xs font-medium text-body mb-1">Team{!editEmp && " *"}</label>
                   <select
                     value={form.team_id}
                     onChange={e => setForm(f => ({ ...f, team_id: e.target.value }))}
                     className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    required={!editEmp}
                   >
-                    <option value="">No team</option>
+                    <option value="">{editEmp ? "No team" : "Select a team"}</option>
                     {teams.map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
                   </select>
+                  {!editEmp && teams.length === 0 && (
+                    <p className="text-xs text-muted-foreground mt-1">Create a team first (Teams page) to add employees.</p>
+                  )}
                 </div>
                 {editEmp && (
                   <div>
