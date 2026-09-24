@@ -184,6 +184,17 @@ cat > "$ROOT_DIR/DEBIAN/postrm" <<'POSTRM'
 set -e
 if [[ "${1:-}" == "remove" || "${1:-}" == "purge" ]]; then
     rm -rf /etc/aavishield
+    # ~/.aavishield holds config.json (this device's saved enrollment) —
+    # nothing else here touches it, so a purge that skips it leaves a
+    # reinstall able to "automatically connect" again using the old
+    # credentials instead of enrolling fresh. dpkg runs postrm as root
+    # with no desktop session, so there is no real $HOME/$SUDO_USER to
+    # trust here (unlike postinst, which only runs during install, when
+    # the invoking sudo session is still live) — walk every real home
+    # directory under /home instead of guessing one.
+    for home_dir in /home/*; do
+        [[ -d "$home_dir/.aavishield" ]] && rm -rf "$home_dir/.aavishield"
+    done
     systemctl daemon-reload 2>/dev/null || true
 fi
 exit 0

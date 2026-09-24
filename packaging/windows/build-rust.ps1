@@ -162,6 +162,18 @@ $Wxs = @"
                   ExeCommand='cmd.exe /c echo {"token":"[TOKEN]","admin_url":"[ADMINURL]"} &gt; "[DATAFOLDER]enroll.json"'
                   Execute="deferred" Impersonate="no" Return="ignore" />
 
+    <!-- %USERPROFILE%\.aavishield holds config.json (this device's saved
+         enrollment) — RemoveFile above only clears enroll.json from the
+         machine-wide DATAFOLDER, not this per-user directory. Leaving it
+         behind is exactly why a reinstall on the same Windows profile
+         "automatically connects" again: config::load() finds the old
+         config.json before the GUI ever shows a Connect button. Impersonate
+         "yes" (unlike WriteEnrollJson above) so %USERPROFILE% resolves to
+         the person actually running the uninstall, not SYSTEM's own profile. -->
+    <CustomAction Id="RemoveUserState"
+                  ExeCommand='cmd.exe /c rmdir /s /q "%USERPROFILE%\.aavishield"'
+                  Execute="deferred" Impersonate="yes" Return="ignore" />
+
     <!-- No CA-trust scheduled task here, unlike build.ps1's Python build:
          the Rust connector only checks whether the CA is trusted
          (config::mitm_ca_trusted) — it doesn't install it into the machine
@@ -173,6 +185,11 @@ $Wxs = @"
 
     <InstallExecuteSequence>
       <Custom Action="WriteEnrollJson" After="InstallFiles">TOKEN</Custom>
+      <!-- REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE: a real uninstall only,
+           never the remove-then-reinstall MajorUpgrade does internally when
+           updating to a newer version — that must keep the existing
+           enrollment, not silently disconnect the device on every update. -->
+      <Custom Action="RemoveUserState" After="InstallInitialize">REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE</Custom>
     </InstallExecuteSequence>
   </Product>
 </Wix>

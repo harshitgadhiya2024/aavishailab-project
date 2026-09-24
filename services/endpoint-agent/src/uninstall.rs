@@ -104,11 +104,26 @@ fn run_platform_uninstaller(portal_url: &str) {
 #[cfg(target_os = "macos")]
 fn uninstall_macos() {
     const CA_COMMON_NAME: &str = "Aavishield Root CA";
+    // Resolved here, in the connector's own (non-elevated) process, not
+    // inside the shell string below: that whole string runs as root via
+    // osascript's "with administrator privileges", where $HOME resolves to
+    // root's home rather than the actual logged-in user's — the same
+    // reason build-rust.sh's postinstall looks up the console user
+    // explicitly instead of trusting $HOME.
+    let state_dir = shell_quote(&crate::config::state_dir().to_string_lossy());
+    let rm_state_dir = format!("/bin/rm -rf {state_dir}");
     let steps = [
         "/bin/launchctl bootout system /Library/LaunchDaemons/com.aavishield.catrust.plist 2>/dev/null",
         &format!("/bin/launchctl bootout gui/{}/com.aavishield.agent 2>/dev/null", unsafe { libc::getuid() }),
         "/bin/rm -f /Library/LaunchDaemons/com.aavishield.catrust.plist /Library/LaunchAgents/com.aavishield.agent.plist",
         "/bin/rm -rf /Applications/Aavishield.app /etc/aavishield /usr/local/aavishield",
+        // ~/.aavishield holds config.json (this device's saved enrollment)
+        // and enroll.json (a dropped token, if one was ever left). Leaving
+        // either behind is exactly why a reinstall on the same machine
+        // "automatically connects" again — config::load()/find_enroll_token()
+        // find it before the GUI ever shows a Connect button, silently
+        // reusing (or re-consuming) a token instead of enrolling fresh.
+        &rm_state_dir,
         "/usr/sbin/pkgutil --forget com.aavishield.agent 2>/dev/null",
         &format!(
             "/usr/bin/security delete-certificate -c {} /Library/Keychains/System.keychain 2>/dev/null",
