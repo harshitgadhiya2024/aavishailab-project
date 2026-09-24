@@ -14,6 +14,15 @@
 #
 #   ./scripts/backup-db.sh
 #
+# Scheduled daily via cron, not anything checked into this repo (there's no
+# in-repo scheduler) — `crontab -l` on the production host runs, as of this
+# writing:
+#   0 20 * * * cd /home/ubuntu/delsecure && ./scripts/backup-db.sh >> /home/ubuntu/delsecure/backup.log 2>&1
+# (20:00 UTC = 01:30 IST, chosen as a quiet-hours slot for this deployment.)
+# Written here so the schedule is discoverable from the code, not only from
+# a crontab that would otherwise be tribal knowledge tied to one server —
+# if this ever moves host, re-add the line above with `crontab -e`.
+#
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
