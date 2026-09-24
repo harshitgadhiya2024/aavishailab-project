@@ -60,8 +60,13 @@ rm -rf "$BUILD_DIR"
 mkdir -p "$ROOT_DIR$INSTALL_PREFIX" "$ROOT_DIR/Library/LaunchAgents" "$OUT_DIR"
 
 # ─── 1. Build the agent ───────────────────────────────────────────────────────
+# AAVISHIELD_VERSION stamps into the binary via build.rs (see its own doc
+# comment) — without this, config::AGENT_VERSION falls back to a fixed dev
+# string that would make update.rs think an update is *always* available
+# and loop forever redownloading itself, since the fallback never equals
+# whatever version the manifest actually advertises.
 echo "==> cargo build --release"
-(cd "$AGENT_DIR" && cargo build --release --target aarch64-apple-darwin)
+(cd "$AGENT_DIR" && AAVISHIELD_VERSION="$VERSION" cargo build --release --target aarch64-apple-darwin)
 AGENT_BUILD_BIN="$AGENT_DIR/target/aarch64-apple-darwin/release/aavishield-agent"
 [[ -x "$AGENT_BUILD_BIN" ]] || { echo "!! build did not produce $AGENT_BUILD_BIN" >&2; exit 1; }
 

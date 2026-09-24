@@ -51,11 +51,21 @@ Remove-Item -Recurse -Force $BuildDir -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $BuildDir, $OutDir | Out-Null
 
 # ─── 1. Build the agent ───────────────────────────────────────────────────────
+# AAVISHIELD_VERSION stamps into the binary via build.rs (see its own doc
+# comment) — without this, config::AGENT_VERSION falls back to a fixed dev
+# string that would make update.rs think an update is *always* available
+# and loop forever redownloading itself, since the fallback never equals
+# whatever version the manifest actually advertises.
 Write-Host "==> cargo build --release"
 Push-Location $AgentDir
-& cargo build --release
-if ($LASTEXITCODE -ne 0) { throw "cargo build failed with exit code $LASTEXITCODE" }
-Pop-Location
+$env:AAVISHIELD_VERSION = $Version
+try {
+    & cargo build --release
+    if ($LASTEXITCODE -ne 0) { throw "cargo build failed with exit code $LASTEXITCODE" }
+} finally {
+    Remove-Item Env:\AAVISHIELD_VERSION
+    Pop-Location
+}
 
 $AgentExe = "$AgentDir\target\release\aavishield-agent.exe"
 if (-not (Test-Path $AgentExe)) { throw "cargo build did not produce $AgentExe" }

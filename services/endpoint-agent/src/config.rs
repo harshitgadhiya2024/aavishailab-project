@@ -15,7 +15,13 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-pub const AGENT_VERSION: &str = "1.0.0-rust";
+// Stamped at compile time by build.rs from the AAVISHIELD_VERSION env var
+// every packaging script sets — see build.rs's own doc comment for the
+// real auto-update-loop bug a hardcoded value here would cause. Falls
+// back to "1.0.0-dev" for a plain `cargo build`/`cargo test` where that
+// env var was never set, which is never compared against a real manifest
+// version anyway.
+pub const AGENT_VERSION: &str = env!("AAVISHIELD_VERSION");
 pub const LOCAL_PORT: u16 = 6118;
 
 pub const ENROLL_TOKEN_ENV: &str = "AAVISHIELD_ENROLL_TOKEN";

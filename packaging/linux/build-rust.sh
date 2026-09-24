@@ -40,8 +40,13 @@ rm -rf "$BUILD_DIR"
 mkdir -p "$ROOT_DIR$INSTALL_PREFIX" "$ROOT_DIR/DEBIAN" "$ROOT_DIR/usr/lib/systemd/user" "$OUT_DIR"
 
 # ─── 1. Build the agent ───────────────────────────────────────────────────────
+# AAVISHIELD_VERSION stamps into the binary via build.rs (see its own doc
+# comment) — without this, config::AGENT_VERSION falls back to a fixed dev
+# string that would make update.rs think an update is *always* available
+# and loop forever redownloading itself, since the fallback never equals
+# whatever version the manifest actually advertises.
 echo "==> cargo build --release"
-(cd "$AGENT_DIR" && cargo build --release)
+(cd "$AGENT_DIR" && AAVISHIELD_VERSION="$VERSION" cargo build --release)
 AGENT_BUILD_BIN="$AGENT_DIR/target/release/aavishield-agent"
 [[ -x "$AGENT_BUILD_BIN" ]] || { echo "!! build did not produce $AGENT_BUILD_BIN" >&2; exit 1; }
 cp "$AGENT_BUILD_BIN" "$ROOT_DIR$INSTALL_PREFIX/aavishield-agent"
