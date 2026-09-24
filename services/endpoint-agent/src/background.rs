@@ -150,6 +150,8 @@ async fn run(ui: UiState, client_slot: ClientSlot, mut commands: tokio::sync::mp
                 crate::config::discard_enroll_drops().await;
                 tracing::info!(device_id = %config.device_id, org_id = %config.org_id, "enrolled via token");
                 ui.set_connected("", "");
+                spawn_report_connected(&config);
+                spawn_permission_warm_up();
                 run_full_agent(config, ui, client_slot, commands).await;
                 return;
             }
@@ -222,6 +224,8 @@ async fn run(ui: UiState, client_slot: ClientSlot, mut commands: tokio::sync::mp
                 match outcome {
                     crate::enroll_interactive::EnrollOutcome::Enrolled(config) => {
                         tracing::info!(device_id = %config.device_id, "enrolled interactively");
+                        spawn_report_connected(&config);
+                        spawn_permission_warm_up();
                         run_full_agent(config, ui, client_slot, commands).await;
                         return;
                     }
@@ -362,6 +366,44 @@ async fn run_full_agent(config: Config, ui: UiState, client_slot: ClientSlot, mu
     if let Err(e) = crate::proxy::run(addr, deps).await {
         tracing::error!(error = %e, "proxy listener exited");
     }
+}
+
+/// Tells the company this device just (re)connected — a port of Python's
+/// `_report_connected`, fired the same way Python fires it: a detached
+/// background task right after a successful enrollment, never awaited by
+/// the caller. Best-effort and silent on failure, matching
+/// `handle_disconnect`'s own reporting call below — a missed report must
+/// never be the reason enrollment itself fails.
+///
+/// Only called from the two places enrollment actually just happened
+/// (token-file and interactive), not from the plain "config already on
+/// disk" cold-start path in `run()` — that path is an ordinary app
+/// restart/reboot, not a new connection, and logging one there would
+/// misreport routine restarts as reconnects and spam admins with a
+/// "device connected" email on every launch.
+///
+/// Builds its own throwaway `AgentClient`/`AgentRevoked` rather than
+/// reusing whatever `run_full_agent` constructs a moment later: this call
+/// races ahead of it (fire-and-forget, not awaited), and the two never
+/// need to share revocation state for a single POST.
+fn spawn_report_connected(config: &Config) {
+    let client = AgentClient::new(config.clone(), AgentRevoked::default());
+    tokio::spawn(async move {
+        if let Err(e) = client.post_json("/internal/agent/lifecycle/connected", &serde_json::json!({})).await {
+            tracing::warn!(error = %e, "could not report the connection");
+        }
+    });
+}
+
+/// Surfaces the macOS Screen Recording permission prompt immediately on
+/// enrollment (see `screenshot::warm_up_permissions`'s own doc comment for
+/// why), instead of leaving it to whenever the screenshot loop's
+/// randomized interval happens to elapse. `spawn_blocking`, not
+/// `tokio::spawn`: `xcap`'s capture call is synchronous and can briefly
+/// block on the OS compositor — exactly the kind of call that must never
+/// run on an async worker thread shared with the proxy/enforcement loops.
+fn spawn_permission_warm_up() {
+    tokio::task::spawn_blocking(crate::screenshot::warm_up_permissions);
 }
 
 /// Stops protection on this device and tells the company — a port of

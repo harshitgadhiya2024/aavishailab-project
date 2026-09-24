@@ -183,6 +183,20 @@ fn subtract(t: SystemTime, secs: u64) -> SystemTime {
     t.checked_sub(Duration::from_secs(secs)).unwrap_or(t)
 }
 
+/// Triggers macOS's Screen Recording permission prompt right now instead
+/// of whenever the capture loop happens to take its first shot (up to
+/// `max_interval_secs` after enrollment — see `run` above). Call once,
+/// right after enrollment succeeds, alongside whatever makes the
+/// Accessibility/Input Monitoring prompt appear (`activity_monitor`
+/// starting its listener) — both TCC prompts then land together, in the
+/// same moment the person is already expecting a permission dialog,
+/// instead of one now and one minutes later that reads as unrelated and
+/// unexplained. The captured image itself is discarded; this call exists
+/// purely for its side effect on the OS permission database.
+pub fn warm_up_permissions() {
+    let _ = capture_screen(false);
+}
+
 /// Grabs the primary monitor and returns (webp_bytes, width, height), or
 /// `None` if capture isn't available (no permission, headless, no monitor
 /// found). The agent simply records nothing rather than crashing, same as

@@ -72,7 +72,10 @@ export default function ScreenshotsPage() {
   const sessions: any[] = data?.data?.sessions ?? [];
   const timeline: any[] = data?.data?.timeline ?? [];
   const totals = data?.data?.totals ?? {};
-  const window = data?.data?.window;
+  // Not `window` — that shadows the real global Window object for the
+  // rest of this component's scope, a footgun for any future code here
+  // that needs it (window.innerWidth, a resize listener, etc.).
+  const dayWindow = data?.data?.window;
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["screenshots"] });
 
@@ -162,13 +165,13 @@ export default function ScreenshotsPage() {
       </div>
 
       {/* Window + permissions banners */}
-      {window && (
+      {dayWindow && (
         <div className="flex flex-wrap items-center gap-3 text-sm">
           <span className="inline-flex items-center gap-2 rounded-lg bg-brand-500/10 text-brand-500 px-3 py-1.5 font-medium">
             <CalendarDays className="w-4 h-4" />
-            {new Date(window.from).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: tz })}
+            {new Date(dayWindow.from).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: tz })}
             {"  to  "}
-            {new Date(window.to).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: tz })}
+            {new Date(dayWindow.to).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: tz })}
           </span>
           <span className="rounded-lg bg-elevated px-3 py-1.5 text-muted-foreground">
             Your permissions:{" "}
@@ -192,7 +195,7 @@ export default function ScreenshotsPage() {
       </div>
 
       {/* Activity timeline */}
-      <ActivityTimeline window={window} timeline={timeline} tz={tz} />
+      <ActivityTimeline window={dayWindow} timeline={timeline} tz={tz} />
 
       {isLoading ? (
         <div className="flex justify-center py-16"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>

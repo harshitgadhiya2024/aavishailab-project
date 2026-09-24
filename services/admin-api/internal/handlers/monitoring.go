@@ -144,9 +144,11 @@ func (h *MonitoringHandler) Screenshots(c *gin.Context) {
 		orgID, employeeID, from.UTC(), to.UTC()).
 		Order("captured_at ASC").Find(&shots)
 
-	// Group by session, minting a signed URL per image.
+	// Group by session, minting a signed URL per image. Both start as
+	// non-nil — same reasoning as the nil-slice fix below this function:
+	// a day with zero orphans should serialize as `[]`, not `null`.
 	bySession := map[uuid.UUID][]screenshotOut{}
-	var orphans []screenshotOut
+	orphans := []screenshotOut{}
 	for i := range shots {
 		s := &shots[i]
 		url, _ := h.store.SignedURL(s.StorageKey, 15*time.Minute)
@@ -172,7 +174,19 @@ func (h *MonitoringHandler) Screenshots(c *gin.Context) {
 
 	out := make([]sessionOut, 0, len(sessions))
 	for i := range sessions {
-		out = append(out, sessionOut{WorkSession: sessions[i], Screenshots: bySession[sessions[i].ID]})
+		// bySession[id] is a nil slice, not an empty one, for any session
+		// with zero screenshots in this window (a Go map read on a missing
+		// key returns the zero value) — encoding/json marshals a nil slice
+		// as `null`, not `[]`, which crashed the dashboard's own
+		// `session.screenshots.length` the moment a session had no shots
+		// yet (e.g. right after enrollment, before the first capture
+		// interval elapses). Coalesced here so the wire contract is always
+		// an array.
+		shots := bySession[sessions[i].ID]
+		if shots == nil {
+			shots = []screenshotOut{}
+		}
+		out = append(out, sessionOut{WorkSession: sessions[i], Screenshots: shots})
 	}
 
 	// Day totals + timeline from all of the day's screenshots.
