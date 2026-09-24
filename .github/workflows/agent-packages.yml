@@ -4,14 +4,20 @@ name: Agent packages
 # host's interpreter, and codesign/signtool only exist on macOS/Windows. Hence
 # one job per platform rather than a cross-compile.
 #
-# Two tracks: the Python connector (macos/windows/linux/manifest — unchanged
-# below except for the version fix) is what real employees download today.
-# The Rust connector (macos-rust/windows-rust/linux-rust/rust-manifest) is
-# built and uploaded as CI artifacts alongside it, but deliberately never
-# reaches "Publish to production" — see rust-manifest's own comment for why
-# promoting it to the live download is a separate decision (Phase 6 in
-# REQUIREMENT_AUDIT_AND_PLAN.md), not something this workflow makes on its
-# own the day the packaging happens to work.
+# Rust is the connector that ships now: `manifest`'s "Publish to production"
+# reads the macos-rust/windows-rust/linux-rust jobs' artifacts and pushes
+# them to admin-api — that is what NativePackageFor and the employee
+# portal's download buttons actually serve. The Python connector
+# (macos/windows/linux) still builds every run and lands in
+# `python-manifest` as its own `agent-packages-python` CI artifact — kept
+# deliberately available, not deleted, as a same-pipeline rollback path if
+# the Rust connector needs to be pulled back for any device class. See
+# REQUIREMENT_AUDIT_AND_PLAN.md's Phase 6 for the verification history
+# behind this switch (real macOS hardware throughout the session that made
+# it, a first successful Windows build on a real windows-latest runner)
+# and its one open gap (nobody has yet installed the real .msi and clicked
+# through it on a Windows desktop — this cutover accepts that gap rather
+# than waiting on it, a decision made explicitly, not by default).
 
 on:
   push:
@@ -191,22 +197,21 @@ jobs:
             dist/*.tar.gz
 
   manifest:
-    needs: [resolve-version, macos, windows, linux]
+    needs: [resolve-version, macos-rust, windows-rust, linux-rust]
     runs-on: ubuntu-latest
     steps:
       # Three explicit named downloads, not one no-filter merge-multiple:
-      # this job must only ever see the Python connector's own three
-      # artifacts. The Rust jobs below upload their own separately-named
-      # artifacts in the same workflow run — an unfiltered download here
-      # would silently sweep those in too, and "Publish to production"
-      # below would then push an unverified Rust build to the same live
-      # endpoint real employees download from.
+      # this job must only ever see the Rust connector's own three
+      # artifacts. The Python jobs below upload their own separately-named
+      # artifacts in the same workflow run (into python-manifest, not this
+      # job) — an unfiltered download here would silently mix the two
+      # connectors' packages into one "publish to production" pass.
       - uses: actions/download-artifact@v4
-        with: { name: macos-pkg, path: dist }
+        with: { name: macos-rust-pkg, path: dist }
       - uses: actions/download-artifact@v4
-        with: { name: windows-msi, path: dist }
+        with: { name: windows-rust-msi, path: dist }
       - uses: actions/download-artifact@v4
-        with: { name: linux-deb, path: dist }
+        with: { name: linux-rust-deb, path: dist }
 
       # Filenames only. admin-api computes every checksum from the bytes it
       # actually serves, so a hash written here could only ever go stale.
@@ -405,25 +410,32 @@ jobs:
             dist/aavishield-agent-rust-*.deb
             dist/aavishield-agent-rust-*.tar.gz
 
-  rust-manifest:
-    needs: [resolve-version, macos-rust, windows-rust, linux-rust]
+  # Python connector — still built every run, deliberately kept as a
+  # same-pipeline rollback path rather than deleted the day the Rust
+  # connector took over "Publish to production" above. Bundled the same
+  # way `manifest` bundles Rust's, just never pushed anywhere: if the Rust
+  # connector needs to be pulled back for any reason, these are one
+  # `curl`/manual-upload away from being live again without waiting on a
+  # rebuild.
+  python-manifest:
+    needs: [resolve-version, macos, windows, linux]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
-        with: { name: macos-rust-pkg, path: dist-rust }
+        with: { name: macos-pkg, path: dist-python }
       - uses: actions/download-artifact@v4
-        with: { name: windows-rust-msi, path: dist-rust }
+        with: { name: windows-msi, path: dist-python }
       - uses: actions/download-artifact@v4
-        with: { name: linux-rust-deb, path: dist-rust }
+        with: { name: linux-deb, path: dist-python }
 
-      - name: Write manifest-rust.json
+      - name: Write manifest-python.json
         run: |
           VERSION="${{ needs.resolve-version.outputs.version }}"
           python3 - "$VERSION" <<'PY'
           import json, os, sys
           version = sys.argv[1]
           artifacts = {}
-          for f in sorted(os.listdir("dist-rust")):
+          for f in sorted(os.listdir("dist-python")):
               if f.endswith(".pkg"):
                   artifacts["macos"] = f
               elif f.endswith(".msi"):
@@ -431,23 +443,15 @@ jobs:
               elif f.endswith(".deb"):
                   artifacts["linux"] = f
           json.dump({"version": version, "artifacts": artifacts},
-                    open("dist-rust/manifest-rust.json", "w"), indent=2)
+                    open("dist-python/manifest-python.json", "w"), indent=2)
           print(json.dumps({"version": version, "artifacts": artifacts}, indent=2))
           PY
 
       - uses: actions/upload-artifact@v4
         with:
-          name: agent-packages-rust
-          path: dist-rust/
+          name: agent-packages-python
+          path: dist-python/
 
-      # Deliberately no "Publish to production" step here. Promoting the
-      # Rust connector to what admin-api actually serves employees is
-      # Phase 6 (see REQUIREMENT_AUDIT_AND_PLAN.md) — gated on real
-      # interactive verification (does the window render correctly, does
-      # the tray icon show, do the Screen Recording/Accessibility
-      # permission prompts actually work) that a headless CI build cannot
-      # provide even when it succeeds. A green build here proves the
-      # package compiles, links and installs; it does not prove the GUI
-      # behaves correctly on a Windows desktop nobody has watched it run
-      # on. These artifacts are for manual download and testing until that
-      # gate is met.
+      # Deliberately no "Publish to production" step here — see this
+      # file's top comment for why the Python connector is a rollback
+      # path now, not the live download.
