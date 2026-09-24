@@ -7,20 +7,34 @@ the live database, and the three test suites.
 Source of truth for requirements: [`requirement-details.md`](requirement-details.md).
 Prior session transcript (different account): [`another-session-document.md`](another-session-document.md).
 
-**Last published connector version: `2.7.0`** (Rust connector — cutover live,
+**Last published connector version: `2.7.1`** (Rust connector — cutover live,
 see Phase 6) — released by `agent-packages.yml` run
-[35958608590](https://github.com/harshitgadhiya2024/aavishailab-project/actions/runs/35958608590)
+[35965572986](https://github.com/harshitgadhiya2024/aavishailab-project/actions/runs/35965572986)
 on 2026-09-24, all nine jobs green. `manifest`'s "Publish to production"
 step now builds from `macos-rust`/`windows-rust`/`linux-rust` and its own
 log confirms all three Rust packages were accepted:
 ```
-==> Publishing dist/aavishield-agent-rust-2.7.0.pkg as macos
-{"filename":"aavishield-agent-rust-2.7.0.pkg","platform":"macos","status":"published","version":"2.7.0"}
-==> Publishing dist/aavishield-agent-rust-2.7.0.msi as windows
-{"filename":"aavishield-agent-rust-2.7.0.msi","platform":"windows","status":"published","version":"2.7.0"}
-==> Publishing dist/aavishield-agent-rust-2.7.0-amd64.deb as linux
-{"filename":"aavishield-agent-rust-2.7.0-amd64.deb","platform":"linux","status":"published","version":"2.7.0"}
+==> Publishing dist/aavishield-agent-rust-2.7.1.pkg as macos
+{"filename":"aavishield-agent-rust-2.7.1.pkg","platform":"macos","status":"published","version":"2.7.1"}
+==> Publishing dist/aavishield-agent-rust-2.7.1.msi as windows
+{"filename":"aavishield-agent-rust-2.7.1.msi","platform":"windows","status":"published","version":"2.7.1"}
+==> Publishing dist/aavishield-agent-rust-2.7.1-amd64.deb as linux
+{"filename":"aavishield-agent-rust-2.7.1-amd64.deb","platform":"linux","status":"published","version":"2.7.1"}
 ```
+`2.7.1` fixes a real bug `2.7.0` shipped with: after an employee
+disconnected a personal device, the "Connect" button that appeared was a
+documented no-op inside the same running process (see
+`services/endpoint-agent/src/background.rs`'s `handle_disconnect` —
+commit `89d3243`) — the only way to actually reconnect was to fully quit
+and relaunch the app, which nothing in the UI prompted anyone to do.
+Fixed by exiting the process after disconnect (once the confirmation has
+had a moment to paint) so the OS-level supervisor (LaunchAgent `KeepAlive`
+on macOS, `systemd`'s `Restart=always` on Linux) brings it back into a
+genuine cold start, where the already-removed config file correctly
+triggers real browser-based re-enrollment. Windows has no such
+supervisor on its Run-key launch, so there the employee reopens the app
+from the Start Menu — the same manual step quitting any ordinary Windows
+tray app already requires.
 The old Python build path still exists as `python-manifest` (CI artifacts
 only, `agent-packages-python`, no "Publish to production" step) — an
 explicit rollback path, not the live one anymore. There are no git tags in
