@@ -328,11 +328,23 @@ jobs:
         # its own header comment. A real Windows runner is exactly the
         # verification this repo couldn't produce any other way; a failure
         # here is genuine signal, not noise to route around.
+        #
+        # Invoked with `&`, not build.ps1's nested `powershell -File ...` —
+        # that first real run hit a genuine, reproducible bug in the nested
+        # form: this step already runs under pwsh (PowerShell 7), but
+        # `powershell.exe` is legacy Windows PowerShell 5.1, a different
+        # parser, and it threw "Missing closing '}'" against code that
+        # parses cleanly everywhere else (verified independently against a
+        # real PowerShell 7 parser). Calling the script directly keeps
+        # everything on the one engine already running this step, and
+        # sidesteps whatever legacy-parser incompatibility that was —
+        # never conclusively isolated, since there is no PS 5.1 anywhere
+        # this could be reproduced outside the runner itself.
         run: |
           if (Test-Path "$env:RUNNER_TEMP\aavishield-signing.pfx") {
             $env:SIGNING_CERT_PFX = "$env:RUNNER_TEMP\aavishield-signing.pfx"
           }
-          powershell -ExecutionPolicy Bypass -File packaging\windows\build-rust.ps1 -Version "${{ needs.resolve-version.outputs.version }}"
+          & .\packaging\windows\build-rust.ps1 -Version "${{ needs.resolve-version.outputs.version }}"
 
       - uses: actions/upload-artifact@v4
         with:
