@@ -170,7 +170,7 @@ $Wxs = @"
          config.json before the GUI ever shows a Connect button. Impersonate
          "yes" (unlike WriteEnrollJson above) so %USERPROFILE% resolves to
          the person actually running the uninstall, not SYSTEM's own profile. -->
-    <CustomAction Id="RemoveUserState"
+    <CustomAction Id="RemoveUserState" Directory="INSTALLFOLDER"
                   ExeCommand='cmd.exe /c rmdir /s /q "%USERPROFILE%\.aavishield"'
                   Execute="deferred" Impersonate="yes" Return="ignore" />
 
