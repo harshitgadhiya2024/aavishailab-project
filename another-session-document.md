@@ -928,3 +928,35 @@ OUT
 You've hit your weekly limit · resets 7pm (UTC)
 
 Idle 1h 52m. The prompt cache has likely expired, so your next message will re-cache about 725k tokens.
+
+
+
+  Ran 1 shell command
+
+⏺ Ab commit + push karta hoon, phir real release 2.6.0 trigger karta hoon (Python + naye Rust jobs dono ke saath — Windows CI pe pehli baar real
+  verification milegi).
+
+  Committed 083e904, pushed to main, ran 1 shell command
+
+⏺ Ab release trigger karta hoon — pehle last version confirm karta hoon.
+
+  Ran 5 shell commands
+  ⎿  You've hit your session limit · resets 1am (Asia/Calcutta)
+     /upgrade or /usage-credits to finish what you’re working on.
+
+⏺ Usage limit reached · continuing automatically at 1am · esc or type to cancel
+
+✻ Cooked for 4m 10s · done 10:42 PM
+
+❯ /usage-credits
+  ⎿  Login interrupted
+
+❯ /usage-credits
+  ⎿  Login interrupted
+
+⏺ Automatic continue cancelled · /rate-limit-options to re-arm
+                                                                                                                  ✔ Update installed · Restart to update
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents

@@ -341,10 +341,24 @@ jobs:
 
   linux-rust:
     needs: resolve-version
-    runs-on: ubuntu-22.04 # oldest supported glibc — matches the Python job's own reasoning, and
-                           # matters more here: dpkg-shlibdeps pins Depends: to what's on THIS
-                           # machine, so building on an older base means a lower (more portable)
-                           # minimum version requirement on the target.
+    # NOT ubuntu-22.04, unlike the Python job — tried that first and it
+    # doesn't build: xcap's PipeWire/Wayland-portal backend (via the
+    # `libspa`/`pipewire-sys` crates) generates its Rust bindings from
+    # whatever PipeWire C headers are on the build machine at compile time,
+    # not purely from the pinned crate version, and jammy's PipeWire
+    # (~0.3.48) predates a struct field (`spa_video_info_raw::flags`)
+    # `libspa` 0.8.0's hand-written wrapper code assumes exists — a real,
+    # first-CI-run failure, not a hypothetical one:
+    # "error[E0609]: no field `flags` on type `spa_video_info_raw`".
+    # ubuntu-24.04 ships a new enough PipeWire; this does mean giving up
+    # the Python job's "oldest glibc for max compat" property specifically
+    # for this dependency chain — an unavoidable trade for depending on
+    # xcap's Wayland backend at all. It does not weaken the resulting
+    # .deb's own portability claim: dpkg-shlibdeps (below) still computes
+    # Depends: honestly from whatever this machine actually links against,
+    # so the package will correctly require the newer libpipewire-0.3-0 it
+    # now legitimately needs, rather than silently under-declaring it.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

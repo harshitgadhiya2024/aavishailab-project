@@ -1,4 +1,4 @@
-<#
+﻿<#
 Builds a Windows .msi installer for the Rust Aavishield connector
 (services/endpoint-agent). A sibling to build.ps1, which does the same for
 the Python connector — see packaging/macos/build-rust.sh's header for why
