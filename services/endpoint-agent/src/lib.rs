@@ -35,6 +35,8 @@ pub mod enroll_interactive;
 pub mod heartbeat;
 pub mod http_client;
 pub mod inventory;
+#[cfg(target_os = "macos")]
+pub mod mac_window;
 pub mod mitm;
 pub mod open_apps;
 pub mod policy_cache;

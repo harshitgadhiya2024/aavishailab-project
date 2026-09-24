@@ -148,11 +148,19 @@ fn main() {
         "Aavishield",
         native_options,
         Box::new(move |cc| {
-            // Only now does the egui context exist for ShowSignal::request
-            // to wake — anything requested earlier is still pending and is
-            // picked up by the first frame.
-            if let Some(t) = &tray {
-                t.show.attach(&cc.egui_ctx);
+            // Only now does the window exist to be remembered. Anything
+            // that asked for it before this point left `ShowSignal`'s flag
+            // set, and the first frame picks that up. See mac_window.rs for
+            // why macOS needs the window itself rather than the egui
+            // context: the frame loop is not able to un-hide its own
+            // window, so AppKit is asked to do it directly.
+            #[cfg(target_os = "macos")]
+            {
+                use raw_window_handle::HasWindowHandle as _;
+                match cc.window_handle() {
+                    Ok(h) => aavishield_agent::mac_window::remember(&h.as_raw()),
+                    Err(e) => tracing::warn!(error = %e, "no window handle — the tray's Open will not reopen the window"),
+                }
             }
             Ok(Box::new(aavishield_agent::gui::ConnectorApp::new(
                 handles.ui,

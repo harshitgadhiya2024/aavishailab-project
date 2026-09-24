@@ -6,23 +6,33 @@
 //! reached by re-launching the binary).
 
 use crate::ui_state::UiState;
-use eframe::egui;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use tray_icon::menu::{Menu, MenuEvent, MenuItem};
 use tray_icon::{TrayIcon, TrayIconBuilder};
 
 /// "Someone wants the window shown" — raised from outside the GUI (the tray
-/// menu, a second launch of the app) and consumed by the GUI's frame loop.
+/// menu, a second launch of the app) and honoured by whatever can actually
+/// put the window back on screen.
 ///
-/// A flag alone is not enough: once the window is hidden, macOS stops
-/// giving it a reason to draw and App Nap throttles the 500ms repaint
-/// timer, so the frame loop that would read the flag can go unrun
-/// indefinitely. `request` therefore also pokes the egui context directly —
-/// `request_repaint` is safe from any thread and wakes the event loop
-/// through winit's proxy, which a hidden window still receives.
+/// Who that is differs by platform, which is the whole reason this is a
+/// type and not a bare `AtomicBool`:
 ///
-/// Still a plain bool rather than a channel: the tenth request while the
+/// - **macOS** cannot use the frame loop at all. A window that has been
+///   ordered out is never drawn, so the loop that would read a flag and
+///   answer it with `ViewportCommand::Visible(true)` is precisely the loop
+///   that is not running — see mac_window.rs, which orders the window in
+///   through AppKit instead and lets the resulting `drawRect:` restart
+///   painting on its own.
+/// - **Windows and Linux** do keep servicing the 500ms repaint timer while
+///   the window is hidden, so there the flag below is read once per frame
+///   by `ConnectorApp::update` and answered there.
+///
+/// `pending` is set on every platform regardless: on macOS it costs one
+/// store and keeps the GUI's own bookkeeping (which flips the window back
+/// out of its background state) on the same path everywhere.
+///
+/// A plain bool rather than a channel, because the tenth request while the
 /// window is already visible means exactly the same thing as the first.
 #[derive(Clone, Default)]
 pub struct ShowSignal {
@@ -32,23 +42,13 @@ pub struct ShowSignal {
 #[derive(Default)]
 struct ShowSignalInner {
     pending: AtomicBool,
-    /// Set once eframe has created the context — requests that arrive
-    /// before then just leave `pending` set for the first frame to pick up.
-    ctx: OnceLock<egui::Context>,
 }
 
 impl ShowSignal {
     pub fn request(&self) {
         self.inner.pending.store(true, Ordering::SeqCst);
-        if let Some(ctx) = self.inner.ctx.get() {
-            ctx.request_repaint();
-        }
-    }
-
-    /// Hands over the context `request` wakes. Called once, from eframe's
-    /// app-creation callback.
-    pub fn attach(&self, ctx: &egui::Context) {
-        let _ = self.inner.ctx.set(ctx.clone());
+        #[cfg(target_os = "macos")]
+        crate::mac_window::show();
     }
 
     /// True (once) if a show was requested since the last call.

@@ -89,6 +89,19 @@ gtk = "0.18"
 [target.'cfg(target_os = "windows")'.dependencies]
 winreg = "0.52"
 
+# macOS only: re-showing a hidden window has to go through AppKit rather
+# than through egui — see mac_window.rs for the frame-loop deadlock that
+# forces it. Versions are pinned to exactly what eframe 0.36 already
+# depends on so the tree keeps one copy of each, and the objc2-app-kit
+# features are the subset mac_window.rs actually names.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.4"
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSView", "NSWindow"] }
+# eframe takes a window handle but does not re-export the crate that
+# defines it, so it is named here to destructure what `window_handle()`
+# returns.
+raw-window-handle = "0.6.2"
+
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util", "macros", "rt-multi-thread"] }
 

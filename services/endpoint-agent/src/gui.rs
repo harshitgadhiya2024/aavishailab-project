@@ -118,9 +118,17 @@ impl eframe::App for ConnectorApp {
         }
 
         // The tray's "Open" click (or a second launch of the app) un-hides
-        // the window. Whoever raised the request has already woken this
-        // loop — see tray::ShowSignal for why the repaint timer alone can't
-        // be relied on while the window is hidden.
+        // the window. This is what does it on Windows and Linux, where the
+        // repaint timer above keeps running while the window is hidden and
+        // so this loop is still here to be asked.
+        //
+        // On macOS it is not: a hidden window is never drawn, so this loop
+        // is stopped and mac_window has already ordered the window in by
+        // the time the frame it woke gets here. Re-issuing the commands
+        // costs nothing — asking a visible window to be visible and
+        // focused is what the request meant anyway — and leaving the flag
+        // on one code path for all three platforms is worth more than
+        // saving them.
         if let Some(tray) = &self.tray {
             if tray.show.take() {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));

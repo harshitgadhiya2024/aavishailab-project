@@ -101,8 +101,16 @@ fn open_exclusive(path: &std::path::Path) -> Option<File> {
 }
 
 /// Asks the process holding the lock to bring its window up. Used by a
-/// losing instance right before it exits — the equivalent of someone
-/// clicking the Dock/Spotlight icon while the agent is already running.
+/// losing instance right before it exits.
+///
+/// Note what this is *not*, because the comment here used to claim it and
+/// a bug was built on the claim: on macOS this is not how clicking the
+/// Dock/Spotlight/Launchpad icon of a running agent gets the window back.
+/// LaunchServices deduplicates by bundle identity, so opening an app that
+/// is already running starts no second process — there is no loser, and
+/// this function never runs. That path is `mac_window`'s reopen handler.
+/// What reaches here is a binary launched directly, bypassing
+/// LaunchServices, plus the launchd startup race described above.
 ///
 /// A no-op on Windows: there is no SIGUSR1 there, and the taskbar/tray is
 /// how someone gets the window back — matching the Python original's own
