@@ -284,20 +284,28 @@ func (h *AgentHandler) Enroll(c *gin.Context) {
 		if admins := notifier.AdminEmails(h.db, enrollToken.OrgID.String()); len(admins) > 0 {
 			var org models.Organization
 			orgName := "your organization"
+			sendEmail := true
 			if err := h.db.First(&org, "id = ?", enrollToken.OrgID).Error; err == nil {
 				orgName = org.Name
-				if !org.WantsNotification("device_enrolment") {
-					return
-				}
+				sendEmail = org.WantsNotification("device_enrolment")
 			}
-			empName := "Unassigned"
-			if enrollToken.EmployeeID != nil {
-				var emp models.Employee
-				if err := h.db.First(&emp, "id = ?", *enrollToken.EmployeeID).Error; err == nil {
-					empName = emp.FullName()
+			// This must never `return` out of the handler: it's a
+			// best-effort notification nested inside the success path, and
+			// a bare `return` here used to abort Enroll entirely whenever
+			// an org had device-enrolment emails turned off — the device
+			// row was already committed to the database, but the agent
+			// never got its device_id/agent_key back, so it retried
+			// enrollment forever without ever showing up as connected.
+			if sendEmail {
+				empName := "Unassigned"
+				if enrollToken.EmployeeID != nil {
+					var emp models.Employee
+					if err := h.db.First(&emp, "id = ?", *enrollToken.EmployeeID).Error; err == nil {
+						empName = emp.FullName()
+					}
 				}
+				mailer.DeviceEnrolled(admins, orgName, device.Hostname, empName, device.OSType)
 			}
-			mailer.DeviceEnrolled(admins, orgName, device.Hostname, empName, device.OSType)
 		}
 	}
 
