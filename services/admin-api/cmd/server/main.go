@@ -59,6 +59,14 @@ func main() {
 	// Enforce screenshot retention (settings promise "keep for N days").
 	handlers.StartScreenshotRetentionSweep(db, 6*time.Hour)
 
+	// Closes a work session left open by an agent that stopped without a
+	// graceful Disconnect (killed, crashed, reinstalled) — same reasoning
+	// as StartDeviceOfflineSweep just above. 15 minutes comfortably covers
+	// the default screenshot interval (up to 420s) plus a missed cycle,
+	// without being so long that a genuinely dead session sits reading
+	// "live" for the rest of the day.
+	handlers.StartStaleSessionSweep(db, 5*time.Minute, 15*time.Minute)
+
 	// Enforce the platform's data_retention setting for activity events and
 	// audit log rows — without this the setting would just be a UI that
 	// doesn't do anything.

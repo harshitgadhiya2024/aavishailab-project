@@ -401,6 +401,41 @@ func StartScreenshotRetentionSweep(db *gorm.DB, interval time.Duration) {
 	}()
 }
 
+// StartStaleSessionSweep closes any WorkSession stuck open (ended_at still
+// nil) long after it actually went quiet — the same shape as
+// StartDeviceOfflineSweep and for the identical underlying reason: nothing
+// ends a session when the agent stops abruptly (killed, crashed, machine
+// slept/lost power, reinstalled). end_session() only ever runs from inside
+// a still-running process (screenshot.rs's own gate check, or a graceful
+// Disconnect); anything else and the row is left showing "live" forever —
+// reproduced for real during a day of repeated reinstalls: seven separate
+// sessions, all reading "→ live" hours later, only one of them actually
+// still running.
+//
+// UpdatedAt is the signal, not StartedAt: every screenshot that lands rolls
+// ScreenshotCount/ActiveSeconds/etc into this row (see the ingest handler),
+// which bumps updated_at — so it tracks the session's last real activity,
+// not just when it began. Closed at that last-known-activity time, not
+// "now", so the duration shown reflects when work actually stopped rather
+// than whenever this sweep happened to notice.
+func StartStaleSessionSweep(db *gorm.DB, interval, staleAfter time.Duration) {
+	sweep := func() {
+		cutoff := time.Now().Add(-staleAfter)
+		var stale []models.WorkSession
+		db.Where("ended_at IS NULL AND updated_at < ?", cutoff).Find(&stale)
+		for i := range stale {
+			db.Model(&stale[i]).Update("ended_at", stale[i].UpdatedAt)
+		}
+	}
+	go func() {
+		sweep() // don't leave today's already-stale sessions open for a full interval
+		ticker := time.NewTicker(interval)
+		for range ticker.C {
+			sweep()
+		}
+	}()
+}
+
 // ─── Public media route (local backend only) ─────────────────────────────────
 
 // ServeMedia handles GET /media/screenshot?key=&exp=&sig= — a public,
