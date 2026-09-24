@@ -179,32 +179,47 @@ above. What's left, each a real deliberate cut, not an oversight:
 
 ## Verification status — read this before trusting any of it
 
-**Linux: fully built and live-tested.** Every claim below this line is
-measured, not assumed.
+**Linux: fully built and live-tested**, including in CI
+(`rust-test-endpoint-agent` in `ci.yml`, and `linux-rust` in
+`agent-packages.yml`, which also builds a real installable `.deb` — see
+`packaging/linux/build-rust.sh`).
 
-**Windows: cross-compiles cleanly, not device-tested.**
-```
-rustup target add x86_64-pc-windows-gnu
-cargo build --target x86_64-pc-windows-gnu
-```
-produces a real `aavishield-agent.exe` (`file` reports `PE32+ executable
-... for MS Windows`). The registry-based system-proxy code
-(`system_proxy.rs`'s `#[cfg(target_os = "windows")]` branches) compiles
-against the real `winreg` crate but has never run against a real
-Windows registry.
+**macOS: fully built and live-tested on real Apple Silicon hardware**,
+not just compiled. A Rust toolchain was installed on a real Mac and used
+to: run the full test suite and clippy natively (two real bugs found and
+fixed that Linux-only testing never could — see `git log`); actually
+enroll a device against a real running admin-api using a real employee
+token, then confirm with `networksetup`/`lsof` that the system's real
+Wi-Fi proxy flipped on and real macOS applications (Chrome, Microsoft
+Teams, Cursor) immediately routed through it; build a real `.pkg`
+(`packaging/macos/build-rust.sh`), expand it, and run the extracted
+binary; and start two real instances to verify `single_instance.rs`'s
+exclusivity. `agent-packages.yml`'s `macos-rust` job now also builds this
+in CI on a real `macos-14` GitHub Actions runner.
 
-**macOS: written, not even compile-checked.** Cross-compiling for macOS
-from Linux needs Apple's SDK, which isn't something to fetch from an
-unofficial source into a build pipeline. The `networksetup`-based
-`#[cfg(target_os = "macos")]` branches are a faithful translation of the
-Python original's command sequences, but have not been type-checked by
-a macOS toolchain, let alone run.
+**Windows: builds successfully on a real Windows machine — GitHub
+Actions' `windows-latest` runner — but nothing has been run
+interactively.** `agent-packages.yml`'s `windows-rust` job builds the
+connector and a real `.msi` (`packaging/windows/build-rust.ps1`) on
+that runner; its first attempt found a genuine bug (a legacy-PowerShell
+parser incompatibility in the packaging script, fixed by invoking it
+through pwsh directly instead of a nested `powershell.exe` call — see
+`git log`), and the second attempt succeeded cleanly. That is real
+evidence the code compiles and links correctly on Windows — the
+registry-based system-proxy code (`system_proxy.rs`'s
+`#[cfg(target_os = "windows")]` branches) is included in that build, not
+skipped. It is not the same claim as "runs correctly": nothing has
+installed that `.msi` and watched the window render, the tray icon
+appear, or the system proxy setting actually change on a real Windows
+desktop — CI has no interactive session to check any of that from.
 
-**Before shipping this to a single real endpoint**, at minimum: build
-and run on real macOS and Windows hardware, verify the system-proxy
-code actually changes a real desktop's settings (not just "doesn't
-crash"), and get a code-signing/notarization pipeline in place — none
-of that is possible in this environment.
+**Before shipping this to a single real endpoint**, what's left is
+specifically the interactive half on both platforms: install the real
+package, watch the window and tray render, click through enroll →
+uninstall, confirm the OS's own permission prompts (Screen Recording /
+Input Monitoring on macOS) work as designed — plus a code-signing/
+notarization pipeline for both. See `REQUIREMENT_AUDIT_AND_PLAN.md`'s
+Phase 6 for the current state of that gate.
 
 ### What live testing actually proved (Linux, this build host)
 

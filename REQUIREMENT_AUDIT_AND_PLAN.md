@@ -7,10 +7,15 @@ the live database, and the three test suites.
 Source of truth for requirements: [`requirement-details.md`](requirement-details.md).
 Prior session transcript (different account): [`another-session-document.md`](another-session-document.md).
 
-**Last published connector version: `2.5.0`** — released by `agent-packages.yml`
-run `35766414599` on 2026-09-22 from `8df9234`, all four jobs (macOS / Windows /
-Linux / manifest) green. There are no git tags in this repo; every release so far
-went out through `workflow_dispatch`. **Next version will be `2.6.0`.**
+**Last published connector version: `2.6.0`** (Python connector — see Phase 6)
+— released by `agent-packages.yml` run
+[35955630878](https://github.com/harshitgadhiya2024/aavishailab-project/actions/runs/35955630878)
+on 2026-09-24, all nine jobs green (the original four, plus the four new
+Rust packaging jobs and `rust-manifest` — see Phase 4/5). There are no git
+tags in this repo; every release so far went out through `workflow_dispatch`.
+The Rust connector's own packages built successfully alongside it in the same
+run (`agent-packages-rust`), but are CI artifacts only — not yet published to
+production; see Phase 6 for what that's still waiting on.
 
 ---
 
@@ -253,20 +258,80 @@ Python build, CA-trust scheduled task correctly omitted — Rust doesn't
 install the CA yet) but **unverified**: no Windows machine, and no way to
 even dry-run candle.exe, exists anywhere this was written. Marked as such
 in its own header, matching this codebase's existing standard for
-Windows/macOS code nobody has run.
+Windows/macOS code nobody has run — **until this phase's own CI run
+overturned it**, see below.
 
-Still open: a Rust CI job in `agent-packages.yml` itself (unit tests run
-in `ci.yml` now — see the endpoint-agent CI addition earlier — but nothing
-builds/publishes the three Rust packages yet).
+`agent-packages.yml` gained `macos-rust`/`windows-rust`/`linux-rust`/
+`rust-manifest` jobs, building the three Rust packages on GitHub's real
+runners and uploading them as their own CI artifacts — kept structurally
+separate from the Python connector's `manifest` job so nothing Rust ever
+reaches "Publish to production" without a deliberate Phase 6 decision.
 
-### Phase 5 — Release `2.6.0`
-Fix the workflow's version default so a dispatch can never publish backwards,
-then trigger `agent-packages.yml` with `2.6.0`.
+The first real run of these jobs found two more genuine bugs — on top of
+everything Part 3/README already found by hand on this session's own
+Mac — that only a real second platform and a real Windows machine could
+surface:
+
+- **linux-rust** failed to even compile on `ubuntu-22.04`:
+  `error[E0609]: no field \`flags\` on type \`spa_video_info_raw\``. xcap's
+  PipeWire/Wayland-portal backend generates its Rust bindings from
+  whatever PipeWire C headers are on the *build* machine, not purely from
+  the pinned crate version, and jammy's PipeWire (~0.3.48) predates a
+  field `libspa` 0.8.0 assumes exists. Fixed by building on `ubuntu-24.04`
+  instead — this crate's dependency chain makes the Python job's "build on
+  the oldest glibc" choice untenable for Rust specifically, but
+  `dpkg-shlibdeps` still computes an honest, correspondingly newer
+  `Depends:` from whatever the newer machine actually links against, so
+  the resulting `.deb`'s stated requirements stay accurate.
+- **windows-rust** — **the first time any Rust code in this connector had
+  ever run on a real Windows machine** — failed with a genuine PowerShell
+  parse error against code that parsed cleanly everywhere else this could
+  check it (independently verified via a real `System.Management.
+  Automation.Language.Parser` call, not just "looks right"). Root cause:
+  the workflow invoked it through a *nested* `powershell -File ...` call
+  — legacy Windows PowerShell 5.1, a different engine than the pwsh 7
+  already running the step — and that path choked on something never
+  conclusively isolated (a BOM fix was tried first and did not resolve
+  it). Fixed by invoking the script directly (`& .\packaging\windows\
+  build-rust.ps1 ...`) from the pwsh step already running, sidestepping
+  the legacy shell entirely rather than continuing to chase its exact
+  incompatibility with no PS 5.1 anywhere to debug it against.
+
+Both fixes verified by a second full run: all nine jobs green, including
+a genuine, first-ever successful `windows-rust` build
+(run [35955630878](https://github.com/harshitgadhiya2024/aavishailab-project/actions/runs/35955630878)).
+A successful CI package build is not the same claim as "the GUI runs
+correctly on a Windows desktop" — see Phase 6 below — but it is real,
+new, positive evidence this connector had never had for Windows before
+today, and it directly narrows what Phase 6 is still actually waiting on.
+
+### Phase 5 — Release `2.6.0` ✅ done
+Fixed the workflow's version-drift bug (a `resolve-version` job every
+other job now reads from, instead of each repeating its own
+`inputs.version || '1.1.0'` fallback — see Part 2.3), then triggered
+`agent-packages.yml` with `2.6.0` for real. All three Python packages
+published to production successfully — verified from the run's own log,
+not assumed:
+```
+==> Publishing dist/aavishield-agent-2.6.0.pkg as macos
+==> Publishing dist/aavishield-agent-2.6.0.msi as windows
+==> Publishing dist/aavishield-agent-2.6.0-amd64.deb as linux
+```
 
 ### Phase 6 — Cutover
 Ship the Rust connector as the default download once it has run on real macOS
-and Windows hardware. Until then Python remains the shipping binary and Rust
-ships alongside it.
+and Windows hardware. macOS: real hardware now available and used
+throughout this session (Part 3). Windows: a GitHub Actions `windows-latest`
+runner is genuine Windows hardware and now has a real successful *build*
+on it — but building successfully is a much narrower claim than "the GUI
+renders correctly, the tray icon shows, the Screen Recording/Input
+Monitoring permission prompts actually work as designed", none of which a
+headless CI job can exercise. Still blocked on that interactive half, on
+both platforms' installers actually being run through an install→enroll→
+uninstall cycle by a person watching a real screen — not just built.
+Python remains the shipping binary until then, and Rust ships alongside
+it as `agent-packages-rust` (CI artifacts only, not yet a public
+download).
 
 ### Not in scope, and why
 **Sandbox detonation backend.** Needs a CAPE/Cuckoo cluster — an infrastructure
@@ -285,9 +350,9 @@ Updated as each phase lands.
 | 1 — No allowed, anywhere | ✅ Done — verified against a real registered company + employee account (not seeded fixtures), live SQL matching every handler's query, and a rebuilt/restarted admin-api confirming the boot-time purge |
 | 2 — Rust monitoring parity | ✅ Done — posture, screenshot capture, activity monitoring, open-app enumeration; 119 tests, clippy clean, live-verified under Xvfb (real screen capture, real `rdev` listener, real window render) |
 | 3 — Rust lifecycle parity | ✅ Done — auto-update, single-instance lock (live-verified with two real instances), and the uninstall flow (live-verified against a real server: correct rejection on a wrong password, correct authorization + device-offline transition on the real org_admin's) |
-| 4 — Rust packaging | ⚠️ Partial — macOS + Linux built and live-installed for real (one release-blocking Linux bug found and fixed: missing `Depends:`); Windows written but unverified; CI wiring still open |
-| 5 — Release 2.6.0 | Not started |
-| 6 — Cutover | Real macOS hardware is now available (a Rust toolchain was installed on this Mac this session) — no longer blocked on that specifically, but still needs Windows hardware, and Phase 4 packaging has to land first |
+| 4 — Rust packaging | ✅ Done — macOS + Linux built and live-installed locally; all three (macOS/Windows/Linux) now also build successfully in CI on GitHub's real runners, including the first-ever successful Windows build, after fixing two real bugs that run surfaced (Linux: PipeWire header ABI; Windows: legacy PowerShell parser) |
+| 5 — Release 2.6.0 | ✅ Done — live in production, verified from the publish step's own log |
+| 6 — Cutover | Blocked on *interactive* verification only now — both packaging and a first successful build on real hardware (macOS locally, Windows via CI) are done; what remains is a person actually installing and clicking through each platform's package (GUI render, tray icon, permission prompts, enroll→uninstall) rather than just building it |
 
 ### What "done" means for Phase 1 and 2, concretely
 
