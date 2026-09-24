@@ -403,3 +403,87 @@ Torn down immediately after and confirmed restored to the exact
 pre-test state. The uninstall flow that followed found two more
 instances of the identical "implemented, never connected" shape (see
 Part 3) before its own real-server verification.
+
+---
+
+## Part 6 — Tech stack: what's built in which language, and why
+
+Asked plainly: for every moving part of this product, which language is it
+in, and is that the shipping version or a work-in-progress one. Verified
+against the actual repo (`go.mod`/`Cargo.toml`/`requirements.txt` per
+directory, and what `docker-compose.yml` actually builds from — not
+assumed from a directory name).
+
+### Backend services
+
+| Service | Language | What it does | Notes |
+|---|---|---|---|
+| `admin-api` | **Go** | The control plane — REST API for both dashboards and the portal, Postgres/GORM, auth, RBAC, billing, all policy/activity/report queries | Database-bound, not CPU-bound — no reason to move off Go (see Part 3) |
+| `dlp-service-rust` | **Rust** | Real-time DLP content classification (regex + entropy + file-type detectors) on every upload/download the connector streams through it | The *only* copy — `dlp-service` (Python) was fully retired, not kept as a rollback |
+| `malware-service-rust` | **Rust** | ClamAV + hash reputation + static heuristics scoring for every download; `would_sandbox` flag (Part 1, Q5) | `docker-compose.yml` builds from this directory. `services/malware-service` (Python) still exists in the repo as a rollback reference, unused by the running stack |
+| `extract-service` | **Python** | Deep content extraction — documents, archives, images+OCR — feeding DLP's classifiers | Python's ecosystem (OCR, document parsers) is the reason this one stayed Python |
+| `ai-service` | **Python** | The AI Assistant tab's backend | |
+| `casb-service` | **Python** | Cloud-app control-plane checks (the CASB rules the connector's `casb_cache`/`CASBControlCache` consult) | |
+| `threatintel-service` | **Go** | Threat-feed ingestion + the domain risk-scoring engine (Part 1, Q2 — 10,746+ feed domains) | |
+| `posture-service` | **Go** | Scores the posture signals every connector's heartbeat carries (disk encryption, firewall, etc.) into a device posture verdict | |
+| `shadowit-service` | **Go** | Shadow-IT domain rollup / discovery | |
+| `scripts/loadtest` | **Go** | Load-testing harness against the live stack — not a shipped service | |
+
+### Frontends
+
+All three dashboards and the docs site are **TypeScript / Next.js / React**:
+`frontend/company-dashboard`, `frontend/employee-portal`,
+`frontend/superadmin`, `frontend/docs`.
+
+### The client connector — the one piece split across two languages right now
+
+This is the actual nuanced answer, because it's mid-migration (see Part 3
+for the full decision). **Python is what real employees download today**
+(`scripts/agent/aavishield-agent.py`, 5,713 lines) — every requirement in
+this document works there. **Rust** (`services/endpoint-agent`, ~7,900
+lines across 37 modules) has reached full feature parity as of this
+session and now builds successfully on all three real platforms in CI, but
+has not yet been interactively verified on Windows and isn't shipped
+anywhere yet (Phase 6, still open).
+
+| Capability | Python (shipping) | Rust (CI-built, not yet shipped) |
+|---|---|---|
+| Proxy, MITM/TLS, policy/threat/CASB cache | ✅ | ✅ |
+| DLP monitor-only, malware scan calls | ✅ | ✅ |
+| Heartbeat, device posture | ✅ | ✅ |
+| Token-file + interactive browser enrollment | ✅ | ✅ |
+| Software inventory | ✅ | ✅ |
+| Application control + block notification | ✅ | ✅ |
+| Company-branded block page | ✅ | ✅ |
+| Screenshot capture + work sessions + open-app list | ✅ | ✅ |
+| Keyboard/mouse/scroll activity counting | ✅ | ✅ |
+| Auto-update | ✅ | ✅ |
+| Single-instance lock | ✅ | ✅ |
+| Uninstall flow | ✅ | ✅ |
+| Desktop window + tray icon | ✅ (pywebview + pystray) | ✅ (native egui — see README's "Why egui, not a webview") |
+| Packaging (macOS `.pkg` / Windows `.msi` / Linux `.deb`) | ✅ — this is what installs on a real employee machine today | ✅ builds in CI on real runners (Part 4/5); not signed, not distributed |
+| Real-device interactive verification | ✅ (it's been shipping) | ⚠️ macOS: yes, this session, on real hardware. Windows: builds, not yet run interactively. This is the entire Phase 6 gate |
+
+The two are **not** duplicate implementations of the whole system — they're
+the same connector, one battle-tested in production, one built to the same
+spec and now hardware-verified for build correctness on every platform,
+gated on the last mile (real interactive Windows testing) before cutover.
+
+### Why this split, briefly
+
+- **Go**: database-bound control-plane work (`admin-api`) and services
+  whose job is mostly "poll a feed / score against Postgres"
+  (`threatintel-service`, `posture-service`, `shadowit-service`). CPU
+  isn't the bottleneck there, so Rust would cost real effort for no
+  measurable gain.
+- **Rust**: everywhere a memory-safety bug is a security incident, or
+  per-device CPU/memory footprint matters at fleet scale —
+  content-scanning services already committed to it
+  (`dlp-service-rust`, `malware-service-rust`), and the connector is
+  mid-migration to it for the same reason (Part 3 has the full
+  reasoning).
+- **Python**: where the ecosystem is the actual advantage — document/
+  OCR extraction (`extract-service`), and historically the connector,
+  before this migration.
+- **TypeScript/Next.js**: all three dashboards and docs — no reason to
+  diverge there; it's a UI concern, not a performance one.
