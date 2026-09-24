@@ -99,6 +99,29 @@ pub fn spawn() -> Handles {
 async fn run(ui: UiState, client_slot: ClientSlot, mut commands: tokio::sync::mpsc::Receiver<Command>) {
     tracing::info!(version = crate::config::AGENT_VERSION, "aavishield-agent starting");
 
+    // Self-heal a stale system proxy left behind by a previous instance
+    // of this same agent that never got to run its own cleanup — killed,
+    // crashed, or the process simply vanished mid-run (all reproduced for
+    // real today: an install that silently failed left the LaunchAgent
+    // registered but the binary gone, so nothing ever relaunched to clear
+    // the proxy it had set, and every request on the machine failed with
+    // "can't reach page" until someone noticed and turned it off by hand).
+    // clear_system_proxy()/apply_system_proxy() only ever run from inside
+    // a live process (handle_disconnect, the uninstall flow, the
+    // intercepts()-gated call further down) — nothing runs if that
+    // process is gone, so the very next thing to start (a fresh launch,
+    // or launchd's KeepAlive after a crash) is the first real chance to
+    // notice and fix it. system_proxy_active() only ever returns true for
+    // our own literal port — nothing else on the machine would coincide
+    // with it — so clearing it here can't be clobbering someone else's
+    // proxy configuration. Whatever this run decides about its own
+    // interception (below, once enrolled and gated) re-applies it fresh
+    // either way.
+    if crate::system_proxy::system_proxy_active().await {
+        tracing::warn!("system proxy was already pointed at this agent on startup (likely left behind by a previous instance that didn't exit cleanly) — clearing it before deciding whether to re-apply");
+        crate::system_proxy::clear_system_proxy().await;
+    }
+
     // An existing config means this machine has already been through
     // enrollment (this run or a previous one) — start protecting
     // immediately and skip the "waiting for Connect" state entirely.
