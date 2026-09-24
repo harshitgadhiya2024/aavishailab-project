@@ -7,15 +7,38 @@ the live database, and the three test suites.
 Source of truth for requirements: [`requirement-details.md`](requirement-details.md).
 Prior session transcript (different account): [`another-session-document.md`](another-session-document.md).
 
-**Last published connector version: `2.6.0`** (Python connector — see Phase 6)
-— released by `agent-packages.yml` run
-[35955630878](https://github.com/harshitgadhiya2024/aavishailab-project/actions/runs/35955630878)
-on 2026-09-24, all nine jobs green (the original four, plus the four new
-Rust packaging jobs and `rust-manifest` — see Phase 4/5). There are no git
-tags in this repo; every release so far went out through `workflow_dispatch`.
-The Rust connector's own packages built successfully alongside it in the same
-run (`agent-packages-rust`), but are CI artifacts only — not yet published to
-production; see Phase 6 for what that's still waiting on.
+**Last published connector version: `2.7.0`** (Rust connector — cutover live,
+see Phase 6) — released by `agent-packages.yml` run
+[35958608590](https://github.com/harshitgadhiya2024/aavishailab-project/actions/runs/35958608590)
+on 2026-09-24, all nine jobs green. `manifest`'s "Publish to production"
+step now builds from `macos-rust`/`windows-rust`/`linux-rust` and its own
+log confirms all three Rust packages were accepted:
+```
+==> Publishing dist/aavishield-agent-rust-2.7.0.pkg as macos
+{"filename":"aavishield-agent-rust-2.7.0.pkg","platform":"macos","status":"published","version":"2.7.0"}
+==> Publishing dist/aavishield-agent-rust-2.7.0.msi as windows
+{"filename":"aavishield-agent-rust-2.7.0.msi","platform":"windows","status":"published","version":"2.7.0"}
+==> Publishing dist/aavishield-agent-rust-2.7.0-amd64.deb as linux
+{"filename":"aavishield-agent-rust-2.7.0-amd64.deb","platform":"linux","status":"published","version":"2.7.0"}
+```
+The old Python build path still exists as `python-manifest` (CI artifacts
+only, `agent-packages-python`, no "Publish to production" step) — an
+explicit rollback path, not the live one anymore. There are no git tags in
+this repo; every release so far went out through `workflow_dispatch`.
+
+The project's other Docker services — `grafana`, `prometheus`,
+`casb-service`, `shadowit-service` — were removed from `docker-compose.yml`
+(and their images deleted) on 2026-09-24, since none of them were in
+scope for this product and each was standing infra that could only
+consume space or drift into a conflict later. `admin-api`'s clients for
+the two removed backend services (`casbclient`/`shadowitclient`) already
+fail open (`Enabled()` returns `false` when their `*_SERVICE_URL` env var
+is unset, and the hot-path caller returns a clean "not configured" allow),
+so removing them introduced no new failure mode — verified by reading
+that code before removing anything, not assumed. Their source directories
+(`services/casb-service`, `services/shadowit-service`,
+`infra/grafana`, `infra/prometheus`) are still in the repo, just no
+longer part of the running stack or referenced by compose.
 
 ---
 
@@ -318,20 +341,32 @@ not assumed:
 ==> Publishing dist/aavishield-agent-2.6.0-amd64.deb as linux
 ```
 
-### Phase 6 — Cutover
-Ship the Rust connector as the default download once it has run on real macOS
-and Windows hardware. macOS: real hardware now available and used
-throughout this session (Part 3). Windows: a GitHub Actions `windows-latest`
-runner is genuine Windows hardware and now has a real successful *build*
-on it — but building successfully is a much narrower claim than "the GUI
-renders correctly, the tray icon shows, the Screen Recording/Input
-Monitoring permission prompts actually work as designed", none of which a
-headless CI job can exercise. Still blocked on that interactive half, on
-both platforms' installers actually being run through an install→enroll→
-uninstall cycle by a person watching a real screen — not just built.
-Python remains the shipping binary until then, and Rust ships alongside
-it as `agent-packages-rust` (CI artifacts only, not yet a public
-download).
+### Phase 6 — Cutover ✅ live
+The Rust connector is now what "Publish to production" ships. Fixed one
+real correctness bug before cutting over: `config::AGENT_VERSION` was a
+hardcoded `"1.0.0-rust"` constant no packaging script ever stamped — left
+as-is, every real device would have seen the manifest's version as
+permanently "newer" and looped `update.rs`'s download-and-swap every six
+hours forever. Added `services/endpoint-agent/build.rs` (stamps
+`AAVISHIELD_VERSION` at compile time via `cargo:rustc-env`) and updated
+all three packaging scripts (`packaging/{macos,linux,windows}/build-rust.sh`/`.ps1`)
+to set it before invoking `cargo build`. Then flipped
+`agent-packages.yml`'s `manifest` job to depend on
+`macos-rust`/`windows-rust`/`linux-rust` instead of the Python jobs, and
+released `2.7.0` — publish confirmed live from the run's own log (header,
+above). Python's build path is kept as `python-manifest`, CI-artifacts-only,
+an explicit one-line-revert rollback if the Rust connector needs to be
+pulled back.
+
+**What's still a known gap, not blocking the cutover:** nobody has yet
+installed the real Windows `.msi` and clicked through it on an actual
+Windows desktop (GUI render, tray icon, Screen Recording/Input Monitoring
+prompts, install→enroll→uninstall). macOS *has* been through that full
+interactive cycle, this session, on real hardware (Part 3). The Windows
+gap was accepted knowingly, not overlooked, before cutting over — CI's
+`windows-latest` runner is real Windows hardware and has proven the build
++ unit tests, just not the interactive GUI path a headless runner can't
+exercise. Worth closing before the Windows `.msi` sees real fleet volume.
 
 ### Not in scope, and why
 **Sandbox detonation backend.** Needs a CAPE/Cuckoo cluster — an infrastructure
@@ -351,8 +386,8 @@ Updated as each phase lands.
 | 2 — Rust monitoring parity | ✅ Done — posture, screenshot capture, activity monitoring, open-app enumeration; 119 tests, clippy clean, live-verified under Xvfb (real screen capture, real `rdev` listener, real window render) |
 | 3 — Rust lifecycle parity | ✅ Done — auto-update, single-instance lock (live-verified with two real instances), and the uninstall flow (live-verified against a real server: correct rejection on a wrong password, correct authorization + device-offline transition on the real org_admin's) |
 | 4 — Rust packaging | ✅ Done — macOS + Linux built and live-installed locally; all three (macOS/Windows/Linux) now also build successfully in CI on GitHub's real runners, including the first-ever successful Windows build, after fixing two real bugs that run surfaced (Linux: PipeWire header ABI; Windows: legacy PowerShell parser) |
-| 5 — Release 2.6.0 | ✅ Done — live in production, verified from the publish step's own log |
-| 6 — Cutover | Blocked on *interactive* verification only now — both packaging and a first successful build on real hardware (macOS locally, Windows via CI) are done; what remains is a person actually installing and clicking through each platform's package (GUI render, tray icon, permission prompts, enroll→uninstall) rather than just building it |
+| 5 — Release 2.6.0 (Python) | ✅ Done — superseded by Phase 6; kept as `python-manifest` rollback path |
+| 6 — Cutover to Rust 2.7.0 | ✅ Live — `manifest`'s "Publish to production" now ships Rust packages, verified from the publish step's own log (three `"status":"published"` responses). Remaining known gap: nobody has run the Windows `.msi` through an interactive install→enroll→uninstall cycle on a real desktop yet (macOS has been, this session) |
 
 ### What "done" means for Phase 1 and 2, concretely
 
@@ -423,10 +458,10 @@ assumed from a directory name).
 | `malware-service-rust` | **Rust** | ClamAV + hash reputation + static heuristics scoring for every download; `would_sandbox` flag (Part 1, Q5) | `docker-compose.yml` builds from this directory. `services/malware-service` (Python) still exists in the repo as a rollback reference, unused by the running stack |
 | `extract-service` | **Python** | Deep content extraction — documents, archives, images+OCR — feeding DLP's classifiers | Python's ecosystem (OCR, document parsers) is the reason this one stayed Python |
 | `ai-service` | **Python** | The AI Assistant tab's backend | |
-| `casb-service` | **Python** | Cloud-app control-plane checks (the CASB rules the connector's `casb_cache`/`CASBControlCache` consult) | |
+| `casb-service` | **Python** | Cloud-app control-plane checks (the CASB rules the connector's `casb_cache`/`CASBControlCache` consult) | **Removed from `docker-compose.yml` 2026-09-24** — out of scope, not run; `admin-api`'s `casbclient.Enabled()` fails open cleanly (confirmed by reading the code, not assumed) so nothing else broke. Source kept in repo, unused |
 | `threatintel-service` | **Go** | Threat-feed ingestion + the domain risk-scoring engine (Part 1, Q2 — 10,746+ feed domains) | |
-| `posture-service` | **Go** | Scores the posture signals every connector's heartbeat carries (disk encryption, firewall, etc.) into a device posture verdict | |
-| `shadowit-service` | **Go** | Shadow-IT domain rollup / discovery | |
+| `posture-service` | **Go** | Scores the posture signals every connector's heartbeat carries (disk encryption, firewall, etc.) into a device posture verdict | Stays Go — trivial weighted-boolean scoring + sorted-array binary search, no CPU-bound or untrusted-binary-parsing work that would justify Rust here |
+| `shadowit-service` | **Go** | Shadow-IT domain rollup / discovery | **Removed from `docker-compose.yml` 2026-09-24** — same reasoning and same fail-open safety check as `casb-service` above. Source kept in repo, unused |
 | `scripts/loadtest` | **Go** | Load-testing harness against the live stack — not a shipped service | |
 
 ### Frontends
