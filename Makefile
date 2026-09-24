@@ -1,5 +1,5 @@
 .PHONY: help up down restart rebuild logs ps build test test-api lint migrate migrate-down seed clean health shell api-logs db-shell redis-cli \
-        dev-infra dev-api dev-swg dev-ai dev-superadmin dev-company dev-employee
+        dev-infra dev-api dev-ai dev-superadmin dev-company dev-employee
 
 SHELL := /bin/bash
 COMPOSE := docker compose
@@ -77,10 +77,8 @@ urls:
 	@echo "   🔵 Company Dashboard:  http://localhost:5002"
 	@echo "   🔵 Employee Portal:    http://localhost:5003"
 	@echo "   🔵 Admin API:          http://localhost:7100"
-	@echo "   🔵 SWG Engine:         http://localhost:7001"
 	@echo "   🔵 AI Service:         http://localhost:7002"
-	@echo "   🟢 Grafana:            http://localhost:7300  (admin/admin)"
-	@echo "   🟢 Prometheus:         http://localhost:7090"
+	@echo "   🔵 Docs:               http://localhost:5004"
 	@echo "   🟢 PostgreSQL:         localhost:7432"
 	@echo "   🟢 Redis:              localhost:7379"
 	@echo ""
