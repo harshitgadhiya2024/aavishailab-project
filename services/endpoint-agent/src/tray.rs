@@ -6,19 +6,61 @@
 //! reached by re-launching the binary).
 
 use crate::ui_state::UiState;
+use eframe::egui;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use tray_icon::menu::{Menu, MenuEvent, MenuItem};
 use tray_icon::{TrayIcon, TrayIconBuilder};
 
-/// Owns the tray icon and the flag the GUI checks to un-hide the window.
-/// `show_requested` is a plain bool behind an atomic, not a channel,
-/// because "the tray wants the window shown" has no queue semantics worth
-/// having — the tenth click while the window is already visible means
-/// exactly the same thing as the first.
+/// "Someone wants the window shown" — raised from outside the GUI (the tray
+/// menu, a second launch of the app) and consumed by the GUI's frame loop.
+///
+/// A flag alone is not enough: once the window is hidden, macOS stops
+/// giving it a reason to draw and App Nap throttles the 500ms repaint
+/// timer, so the frame loop that would read the flag can go unrun
+/// indefinitely. `request` therefore also pokes the egui context directly —
+/// `request_repaint` is safe from any thread and wakes the event loop
+/// through winit's proxy, which a hidden window still receives.
+///
+/// Still a plain bool rather than a channel: the tenth request while the
+/// window is already visible means exactly the same thing as the first.
+#[derive(Clone, Default)]
+pub struct ShowSignal {
+    inner: Arc<ShowSignalInner>,
+}
+
+#[derive(Default)]
+struct ShowSignalInner {
+    pending: AtomicBool,
+    /// Set once eframe has created the context — requests that arrive
+    /// before then just leave `pending` set for the first frame to pick up.
+    ctx: OnceLock<egui::Context>,
+}
+
+impl ShowSignal {
+    pub fn request(&self) {
+        self.inner.pending.store(true, Ordering::SeqCst);
+        if let Some(ctx) = self.inner.ctx.get() {
+            ctx.request_repaint();
+        }
+    }
+
+    /// Hands over the context `request` wakes. Called once, from eframe's
+    /// app-creation callback.
+    pub fn attach(&self, ctx: &egui::Context) {
+        let _ = self.inner.ctx.set(ctx.clone());
+    }
+
+    /// True (once) if a show was requested since the last call.
+    pub fn take(&self) -> bool {
+        self.inner.pending.swap(false, Ordering::SeqCst)
+    }
+}
+
+/// Owns the tray icon and the signal the GUI checks to un-hide the window.
 pub struct Tray {
     _icon: TrayIcon,
-    pub show_requested: Arc<AtomicBool>,
+    pub show: ShowSignal,
 }
 
 /// Builds and shows the tray icon. Returns None on any failure — a missing
@@ -48,7 +90,7 @@ pub fn build(ui_state: UiState) -> Option<Tray> {
 
     let icon = tray_icon::Icon::from_rgba(shield_rgba(), 64, 64).ok()?;
 
-    let show_requested = Arc::new(AtomicBool::new(false));
+    let show = ShowSignal::default();
     let tray = TrayIconBuilder::new()
         .with_tooltip("Aavishield")
         .with_icon(icon)
@@ -57,17 +99,17 @@ pub fn build(ui_state: UiState) -> Option<Tray> {
         .ok()?;
 
     let open_id = open_item.id().clone();
-    let flag = show_requested.clone();
+    let on_open = show.clone();
     // tray-icon delivers clicks on a global channel rather than a per-item
     // callback; matching on the id we stashed above is how this tells "Open"
     // apart from any other item added later.
     MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
         if event.id == open_id {
-            flag.store(true, Ordering::SeqCst);
+            on_open.request();
         }
     }));
 
-    Some(Tray { _icon: tray, show_requested })
+    Some(Tray { _icon: tray, show })
 }
 
 /// A brand-orange shield, matching the pystray icon's own generated glyph

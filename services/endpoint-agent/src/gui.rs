@@ -117,13 +117,12 @@ impl eframe::App for ConnectorApp {
             }
         }
 
-        // The tray's "Open" click un-hides the window. Checked here, on the
-        // same repaint timer as everything else, rather than a dedicated
-        // polling thread — there is nowhere better for "did somebody click
-        // the tray" to be noticed than the loop that already wakes up twice
-        // a second regardless.
+        // The tray's "Open" click (or a second launch of the app) un-hides
+        // the window. Whoever raised the request has already woken this
+        // loop — see tray::ShowSignal for why the repaint timer alone can't
+        // be relied on while the window is hidden.
         if let Some(tray) = &self.tray {
-            if tray.show_requested.swap(false, Ordering::SeqCst) {
+            if tray.show.take() {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
             }
@@ -203,7 +202,7 @@ impl eframe::App for ConnectorApp {
         }
 
         // Polled here, once per frame, alongside the tray's own
-        // show_requested flag above — try_recv is non-blocking and needs
+        // show signal above — try_recv is non-blocking and needs
         // no runtime context, so this is safe to call from the GUI's sync
         // frame loop even though the sender lives on the background
         // thread's tokio runtime.
