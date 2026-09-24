@@ -87,6 +87,9 @@ web_modules/
 # Live payment-processor credentials — never committed
 razorpay_credential.txt
 
+# Live object-storage credentials — never committed
+r2_credentials.txt
+
 # parcel-bundler cache (https://parceljs.org/)
 .cache
 .parcel-cache

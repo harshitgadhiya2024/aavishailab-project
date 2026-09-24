@@ -94,6 +94,10 @@ services:
       SCREENSHOT_R2_ACCESS_KEY: ${SCREENSHOT_R2_ACCESS_KEY:-}
       SCREENSHOT_R2_SECRET_KEY: ${SCREENSHOT_R2_SECRET_KEY:-}
       SCREENSHOT_R2_REGION: ${SCREENSHOT_R2_REGION:-auto}
+      # Set when the bucket above is shared with another application —
+      # every key this app writes gets this prepended so it can't collide
+      # with whatever else already lives in the bucket.
+      SCREENSHOT_R2_PREFIX: ${SCREENSHOT_R2_PREFIX:-}
       SCREENSHOT_LOCAL_DIR: /data/screenshots
       MEDIA_SIGNING_SECRET: ${MEDIA_SIGNING_SECRET:-change-this-media-signing-secret-in-production}
       PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:7100}

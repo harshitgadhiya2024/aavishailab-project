@@ -70,6 +70,7 @@ func New() Backend {
 			accessKey: access,
 			secretKey: secret,
 			region:    region,
+			prefix:    os.Getenv("SCREENSHOT_R2_PREFIX"),
 			client:    &http.Client{Timeout: 30 * time.Second},
 		}
 	}
@@ -209,10 +210,26 @@ type r2Backend struct {
 	accessKey string
 	secretKey string
 	region    string
-	client    *http.Client
+	// Non-empty when this bucket is shared with another application
+	// (SCREENSHOT_R2_PREFIX) — every key this backend touches gets this
+	// prepended, so our objects live in their own namespace instead of
+	// risking a collision with whatever else is already in the bucket.
+	prefix string
+	client *http.Client
 }
 
 func (b *r2Backend) Kind() string { return "r2" }
+
+// fullKey applies the configured prefix. Every method that turns a key into
+// an actual R2 object path goes through this — objectURL (Put/Delete) and
+// SignedURL/Open — so there is exactly one place that can get the
+// leading/trailing slash handling wrong.
+func (b *r2Backend) fullKey(key string) string {
+	if b.prefix == "" {
+		return key
+	}
+	return strings.TrimRight(b.prefix, "/") + "/" + strings.TrimLeft(key, "/")
+}
 
 func (b *r2Backend) Delete(key string) error {
 	req, err := http.NewRequest(http.MethodDelete, b.objectURL(key), nil)
@@ -232,7 +249,7 @@ func (b *r2Backend) Delete(key string) error {
 }
 
 func (b *r2Backend) objectURL(key string) string {
-	return b.endpoint + "/" + b.bucket + "/" + s3EscapePath(key)
+	return b.endpoint + "/" + b.bucket + "/" + s3EscapePath(b.fullKey(key))
 }
 
 func (b *r2Backend) Put(ctx context.Context, key, contentType string, data []byte) error {
@@ -294,7 +311,7 @@ func (b *r2Backend) SignedURL(key string, ttl time.Duration) (string, error) {
 	q.Set("X-Amz-Expires", fmt.Sprint(int(ttl.Seconds())))
 	q.Set("X-Amz-SignedHeaders", "host")
 
-	canonicalURI := "/" + b.bucket + "/" + s3EscapePath(key)
+	canonicalURI := "/" + b.bucket + "/" + s3EscapePath(b.fullKey(key))
 	canonicalQuery := encodeQuerySorted(q)
 	canonicalHeaders := "host:" + host + "\n"
 	canonicalRequest := strings.Join([]string{
