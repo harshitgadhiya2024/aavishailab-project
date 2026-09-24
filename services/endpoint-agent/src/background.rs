@@ -383,4 +383,26 @@ async fn handle_disconnect(client: &AgentClient, ui: &UiState, revoked: &AgentRe
     revoked.set(); // stops the running loops from enforcing
     ui.set_disconnected();
     tracing::info!("disconnected by the employee");
+
+    // The window's "Connect" button on a Disconnected state sends
+    // Command::Connect — but this task (see its caller) only ever
+    // handles Disconnect and Uninstall; Connect is a deliberate no-op
+    // here (see that match arm's own comment) because it was written
+    // assuming Disconnected is unreachable once enrolled. It isn't: this
+    // function is exactly how a device reaches it. Without this exit,
+    // clicking "Connect" again in the same process does nothing —
+    // enrollment only actually runs from `run()`'s cold-start path,
+    // which never re-executes inside a still-running process. So: exit
+    // after a short pause (same "let the window paint its confirmation
+    // first" grace `uninstall.rs` uses) and let the OS-level supervisor
+    // restart the process — the LaunchAgent's KeepAlive (macOS) and the
+    // systemd user unit's Restart=always (Linux) both bring it back
+    // immediately, and with the config file already removed above,
+    // `run()` takes the cold-start path and shows a real, working
+    // Connect button that starts actual browser-based re-enrollment.
+    // Windows has no such supervisor on a Run-key launch, so there the
+    // employee reopens the app from the Start Menu — the same manual
+    // step quitting any ordinary Windows tray app already requires.
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    std::process::exit(0);
 }
