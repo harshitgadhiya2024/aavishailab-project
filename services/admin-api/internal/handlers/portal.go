@@ -232,12 +232,13 @@ func (h *PortalHandler) ForgotPassword(c *gin.Context) {
 					TokenHash:  hashed,
 					ExpiresAt:  time.Now().Add(1 * time.Hour),
 				})
-				if os.Getenv("APP_ENV") != "production" {
-					mailer.PasswordReset(emp.Email, emp.FirstName, plain, true)
-					if !mailer.Enabled() {
-						resp["reset_token"] = plain
-						resp["dev_note"] = "SMTP is not configured — this token is only returned outside production."
-					}
+				// The email always goes out — only the raw-token fallback for
+				// a developer without SMTP is restricted to non-production,
+				// same as the admin ForgotPassword in auth.go.
+				mailer.PasswordReset(emp.Email, emp.FirstName, plain, true)
+				if os.Getenv("APP_ENV") != "production" && !mailer.Enabled() {
+					resp["reset_token"] = plain
+					resp["dev_note"] = "SMTP is not configured — this token is only returned outside production."
 				}
 			}
 		}
