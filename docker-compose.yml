@@ -108,12 +108,12 @@ services:
       # Posture + GeoIP microservice.
       POSTURE_SERVICE_URL: http://posture-service:6230
       POSTURE_SERVICE_SECRET: ${POSTURE_SERVICE_SECRET:-change-this-posture-shared-secret-in-production}
-      # Shadow-IT discovery service (cloud-app classification).
-      SHADOWIT_SERVICE_URL: http://shadowit-service:6240
-      SHADOWIT_SERVICE_SECRET: ${SHADOWIT_SERVICE_SECRET:-change-this-shadowit-shared-secret-in-production}
-      # CASB service (inline app-control + out-of-band cloud share analysis).
-      CASB_SERVICE_URL: http://casb-service:6250
-      CASB_SERVICE_SECRET: ${CASB_SERVICE_SECRET:-change-this-casb-shared-secret-in-production}
+      # Shadow-IT and CASB service URLs deliberately absent, not just
+      # pointed at a container that no longer runs: shadowitclient.
+      # Enabled()/casbclient.Enabled() check exactly this env var and skip
+      # the network call entirely when it's unset, rather than timing out
+      # against an unreachable host on every request that would otherwise
+      # try — see the removed services' own comment, above, in this file.
       # AI service's internal DLP classification endpoints: /v1/dlp/classify-image
       # (photographed / screenshotted IDs, credentials), /v1/dlp/classify-text
       # (semantic sensitivity of extracted document prose — Task 2), and
@@ -172,10 +172,6 @@ services:
       threatintel-service:
         condition: service_healthy
       posture-service:
-        condition: service_healthy
-      shadowit-service:
-        condition: service_healthy
-      casb-service:
         condition: service_healthy
     networks:
       - aavishield-net
@@ -362,50 +358,18 @@ services:
     networks:
       - aavishield-net
 
-  # Stateless shadow-IT service: classifies domains against a cloud-app catalog
-  # (app name, category, risk). admin-api rolls up activity + applies sanctions.
-  shadowit-service:
-    build:
-      context: ./services/shadowit-service
-      dockerfile: Dockerfile
-    container_name: aavishield-shadowit-service
-    deploy:
-      resources:
-        limits:
-          memory: 128m
-    restart: unless-stopped
-    environment:
-      SHADOWIT_SERVICE_SECRET: ${SHADOWIT_SERVICE_SECRET:-change-this-shadowit-shared-secret-in-production}
-      SHADOWIT_SERVICE_SECRET_PREVIOUS: ${SHADOWIT_SERVICE_SECRET_PREVIOUS:-}
-      SHADOWIT_REQUIRE_AUTH: "true"
-      # SHADOWIT_CATALOG_FILE: /data/cloud-apps.json  # mount to extend the catalog
-    healthcheck:
-      test: ["CMD", "/shadowit", "healthcheck"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    networks:
-      - aavishield-net
-
-  # Stateless CASB service: inline SaaS app-control decisions + out-of-band
-  # cloud file-share risk analysis (provider-agnostic; OAuth adapters pluggable).
-  casb-service:
-    build:
-      context: ./services/casb-service
-      dockerfile: Dockerfile
-    container_name: aavishield-casb-service
-    deploy:
-      resources:
-        limits:
-          memory: 256m
-    restart: unless-stopped
-    environment:
-      CASB_SERVICE_SECRET: ${CASB_SERVICE_SECRET:-change-this-casb-shared-secret-in-production}
-      CASB_SERVICE_SECRET_PREVIOUS: ${CASB_SERVICE_SECRET_PREVIOUS:-}
-      CASB_REQUIRE_AUTH: "true"
-    networks:
-      - aavishield-net
+  # shadowit-service and casb-service are deliberately NOT run — the
+  # required sidebar (requirement-details.md) doesn't include Shadow IT or
+  # CASB tabs, and both admin-api clients (internal/shadowitclient,
+  # internal/casbclient) already fail open cleanly when their *_SERVICE_URL
+  # is unset (Enabled() returns false, no network call is even attempted —
+  # see casbclient's CASBAppControl handler: "casb-service is not
+  # configured" -> allow). Their source directories are kept in the repo
+  # (services/shadowit-service, services/casb-service) in case a future
+  # requirement brings either back; they're just not part of the running
+  # stack. Removed here rather than left `profiles: [disabled]` or similar
+  # to actually free the memory/build time/container-name-conflict surface
+  # they were consuming, not just hide them.
 
   ai-service:
     build:
@@ -635,33 +599,15 @@ services:
 
   # ─── Observability ──────────────────────────────────────────────────────────
 
-  prometheus:
-    build:
-      context: ./infra/prometheus
-      dockerfile: Dockerfile
-    container_name: aavishield-prometheus
-    deploy:
-      resources:
-        limits:
-          memory: 512m
-    restart: unless-stopped
-    command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--storage.tsdb.path=/prometheus"
-      - "--web.listen-address=:6090"
-    volumes:
-      - prometheus_data:/prometheus
-    ports:
-      - "127.0.0.1:7090:6090"
-    healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:6090/-/healthy"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 15s
-    networks:
-      - aavishield-net
-
+  # prometheus and grafana deliberately not run — not part of any
+  # requirement, and every minute they were up cost build time + ~1GB of
+  # memory limits + two more container-name/port slots that could conflict
+  # with something else on this host. Their config lives on at
+  # infra/prometheus, infra/grafana if this is ever revisited; tempo (below)
+  # is kept — every service still exports OTLP spans to it regardless of
+  # whether anything is looking at them, and it costs nothing extra to
+  # leave running on its own.
+  #
   # Distributed tracing backend — every service below exports OTLP spans
   # here. Single-binary mode (one process, local disk), right-sized for one
   # Docker Compose host; see infra/tempo/tempo.yaml.
@@ -683,38 +629,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
-    networks:
-      - aavishield-net
-
-  grafana:
-    build:
-      context: ./infra/grafana
-      dockerfile: Dockerfile
-    container_name: aavishield-grafana
-    deploy:
-      resources:
-        limits:
-          memory: 512m
-    restart: unless-stopped
-    environment:
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
-      GF_AUTH_ANONYMOUS_ENABLED: "false"
-      GF_SERVER_HTTP_PORT: "6300"
-    volumes:
-      - grafana_data:/var/lib/grafana
-    ports:
-      - "127.0.0.1:7300:6300"
-    healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:6300/api/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
-    depends_on:
-      prometheus:
-        condition: service_healthy
-      tempo:
-        condition: service_healthy
     networks:
       - aavishield-net
 
@@ -762,8 +676,6 @@ volumes:
   screenshot_data:
   postgres_data:
   redis_data:
-  prometheus_data:
-  grafana_data:
   clamav_data:
   tempo_data:
 
