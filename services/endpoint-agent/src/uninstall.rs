@@ -101,9 +101,50 @@ fn run_platform_uninstaller(portal_url: &str) {
 /// has no packaging of its own (see REQUIREMENT_AUDIT_AND_PLAN.md, Phase
 /// 4), so every step below is a correctly-targeted no-op on this build
 /// until then.
+/// Clears this app's Screen Recording and Input Monitoring grants from the
+/// system Privacy list on uninstall, so a later reinstall starts from a
+/// single clean, ungranted entry instead of a stale one.
+///
+/// Why it is needed: both permissions are keyed to the app's signing
+/// identity, which for ad-hoc signing (no Developer ID) is the cdhash —
+/// and the cdhash changes with every build. So each new version is a
+/// different app to TCC, its grant does not carry over, and the previous
+/// build's row is left in Settings › Privacy switched on but pointing at
+/// an identity nothing on disk has any more. Uninstalling without this
+/// leaves that row behind; reinstalling then adds another beside it, and
+/// the list fills with entries that read "granted" next to an agent that
+/// cannot use any of them — observed exactly that way, two live rows for
+/// one working install.
+///
+/// Run here in the connector's own process, which is the console user's,
+/// not in the root osascript block below: `tccutil` acts on the invoking
+/// user's TCC context and root's is not the logged-in user's — the same
+/// reason `state_dir` is resolved out here rather than inside that block.
+/// It matches on the bundle identifier the build now signs with
+/// (com.aavishield.agent); a legacy build signed under the linker's
+/// hash-based identifier cannot be addressed this way, but those could
+/// not hold a usable grant in the first place, so there is nothing to
+/// clear for them.
+#[cfg(target_os = "macos")]
+fn reset_tcc_permissions() {
+    // "ScreenCapture" = Screen Recording, "ListenEvent" = Input
+    // Monitoring — the TCC service names, not the Settings labels.
+    for service in ["ScreenCapture", "ListenEvent"] {
+        let _ = std::process::Command::new("/usr/bin/tccutil")
+            .args(["reset", service, "com.aavishield.agent"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+    }
+}
+
 #[cfg(target_os = "macos")]
 fn uninstall_macos() {
     const CA_COMMON_NAME: &str = "Aavishield Root CA";
+
+    // Before the elevated block removes the app: clear the Privacy grants
+    // while still running as the console user (see this function's doc).
+    reset_tcc_permissions();
     // Resolved here, in the connector's own (non-elevated) process, not
     // inside the shell string below: that whole string runs as root via
     // osascript's "with administrator privileges", where $HOME resolves to
