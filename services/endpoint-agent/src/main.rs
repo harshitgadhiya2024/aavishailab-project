@@ -94,6 +94,48 @@ fn forward_sigusr1_to(show: aavishield_agent::tray::ShowSignal) {
     }
 }
 
+/// Raises the open-file-descriptor limit to what a forward proxy actually
+/// needs.
+///
+/// launchd hands a LaunchAgent a soft `RLIMIT_NOFILE` of 256 while the
+/// hard limit is effectively unbounded, and 256 is not a proxy's budget:
+/// every tunnelled connection holds two descriptors (browser side and
+/// upstream side), and one ordinary page load opens dozens at once. A
+/// real Mac hit the ceiling during normal browsing, `accept` started
+/// returning EMFILE, and the device lost the internet — the failure this
+/// exists to stop happening in the first place, with proxy.rs's retry and
+/// background.rs's fail-open as the layers behind it.
+///
+/// Best-effort: a device where this fails is no worse off than before.
+#[cfg(unix)]
+fn raise_file_descriptor_limit() {
+    const WANTED: libc::rlim_t = 16_384;
+
+    let mut lim = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+    // SAFETY: `getrlimit`/`setrlimit` with a real resource constant and a
+    // correctly-sized, owned `rlimit` for them to read and write.
+    unsafe {
+        if libc::getrlimit(libc::RLIMIT_NOFILE, &mut lim) != 0 {
+            tracing::warn!(error = %std::io::Error::last_os_error(), "could not read the file-descriptor limit");
+            return;
+        }
+        if lim.rlim_cur >= WANTED {
+            return;
+        }
+        // Never above the hard limit — asking for more is an EINVAL that
+        // would leave the soft limit at 256 rather than raising it as far
+        // as this process is actually allowed to.
+        let target = if lim.rlim_max == libc::RLIM_INFINITY { WANTED } else { WANTED.min(lim.rlim_max) };
+        let previous = lim.rlim_cur;
+        lim.rlim_cur = target;
+        if libc::setrlimit(libc::RLIMIT_NOFILE, &lim) != 0 {
+            tracing::warn!(error = %std::io::Error::last_os_error(), previous, target, "could not raise the file-descriptor limit");
+        } else {
+            tracing::info!(previous, target, "raised the file-descriptor limit");
+        }
+    }
+}
+
 fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env().add_directive("aavishield_agent=info".parse().unwrap()))
@@ -107,6 +149,12 @@ fn main() {
     // either. The sleep keeps KeepAlive from respawning a pointless loser
     // in a tight loop; it will keep losing the lock to the same winner
     // every time regardless, so there is nothing to retry for.
+    // Before the proxy, the enrollment client, or anything else opens its
+    // first descriptor, so nothing is holding one against the old ceiling
+    // when it moves.
+    #[cfg(unix)]
+    raise_file_descriptor_limit();
+
     if !aavishield_agent::single_instance::acquire() {
         aavishield_agent::single_instance::signal_running_instance_to_show();
         tracing::debug!("another agent instance already holds the lock — exiting quietly");
