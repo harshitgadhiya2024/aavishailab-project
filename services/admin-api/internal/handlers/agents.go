@@ -339,6 +339,14 @@ func (h *AgentHandler) Heartbeat(c *gin.Context) {
 		OSVersion  string                 `json:"os_version"`
 		AgentVer   string                 `json:"agent_version"`
 		Posture    *postureclient.Signals `json:"posture"`
+		// Which OS permissions the agent holds. A pointer so a missing key
+		// (an older agent that never sends it) is distinguishable from one
+		// that sends everything false — the former must not overwrite a
+		// device's last-known capabilities with "nothing granted".
+		Capabilities *struct {
+			ScreenRecording bool `json:"screen_recording"`
+			InputMonitoring bool `json:"input_monitoring"`
+		} `json:"capabilities"`
 	}
 	c.ShouldBindJSON(&req)
 
@@ -368,6 +376,16 @@ func (h *AgentHandler) Heartbeat(c *gin.Context) {
 	// must never fail because the enrichment service is briefly unavailable).
 	var postureResult *postureclient.PostureResult
 	meta := map[string]any{}
+
+	// Per-device capability state, so the dashboard can show which employee's
+	// machine has a feature stuck on a missing OS permission. Only recorded
+	// when the agent actually sends it — an older agent that doesn't leaves
+	// the device's previous value untouched rather than being marked as
+	// having nothing granted.
+	if req.Capabilities != nil {
+		meta["cap_screen_recording"] = req.Capabilities.ScreenRecording
+		meta["cap_input_monitoring"] = req.Capabilities.InputMonitoring
+	}
 	if postureclient.Enabled() {
 		if req.IPAddress != "" {
 			if geo, err := postureclient.GeoIP(c.Request.Context(), orgID.String(), req.IPAddress); err == nil {

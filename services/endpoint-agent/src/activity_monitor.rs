@@ -245,7 +245,7 @@ mod mac_tap {
 /// Always true off macOS: Windows needs no permission for a low-level
 /// hook, and on Linux the failure is an honest one — rdev cannot attach
 /// without an X server and says so.
-fn input_monitoring_permitted() -> bool {
+pub fn input_monitoring_permitted() -> bool {
     #[cfg(target_os = "macos")]
     {
         input_permission::granted()

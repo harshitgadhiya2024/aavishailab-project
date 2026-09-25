@@ -63,6 +63,57 @@ function relativeTime(value?: string | null) {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+/**
+ * Per-device OS-permission state, so an admin can see at a glance which
+ * employee's machine has a feature stuck waiting on a grant rather than
+ * silently producing nothing. The agent reports these on every heartbeat
+ * (device.metadata.cap_*); an agent too old to report them, or one that
+ * has not beaten since this shipped, leaves them undefined — shown as
+ * "unknown" rather than as a failure, since we genuinely do not know.
+ *
+ * A missing permission is not a device fault: the agent keeps running and
+ * every other feature keeps working. It is a call to action for whoever
+ * owns that machine, which is why the "needs attention" state is amber,
+ * not red.
+ */
+function PermissionCells({ device }: { device: Device }) {
+  const items: { label: string; granted?: boolean; hint: string }[] = [
+    {
+      label: "Screen",
+      granted: device.metadata?.cap_screen_recording,
+      hint: "Screen Recording — required for screenshots",
+    },
+    {
+      label: "Input",
+      granted: device.metadata?.cap_input_monitoring,
+      hint: "Input Monitoring — required for keyboard activity",
+    },
+  ];
+  return (
+    <div className="flex flex-col gap-1">
+      {items.map((it) => {
+        const cls =
+          it.granted === undefined
+            ? "bg-elevated text-subtle"
+            : it.granted
+            ? "bg-green-500/10 text-success"
+            : "bg-yellow-500/10 text-warning";
+        const text =
+          it.granted === undefined ? "unknown" : it.granted ? "on" : "needs grant";
+        return (
+          <span
+            key={it.label}
+            title={it.hint}
+            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium w-fit ${cls}`}
+          >
+            {it.label}: {text}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function DevicesPage() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [page, setPage] = useState(1);
@@ -176,6 +227,7 @@ export default function DevicesPage() {
                 <th className="px-5 py-3 text-left font-medium">Ownership</th>
                 <th className="px-5 py-3 text-left font-medium">Enforcement</th>
                 <th className="px-5 py-3 text-left font-medium">Posture</th>
+                <th className="px-5 py-3 text-left font-medium">Permissions</th>
                 <th className="px-5 py-3 text-left font-medium">IP / Geo</th>
                 <th className="px-5 py-3 text-left font-medium">Last Seen</th>
                 <th className="px-5 py-3 text-right font-medium">Actions</th>
@@ -184,7 +236,7 @@ export default function DevicesPage() {
             <tbody className="divide-y divide-elevated">
               {loading && (
                 <tr>
-                  <td colSpan={11} className="px-5 py-10 text-center text-muted-foreground">
+                  <td colSpan={12} className="px-5 py-10 text-center text-muted-foreground">
                     <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
                     Loading enrolled devices...
                   </td>
@@ -192,7 +244,7 @@ export default function DevicesPage() {
               )}
               {!loading && devices.length === 0 && (
                 <tr>
-                  <td colSpan={11} className="px-5 py-10 text-center text-muted-foreground">
+                  <td colSpan={12} className="px-5 py-10 text-center text-muted-foreground">
                     No enrolled devices yet. Ask employees to download the agent from the employee portal.
                   </td>
                 </tr>
@@ -261,6 +313,9 @@ export default function DevicesPage() {
                       )}
                     </td>
                     <td className="px-5 py-4 text-xs text-body">{d.posture_score ?? 100}/100</td>
+                    <td className="px-5 py-4">
+                      <PermissionCells device={d} />
+                    </td>
                     <td className="px-5 py-4 text-xs text-muted-foreground">
                       <div>{d.ip_address || "No IP"}</div>
                       {geo && <div className="text-subtle">{geo}</div>}

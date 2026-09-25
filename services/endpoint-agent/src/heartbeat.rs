@@ -24,6 +24,34 @@ struct HeartbeatRequest {
     os_version: String,
     agent_version: &'static str,
     posture: crate::posture::Signals,
+    /// Which OS permissions the agent actually holds right now, so the
+    /// company can see per device which features are live and which are
+    /// stuck waiting on a grant. Sent every beat, not once at enrollment:
+    /// a permission can be revoked in System Settings at any time, and the
+    /// dashboard should reflect that within a minute rather than showing a
+    /// capability the device lost hours ago. Checked live and cheaply —
+    /// each field is one OS predicate call (see the two `*_permitted`
+    /// helpers), no prompt.
+    capabilities: Capabilities,
+}
+
+#[derive(Serialize)]
+struct Capabilities {
+    /// Screenshots require this on macOS; always true where the OS has no
+    /// such gate (Windows, and Linux under X11).
+    screen_recording: bool,
+    /// Keyboard counting requires this on macOS; mouse and scroll survive
+    /// without it, so a false here means activity reads low, not zero.
+    input_monitoring: bool,
+}
+
+impl Capabilities {
+    fn collect() -> Self {
+        Capabilities {
+            screen_recording: crate::screenshot::screen_capture_permitted(),
+            input_monitoring: crate::activity_monitor::input_monitoring_permitted(),
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -67,6 +95,7 @@ pub async fn send(deps: &Deps) {
         os_version: posture.os_version.clone(),
         agent_version: crate::config::AGENT_VERSION,
         posture,
+        capabilities: Capabilities::collect(),
     };
 
     let resp = match deps.client.post_json("/internal/agent/heartbeat", &payload).await {
