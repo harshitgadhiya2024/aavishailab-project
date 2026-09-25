@@ -38,11 +38,51 @@ pub(crate) fn full_body(data: impl Into<Bytes>) -> BoxBody {
     Full::new(data.into()).map_err(|never| match never {}).boxed()
 }
 
+/// True for accept(2) failures that say something about the moment rather
+/// than about the listener.
+///
+/// This distinction is the whole reason the loop below does not simply
+/// use `?`, and it was written after an agent took a Mac off the internet
+/// for hours. `EMFILE` — the process is out of file descriptors — ended
+/// the accept loop, `proxy::run` returned, and nothing restarted it. The
+/// system proxy still pointed at the port the dead listener had been
+/// serving, so every request in every browser failed with
+/// `ERR_PROXY_CONNECTION_FAILED` until someone restarted the agent by
+/// hand.
+///
+/// None of these say the listener is broken. `EMFILE`/`ENFILE` mean the
+/// descriptor table is full *right now*, which a few closing connections
+/// fix on their own; `ECONNABORTED` means one peer went away between the
+/// SYN and the accept; `EINTR` means a signal arrived mid-call. The
+/// connection that triggered any of them is lost either way — there is
+/// nothing to retry for it — but the next one deserves to be accepted.
+fn accept_error_is_transient(e: &std::io::Error) -> bool {
+    matches!(
+        e.raw_os_error(),
+        Some(libc::EMFILE) | Some(libc::ENFILE) | Some(libc::ECONNABORTED) | Some(libc::EINTR) | Some(libc::ENOBUFS) | Some(libc::ENOMEM)
+    )
+}
+
 pub async fn run(addr: SocketAddr, deps: Arc<Deps>) -> std::io::Result<()> {
     let listener = TcpListener::bind(addr).await?;
     tracing::info!(%addr, "local proxy listening");
     loop {
-        let (stream, peer) = listener.accept().await?;
+        let (stream, peer) = match listener.accept().await {
+            Ok(accepted) => accepted,
+            Err(e) if accept_error_is_transient(&e) => {
+                // The sleep is not politeness, it is required. Under
+                // EMFILE the failing accept returns instantly and the
+                // socket stays readable, so a bare `continue` spins a
+                // core at 100% and starves the very tasks whose
+                // completion would free the descriptors it is waiting
+                // for. 50ms is long enough to let those finish and short
+                // enough to be invisible to whoever is browsing.
+                tracing::warn!(error = %e, "accept failed, retrying — the proxy stays up");
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                continue;
+            }
+            Err(e) => return Err(e),
+        };
         let deps = deps.clone();
         tokio::spawn(async move {
             let io = TokioIo::new(stream);

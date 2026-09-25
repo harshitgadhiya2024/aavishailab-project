@@ -364,7 +364,26 @@ async fn run_full_agent(config: Config, ui: UiState, client_slot: ClientSlot, mu
 
     let addr = SocketAddr::from(([127, 0, 0, 1], crate::config::LOCAL_PORT));
     if let Err(e) = crate::proxy::run(addr, deps).await {
-        tracing::error!(error = %e, "proxy listener exited");
+        // Last line of defence, and it chooses connectivity over
+        // enforcement on purpose. The OS is still pointed at this port,
+        // so a dead listener does not degrade the device — it removes it
+        // from the internet entirely, in every browser and every app, and
+        // silently: the only symptom is
+        // ERR_PROXY_CONNECTION_FAILED everywhere.
+        //
+        // That happened on a real Mac (EMFILE against launchd's 256-fd
+        // soft limit) and cost hours. `proxy::run` now survives every
+        // transient accept error, so reaching this line means something
+        // genuinely unrecoverable — and at that point an unprotected
+        // device that works beats a protected one that cannot load
+        // anything. The heartbeat keeps reporting, so the fleet still
+        // sees the device; enforcement returns when the agent restarts.
+        tracing::error!(error = %e, "proxy listener exited — clearing the system proxy so the device keeps working");
+        if crate::system_proxy::clear_system_proxy().await {
+            tracing::warn!("system proxy cleared: this device is now unprotected until the agent restarts");
+        } else {
+            tracing::error!("could not clear the system proxy — this device has no working internet until the agent restarts");
+        }
     }
 }
 
