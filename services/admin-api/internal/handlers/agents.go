@@ -985,6 +985,11 @@ func (h *AgentHandler) ScanDLP(c *gin.Context) {
 		}
 	}
 	policies = filterPoliciesByTarget(policies, empID, teamID)
+	// Before scanDLPStream, not after: the media/vision/text-classification
+	// gates it calls into check "did a policy enable this AI tier" against
+	// whatever list they're handed, and used to see this org's raw
+	// (possibly empty) list — see effectiveDLPPolicies's doc comment.
+	policies = effectiveDLPPolicies(policies)
 
 	v := scanDLPStream(c.Request.Context(), orgID.String(), filename, contentType, destination, spool, size, policies)
 
@@ -1160,6 +1165,38 @@ type dlpVerdict struct {
 	reason     string
 }
 
+// effectiveDLPPolicies is the automatic-DLP fallback: when an org hasn't
+// authored an applicable custom DLP policy, every upload is still scanned
+// against a built-in default ruleset (all detectors on, including the three
+// AI tiers — ai_text/ai_visual/ai_audio — score >= 80 blocks, 50-79 alerts).
+// Companies never have to create a policy to get protection; a custom
+// policy simply overrides the default.
+//
+// This must run once, in ScanDLP, before `policies` reaches anything else —
+// not lazily inside scanDLPContentExt, which is where it used to live and
+// where it was too late. scanDLPMediaVerdict, scanImageVerdict and
+// classifyTextSegment each gate their own paid LLM call on
+// anyPolicyEnablesDetector(policies, "ai_audio"/"ai_visual"/"ai_text")
+// *before* ever reaching scanDLPContentExt, so an org running on the
+// default policy alone had that check see an empty list and silently
+// exit — audio/video were never transcribed, images were never vision-
+// classified, and extracted text never got the semantic (no-pattern) LLM
+// pass, on every upload, regardless of content. Only the checksum/regex
+// detectors (github_token, credit_card, aws_key, ...) worked, because
+// those run inside the Scan() call scanDLPContentExt reaches at the very
+// end, by which point its own (now-redundant but harmless) injection had
+// already happened. Confirmed live: a spoken GitHub token in a .wav and a
+// github_token embedded in a .docx were submitted through the same
+// endpoint on an org with no custom DLP policy — the .docx was caught
+// (regex, tier 1) and the .wav was not (ai_audio, tier 2, gated on the
+// empty list) until this fix moved the injection here.
+func effectiveDLPPolicies(policies []models.Policy) []models.Policy {
+	if len(policies) == 0 {
+		return []models.Policy{defaultDLPPolicy()}
+	}
+	return policies
+}
+
 func scanDLPContent(ctx context.Context, orgID, filename, contentType, destination string, data []byte, policies []models.Policy) dlpVerdict {
 	return scanDLPContentExt(ctx, orgID, filename, contentType, destination, data, policies, nil)
 }
@@ -1173,14 +1210,11 @@ func scanDLPContent(ctx context.Context, orgID, filename, contentType, destinati
 // fallback (see its own doc comment).
 func scanDLPContentExt(ctx context.Context, orgID, filename, contentType, destination string, data []byte,
 	policies []models.Policy, externalMatches []dlpclient.ExternalMatch) dlpVerdict {
-	// Automatic DLP: when an org hasn't authored an applicable custom DLP
-	// policy, every upload is still scanned against a built-in default ruleset
-	// (all detectors on, score >= 80 blocks, 50-79 alerts). Companies never have
-	// to create a
-	// policy to get protection; a custom policy simply overrides the default.
-	if len(policies) == 0 {
-		policies = []models.Policy{defaultDLPPolicy()}
-	}
+	// Defensive fallback for any caller that reaches this directly without
+	// going through ScanDLP's effectiveDLPPolicies call — see that
+	// function's doc comment for why the real injection now happens
+	// earlier, not here.
+	policies = effectiveDLPPolicies(policies)
 
 	if dlpclient.Enabled() {
 		envelopes := buildDLPEnvelopes(policies)
