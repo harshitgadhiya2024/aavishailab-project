@@ -235,9 +235,22 @@ async fn forward_plain_http(req: Request<Incoming>, host: &str, port: u16, path_
 
     // Recorded, never blocked — see upload_verdict. The result is
     // deliberately not branched on: DLP is monitor-only, so there is no
-    // outcome here that stops the request reaching its upstream.
+    // outcome here that stops the request reaching its upstream. Spawned,
+    // not awaited: since nothing here ever acts on the result, there is
+    // nothing to justify making this upload wait for it — see
+    // spawn_upload_verdict's doc comment for why that wait stopped being
+    // free once the AI detector tiers started actually running.
     if matches!(method.as_str(), "POST" | "PUT" | "PATCH") && body_bytes.len() <= crate::scan::MAX_SCAN_BODY {
-        crate::scan::upload_verdict(&deps.client, &deps.casb, &deps.gate, host, &path, method.as_str(), &content_type, &filename, &user_agent, &body_bytes).await;
+        crate::scan::spawn_upload_verdict(
+            deps.clone(),
+            host.to_string(),
+            path.clone(),
+            method.as_str().to_string(),
+            content_type.clone(),
+            filename.clone(),
+            user_agent.clone(),
+            body_bytes.clone(),
+        );
     }
 
     let mut upstream_req = Request::builder().method(method).uri(path_and_query);

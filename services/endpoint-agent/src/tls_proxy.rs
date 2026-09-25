@@ -158,8 +158,21 @@ async fn relay_one(
         }
     };
 
+    // Spawned, not awaited — see scan::spawn_upload_verdict's doc comment.
+    // The verdict is recorded, never acted on, so nothing here can justify
+    // making this upload wait for an admin-api round trip that may now
+    // include a real LLM call (ai_text/ai_visual/ai_audio).
     if matches!(method.as_str(), "POST" | "PUT" | "PATCH") && body_bytes.len() <= MAX_SCAN_BODY {
-        crate::scan::upload_verdict(&deps.client, &deps.casb, &deps.gate, &host, &path, method.as_str(), &content_type, &filename, &user_agent, &body_bytes).await;
+        crate::scan::spawn_upload_verdict(
+            deps.clone(),
+            host.clone(),
+            path.clone(),
+            method.as_str().to_string(),
+            content_type.clone(),
+            filename.clone(),
+            user_agent.clone(),
+            body_bytes.clone(),
+        );
     }
 
     let mut upstream_req = Request::builder().method(method).uri(&path);

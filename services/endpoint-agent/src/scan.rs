@@ -9,9 +9,12 @@
 //! below, which is the shared decision both callers act on.
 
 use crate::casb_cache::CASBControlCache;
+use crate::deps::Deps;
 use crate::enforcement::EnforcementGate;
 use crate::http_client::AgentClient;
+use bytes::Bytes;
 use serde::Deserialize;
+use std::sync::Arc;
 
 /// Maximum request/response body either scan path will buffer for
 /// inspection. A body over this relays directly, unscanned — fail-open,
@@ -86,6 +89,49 @@ pub fn upload_filename(content_disposition: Option<&str>, path: &str) -> String 
 /// is a thing to know about. Those are different decisions and only one of
 /// them was reversed.
 #[allow(clippy::too_many_arguments)]
+/// Fires `upload_verdict` in the background instead of making the actual
+/// upload wait for it — the caller relays the upload upstream immediately,
+/// on its own task, while this one runs to completion independently.
+///
+/// This exists because the wait stopped being cheap. `upload_verdict`'s
+/// result was always discarded — DLP is monitor-only, so there is nothing
+/// for a caller to branch on — but every upload still sat blocked on the
+/// full admin-api round trip before either proxy path would relay a single
+/// byte onward, because both called it with a plain `.await`.
+///
+/// That round trip used to be cheap: a regex/checksum pass, effectively
+/// free. It stopped being cheap the moment the ai_text/ai_visual/ai_audio
+/// tiers actually started firing on the default policy (see
+/// `effectiveDLPPolicies` on the server) — those are real calls to an
+/// external LLM (admin-api's aiclient carries a 30s timeout to ai-service
+/// alone, before whatever the upstream model provider itself takes), and
+/// this agent's own HTTP client has no timeout on top of that at all. An
+/// employee uploading a photo or a voice note would have had the browser's
+/// upload visibly stall for however long that classification took —
+/// seconds, or the full 30s on a slow day — for a scan whose answer was
+/// never going to change whether the upload happened.
+///
+/// `body` is `Bytes` rather than `&[u8]` specifically so this can be called
+/// with a cheap clone of the buffer the caller is about to move into the
+/// actual upstream request: `Bytes::clone` bumps a refcount, it does not
+/// copy the data, so scanning in the background costs no extra allocation
+/// on the hot path it no longer blocks.
+#[allow(clippy::too_many_arguments)]
+pub fn spawn_upload_verdict(
+    deps: Arc<Deps>,
+    host: String,
+    path: String,
+    method: String,
+    content_type: String,
+    filename: String,
+    user_agent: String,
+    body: Bytes,
+) {
+    tokio::spawn(async move {
+        upload_verdict(&deps.client, &deps.casb, &deps.gate, &host, &path, &method, &content_type, &filename, &user_agent, &body).await;
+    });
+}
+
 pub async fn upload_verdict(
     client: &AgentClient,
     casb: &CASBControlCache,
