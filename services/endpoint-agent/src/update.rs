@@ -22,6 +22,26 @@ use std::time::Duration;
 pub const CHECK_INTERVAL: Duration = Duration::from_secs(6 * 3600);
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(120);
 
+/// Auto-update is off until the app ships with a Developer ID certificate.
+///
+/// The reason is TCC, not the update mechanism itself. Without Developer
+/// ID the app is ad-hoc signed, so its signing identity is the cdhash and
+/// every build has a different one. macOS keys Screen Recording and Input
+/// Monitoring grants to that identity, so swapping the binary in place —
+/// which is exactly what this module does — makes the running agent a
+/// different app to macOS: both permissions silently revert to "not
+/// granted", screenshots become blank and keyboard activity stops
+/// counting, with nothing on screen to say why. An update meant to be
+/// invisible would instead quietly disable the two features it most needs,
+/// across the whole fleet at once.
+///
+/// Until then, updates go through uninstall + reinstall, which prompts for
+/// the permissions again in the open (and clears the old grants first —
+/// see uninstall.rs). When a Developer ID certificate is configured in
+/// build-rust.sh, the signing identity becomes stable across builds, TCC
+/// grants survive an update, and this flips back to `true`.
+const AUTO_UPDATE_ENABLED: bool = false;
+
 #[derive(Deserialize)]
 struct Manifest {
     version: String,
@@ -51,6 +71,9 @@ pub async fn loop_check(client: AgentClient) {
 /// every error path here is deliberately non-fatal to the caller, matching
 /// `check_once`'s Python counterpart which only ever logs and returns.
 pub async fn check_once(client: &AgentClient) -> Result<bool, String> {
+    if !AUTO_UPDATE_ENABLED {
+        return Ok(false);
+    }
     if cfg!(debug_assertions) {
         return Ok(false);
     }
