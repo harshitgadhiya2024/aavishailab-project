@@ -262,6 +262,15 @@ async fn run(ui: UiState, client_slot: ClientSlot, mut commands: tokio::sync::mp
 /// Still listens for `Command::Disconnect` after startup: an enrolled
 /// device can still be disconnected from the window at any time.
 async fn run_full_agent(config: Config, ui: UiState, client_slot: ClientSlot, mut commands: tokio::sync::mpsc::Receiver<Command>) {
+    // Every start, not only the two enrollment paths that already call it.
+    // A device enrolled before the agent could ask for Screen Recording
+    // properly — or one where the permission was later revoked — passes
+    // through here and nowhere else, so this was the only moment it would
+    // ever be asked, and without it such a device captured wallpaper
+    // forever. macOS shows the prompt once and answers from its own
+    // records afterwards, so repeating the call costs nothing.
+    spawn_permission_warm_up();
+
     let revoked = AgentRevoked::default();
     let client = AgentClient::new(config, revoked.clone());
     *client_slot.lock().unwrap() = Some(client.clone());

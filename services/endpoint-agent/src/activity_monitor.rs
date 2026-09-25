@@ -78,8 +78,7 @@ impl ActivityMonitor {
             return;
         }
         let inner = self.inner.clone();
-        let available = self.available.clone();
-        std::thread::Builder::new()
+        let handle = std::thread::Builder::new()
             .name("aavishield-activity-monitor".into())
             .spawn(move || {
                 let handler = move |event: Event| {
@@ -118,20 +117,40 @@ impl ActivityMonitor {
                 // no display server). That failure is exactly what leaves
                 // `available` false and every snapshot at zero.
                 if let Err(e) = listen(handler) {
-                    tracing::info!(error = ?e, "activity monitoring could not start");
+                    tracing::warn!(
+                        error = ?e,
+                        "activity monitoring could not start — on macOS this is Input Monitoring \
+                         not being granted (System Settings › Privacy & Security › Input Monitoring). \
+                         Keyboard, mouse and scroll counts will stay at zero"
+                    );
                 }
-            })
-            .ok();
+            });
         // Listener installation is effectively synchronous on every
         // platform rdev supports (the hook either registers immediately or
         // the thread returns almost immediately on failure), so a short
         // grace period is enough to know which happened without adding a
         // real handshake channel for a value nothing blocks on.
         std::thread::sleep(Duration::from_millis(200));
-        // If the listener thread is still alive, treat it as available —
-        // matches Python's best-effort "assume it worked unless we already
-        // know it didn't" posture.
-        available.store(true, Ordering::Relaxed);
+        // The thread is still running => `listen` is blocked delivering
+        // events => the hook installed. It has already exited => `listen`
+        // returned an error and there is no hook.
+        //
+        // This used to store `true` unconditionally, directly under a
+        // comment claiming it checked exactly this, because the
+        // `JoinHandle` had been dropped with `.ok()` and there was nothing
+        // left to ask. `is_available` was therefore true on every device
+        // that had ever called `start`, including every device where the
+        // permission was refused — so a dashboard showing "monitoring
+        // active" next to permanently zero counters was reporting the
+        // truth it had been given.
+        let running = match &handle {
+            Ok(h) => !h.is_finished(),
+            Err(e) => {
+                tracing::warn!(error = %e, "could not spawn the activity monitor thread");
+                false
+            }
+        };
+        self.available.store(running, Ordering::Relaxed);
     }
 
     /// Polls until the org turns monitoring on, then starts listening.

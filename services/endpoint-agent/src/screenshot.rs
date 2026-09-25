@@ -183,18 +183,89 @@ fn subtract(t: SystemTime, secs: u64) -> SystemTime {
     t.checked_sub(Duration::from_secs(secs)).unwrap_or(t)
 }
 
-/// Triggers macOS's Screen Recording permission prompt right now instead
-/// of whenever the capture loop happens to take its first shot (up to
-/// `max_interval_secs` after enrollment — see `run` above). Call once,
-/// right after enrollment succeeds, alongside whatever makes the
-/// Accessibility/Input Monitoring prompt appear (`activity_monitor`
-/// starting its listener) — both TCC prompts then land together, in the
-/// same moment the person is already expecting a permission dialog,
-/// instead of one now and one minutes later that reads as unrelated and
-/// unexplained. The captured image itself is discarded; this call exists
-/// purely for its side effect on the OS permission database.
+/// macOS's real Screen Recording permission API.
+///
+/// Worth its own module because the obvious alternative — "just try to
+/// capture and see what happens" — silently does not work, and shipped
+/// for long enough to fill a fleet's screenshot history with wallpaper.
+/// Without the permission, macOS does not fail a capture. It returns a
+/// picture: the desktop image and the menu bar, with every window
+/// belonging to every other app composited out. `capture_image()` returns
+/// `Ok`, the encoder encodes it, the upload succeeds, and the dashboard
+/// shows a tidy screenshot of a lake at Tahoe taken while the person was
+/// in VS Code.
+///
+/// These two calls are the only way to know the difference.
+/// `CGPreflightScreenCaptureAccess` answers without prompting;
+/// `CGRequestScreenCaptureAccess` raises the system prompt, once, and is
+/// what actually creates the TCC entry — capturing does not, which is why
+/// the device that hit this had no TCC record for the agent at all.
+#[cfg(target_os = "macos")]
+mod screen_permission {
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGPreflightScreenCaptureAccess() -> bool;
+        fn CGRequestScreenCaptureAccess() -> bool;
+    }
+
+    /// Whether the agent may capture other apps' windows. Does not prompt.
+    pub fn granted() -> bool {
+        // SAFETY: a nullary CoreGraphics predicate returning a C99 _Bool,
+        // callable from any thread.
+        unsafe { CGPreflightScreenCaptureAccess() }
+    }
+
+    /// Raises the system prompt if the answer is not already recorded.
+    /// macOS shows it once per app; afterwards this reports the stored
+    /// answer without showing anything.
+    pub fn request() -> bool {
+        // SAFETY: as above.
+        unsafe { CGRequestScreenCaptureAccess() }
+    }
+}
+
+/// True if this device can actually capture its screen.
+///
+/// Always true off macOS, which has no equivalent gate — a capture there
+/// either works or fails honestly.
+pub fn screen_capture_permitted() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        screen_permission::granted()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        true
+    }
+}
+
+/// Asks for Screen Recording up front rather than leaving it to whenever
+/// the capture loop first fires (up to `max_interval_secs` later — see
+/// `run` above), so the prompt lands in the moment the person is already
+/// expecting permission dialogs, next to the Input Monitoring one
+/// `activity_monitor` raises, instead of minutes later and unexplained.
+///
+/// Safe to call on every start, not only on enrollment. macOS shows the
+/// prompt once and answers from its own records after that, and a device
+/// enrolled before this existed — or one where the permission was later
+/// revoked — has no other moment where it would ever be asked.
 pub fn warm_up_permissions() {
-    let _ = capture_screen(false);
+    #[cfg(target_os = "macos")]
+    {
+        if screen_permission::granted() {
+            tracing::info!("screen recording permission is granted");
+            return;
+        }
+        if screen_permission::request() {
+            tracing::info!("screen recording permission granted at the prompt");
+        } else {
+            tracing::warn!(
+                "screen recording permission is not granted — screenshots are disabled until it is. \
+                 Grant it in System Settings › Privacy & Security › Screen & System Audio Recording, \
+                 then restart the agent"
+            );
+        }
+    }
 }
 
 /// Grabs the primary monitor and returns (webp_bytes, width, height), or
@@ -202,6 +273,17 @@ pub fn warm_up_permissions() {
 /// found). The agent simply records nothing rather than crashing, same as
 /// the Python original.
 fn capture_screen(blur: bool) -> Option<(Vec<u8>, u32, u32)> {
+    // Checked before capturing, not after, because there is nothing to
+    // check afterwards: a capture taken without Screen Recording succeeds
+    // and returns the desktop picture plus the menu bar, with every other
+    // app's windows composited out. It is a valid image of the wrong
+    // thing, indistinguishable from a real screenshot of an empty desktop,
+    // and uploading it is worse than uploading nothing — it reads as
+    // evidence that the person was looking at their wallpaper.
+    if !screen_capture_permitted() {
+        tracing::warn!("skipping screenshot: screen recording permission is not granted");
+        return None;
+    }
     let monitors = xcap::Monitor::all().ok()?;
     let monitor = monitors.iter().find(|m| m.is_primary().unwrap_or(false)).or_else(|| monitors.first())?;
     let image = monitor.capture_image().ok()?;
