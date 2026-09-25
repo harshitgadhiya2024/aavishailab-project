@@ -176,10 +176,18 @@ fn main() {
         forward_sigusr1_to(t.show.clone());
     }
 
+    // Resizable, with the old fixed size kept as the size it opens at. The
+    // minimum is what the layout can shrink to before it starts clipping
+    // rather than merely being tight (see gui.rs's `layout_scale`); below
+    // that a window is not small, it is broken, and letting someone drag
+    // to it would be offering a state with nothing to recommend it. There
+    // is deliberately no maximum: growing only adds margin around a
+    // centred column, which costs nothing to allow.
     let viewport = eframe::egui::ViewportBuilder::default()
         .with_title("Aavishield")
         .with_inner_size([340.0, 460.0])
-        .with_resizable(false);
+        .with_min_inner_size([300.0, 320.0])
+        .with_resizable(true);
 
     let native_options = eframe::NativeOptions {
         viewport,

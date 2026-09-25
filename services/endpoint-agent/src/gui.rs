@@ -25,6 +25,27 @@ const SUCCESS: egui::Color32 = egui::Color32::from_rgb(0x4A, 0xDE, 0x80);
 const WARN: egui::Color32 = egui::Color32::from_rgb(0xFA, 0xCC, 0x15);
 const DANGER: egui::Color32 = egui::Color32::from_rgb(0xF8, 0x71, 0x71);
 
+/// Width the page was drawn at back when the window could not be resized:
+/// the profile and notice cards, 280 of content inside a 13px margin each
+/// side. Everything else on the page was sized to sit inside it.
+const DESIGN_WIDTH: f32 = 306.0;
+
+/// What to multiply the page's fixed widths by so they fit `available`.
+///
+/// The window is resizable now, and the two directions want opposite
+/// treatment. Narrower has to shrink, or the cards run past the edge and
+/// the text inside them is simply cut off. Wider must *not* stretch: a
+/// 260px button pulled across a 900px window reads as a layout bug, not
+/// as a window doing what it was told, so past the design width this
+/// returns 1.0 and the extra space becomes margin around a centred
+/// column.
+///
+/// The floor matches `main`'s minimum window size, so it is only ever
+/// reached by a window that is already as small as it is allowed to get.
+fn layout_scale(available: f32) -> f32 {
+    ((available - 16.0) / DESIGN_WIDTH).clamp(0.85, 1.0)
+}
+
 pub struct ConnectorApp {
     ui_state: UiState,
     #[allow(dead_code)] // wired up once Enable-HTTPS calls the server directly from here
@@ -139,7 +160,19 @@ impl eframe::App for ConnectorApp {
         let snap = self.ui_state.snapshot();
 
         ui.style_mut().visuals.panel_fill = PANEL_BG;
+        // Measured on the panel, before the scroll area and the centring
+        // layout each take their cut, so every element below is scaled by
+        // the same number — scaling against each nested `available_width`
+        // would shrink the inner ones twice.
+        let scale = layout_scale(ui.available_width());
         egui::Frame::NONE.fill(PANEL_BG).show(ui, |ui| {
+            // Shortening the window has to stay usable, and the page is a
+            // fixed stack of things — there is no "less" for it to show,
+            // so the only honest answer to "not enough height" is to let
+            // the user scroll to the rest. Without this, dragging the
+            // window shorter silently puts Disconnect and Uninstall out of
+            // reach.
+            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             ui.vertical_centered(|ui| {
                 ui.add_space(28.0);
                 self.render_medallion(ui, &snap);
@@ -154,21 +187,21 @@ impl eframe::App for ConnectorApp {
                 ui.add_space(18.0);
 
                 if matches!(snap.state, ConnState::Blocked | ConnState::Revoked) {
-                    self.render_notice(ui, &snap);
+                    self.render_notice(ui, &snap, scale);
                     ui.add_space(14.0);
                 }
 
                 if matches!(snap.state, ConnState::Connected | ConnState::Paused) {
-                    self.render_profile(ui, &snap);
+                    self.render_profile(ui, &snap, scale);
                     ui.add_space(14.0);
                 }
 
-                self.render_cta(ui, &snap);
+                self.render_cta(ui, &snap, scale);
 
                 let live = matches!(snap.state, ConnState::Connected | ConnState::Paused);
                 if live {
                     ui.add_space(8.0);
-                    if ui.add_sized([260.0, 34.0], egui::Button::new("Run in background")).clicked() {
+                    if ui.add_sized([260.0 * scale, 34.0], egui::Button::new("Run in background")).clicked() {
                         self.running_in_background.store(true, Ordering::SeqCst);
                         ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
                     }
@@ -183,7 +216,7 @@ impl eframe::App for ConnectorApp {
                     ui.add_space(8.0);
                     let btn = egui::Button::new(egui::RichText::new("Disconnect").color(DANGER))
                         .stroke(egui::Stroke::new(1.0, DANGER.gamma_multiply(0.5)));
-                    if ui.add_sized([260.0, 34.0], btn).clicked() {
+                    if ui.add_sized([260.0 * scale, 34.0], btn).clicked() {
                         self.confirm_disconnect = true;
                     }
                 }
@@ -202,6 +235,7 @@ impl eframe::App for ConnectorApp {
                         self.uninstall.error = None;
                     }
                 }
+            });
             });
         });
 
@@ -263,14 +297,14 @@ impl ConnectorApp {
         }
     }
 
-    fn render_notice(&self, ui: &mut egui::Ui, snap: &crate::ui_state::Snapshot) {
+    fn render_notice(&self, ui: &mut egui::Ui, snap: &crate::ui_state::Snapshot, scale: f32) {
         egui::Frame::NONE
             .fill(DANGER.gamma_multiply(0.07))
             .stroke(egui::Stroke::new(1.0, DANGER.gamma_multiply(0.28)))
             .corner_radius(9.0)
             .inner_margin(12.0)
             .show(ui, |ui| {
-                ui.set_width(280.0);
+                ui.set_width(280.0 * scale);
                 let title = match snap.state {
                     ConnState::Blocked => "Device already registered",
                     ConnState::Revoked => "Device not registered",
@@ -287,7 +321,7 @@ impl ConnectorApp {
             });
     }
 
-    fn render_profile(&self, ui: &mut egui::Ui, snap: &crate::ui_state::Snapshot) {
+    fn render_profile(&self, ui: &mut egui::Ui, snap: &crate::ui_state::Snapshot, scale: f32) {
         egui::Frame::NONE
             .fill(if snap.state == ConnState::Connected { SUCCESS.gamma_multiply(0.05) } else { CARD_BG })
             .stroke(egui::Stroke::new(
@@ -297,7 +331,7 @@ impl ConnectorApp {
             .corner_radius(9.0)
             .inner_margin(egui::Margin::symmetric(13, 11))
             .show(ui, |ui| {
-                ui.set_width(280.0);
+                ui.set_width(280.0 * scale);
                 ui.horizontal(|ui| {
                     let initial = snap.org_name.chars().next().unwrap_or('A').to_uppercase().to_string();
                     egui::Frame::NONE.fill(BRAND).corner_radius(7.0).inner_margin(6.0).show(ui, |ui| {
@@ -319,7 +353,7 @@ impl ConnectorApp {
             });
     }
 
-    fn render_cta(&mut self, ui: &mut egui::Ui, snap: &crate::ui_state::Snapshot) {
+    fn render_cta(&mut self, ui: &mut egui::Ui, snap: &crate::ui_state::Snapshot, scale: f32) {
         let (label, enabled, primary) = match snap.state {
             ConnState::Disconnected => ("Connect", true, true),
             ConnState::Connecting => ("Cancel", true, false),
@@ -334,7 +368,7 @@ impl ConnectorApp {
             egui::Button::new(label)
         };
 
-        let resp = ui.add_enabled_ui(enabled, |ui| ui.add_sized([260.0, 38.0], button)).inner;
+        let resp = ui.add_enabled_ui(enabled, |ui| ui.add_sized([260.0 * scale, 38.0], button)).inner;
         if resp.clicked() {
             match snap.state {
                 ConnState::Disconnected | ConnState::Revoked => self.send(Command::Connect),
