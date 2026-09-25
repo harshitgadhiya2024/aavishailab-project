@@ -314,6 +314,22 @@ async fn run_full_agent(config: Config, ui: UiState, client_slot: ClientSlot, mu
         }
     });
     tokio::spawn(mitm.clone().loop_refresh(MITM_CONFIG_REFRESH_INTERVAL));
+    // Same cadence as the MITM config it depends on: if an org turns SSL
+    // inspection on for a device that's already enrolled and running, this
+    // notices within one refresh interval and prompts for the CA install,
+    // rather than requiring a restart to get asked at all. Checks the
+    // marker file first (see ca_trust::install_if_needed), so a device
+    // that already trusts the CA — the steady-state case, forever — never
+    // pays more than that one file stat per interval.
+    tokio::spawn({
+        let client = client.clone();
+        async move {
+            loop {
+                crate::ca_trust::install_if_needed(&client).await;
+                tokio::time::sleep(MITM_CONFIG_REFRESH_INTERVAL).await;
+            }
+        }
+    });
     tokio::spawn(branding.clone().loop_refresh(crate::block_page::REFRESH_INTERVAL));
     tokio::spawn(reporter.clone().loop_flush(ACTIVITY_FLUSH_INTERVAL));
     tokio::spawn(crate::heartbeat::loop_heartbeat(deps.clone(), HEARTBEAT_INTERVAL));

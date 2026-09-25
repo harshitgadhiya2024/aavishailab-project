@@ -183,20 +183,29 @@ pub async fn discard_enroll_drops() {
     }
 }
 
-/// Root-owned, world-readable marker a privileged installer step leaves
-/// behind once the org's MITM CA is actually in the OS/browser trust
-/// store — a port of `mitm_ca_trusted`'s marker-file check.
+/// Marker left behind once the org's MITM CA is actually in the OS/browser
+/// trust store — a port of `mitm_ca_trusted`'s marker-file check, with the
+/// scope note below no longer true for macOS (see `ca_trust.rs`, which
+/// does now perform the install this originally deferred).
 ///
-/// Scope note: only the *check* is ported. Actually installing the CA
-/// into the OS trust store (`_install_ca_darwin`/`_install_ca_linux`/
-/// `_install_ca_windows`, and the privileged `--ca-trust-daemon` process
-/// that runs them) is installer/packaging infrastructure, not core proxy
-/// logic, and needs the code-signing/notarization pipeline this build
-/// environment doesn't have — out of scope here, same as the rest of the
-/// packaging story. Until an installer performs that step and leaves this
-/// marker, MITM interception stays off (fail-open — see mitm.rs).
+/// macOS reads a per-user marker (`ca_trust.rs` installs into the user's
+/// own login keychain, not the System one — that scope covers this user's
+/// own browsers/curl/etc, which is exactly what this proxy needs to
+/// protect, without requiring root). Windows/Linux still read the
+/// root-owned marker from the original design, because their own
+/// installers (`_install_ca_linux`/`_install_ca_windows` — see this
+/// function's git history for the fuller original scope note) genuinely
+/// do need a privileged step nothing here performs yet; until one does,
+/// this correctly stays false and MITM interception stays off (fail-open
+/// — see mitm.rs).
 pub fn mitm_ca_trusted() -> bool {
-    let marker = if cfg!(target_os = "windows") { PathBuf::from(r"C:\ProgramData\Aavishield\ca-trusted") } else { PathBuf::from("/etc/aavishield/ca-trusted") };
+    let marker = if cfg!(target_os = "macos") {
+        state_dir().join("ca-trusted")
+    } else if cfg!(target_os = "windows") {
+        PathBuf::from(r"C:\ProgramData\Aavishield\ca-trusted")
+    } else {
+        PathBuf::from("/etc/aavishield/ca-trusted")
+    };
     marker.exists()
 }
 

@@ -25,6 +25,7 @@ pub mod activity_monitor;
 pub mod app_control;
 pub mod background;
 pub mod block_page;
+pub mod ca_trust;
 pub mod casb_cache;
 pub mod config;
 pub mod deps;
