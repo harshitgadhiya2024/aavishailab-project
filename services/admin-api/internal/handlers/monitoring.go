@@ -418,6 +418,22 @@ func StartScreenshotRetentionSweep(db *gorm.DB, interval time.Duration) {
 // not just when it began. Closed at that last-known-activity time, not
 // "now", so the duration shown reflects when work actually stopped rather
 // than whenever this sweep happened to notice.
+// StaleSessionAfter is how long a WorkSession may go without being
+// written to before it counts as abandoned.
+//
+// Shared deliberately by the two places that need the same answer to
+// "is this session still someone's current one": this sweep, which closes
+// it once nothing has touched it for this long, and StartSession, which
+// resumes it rather than opening a second one while something still is.
+// Split into two constants they would drift, and the gap between them
+// would be a window where a restart neither resumes the old session nor
+// gets a clean new one.
+//
+// Sized to outlast the default screenshot interval (up to 420s) plus a
+// missed cycle, without leaving a genuinely dead session reading "live"
+// for the rest of the day.
+const StaleSessionAfter = 15 * time.Minute
+
 func StartStaleSessionSweep(db *gorm.DB, interval, staleAfter time.Duration) {
 	sweep := func() {
 		cutoff := time.Now().Add(-staleAfter)

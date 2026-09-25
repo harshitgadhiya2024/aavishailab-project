@@ -68,6 +68,35 @@ func (h *MonitoringIngestHandler) StartSession(c *gin.Context) {
 		ip = c.ClientIP()
 	}
 
+	// An agent restart is not a new work session. This used to create one
+	// unconditionally, so every restart — an update, a crash, waking from
+	// sleep, or an admin debugging on the device — left the previous
+	// session open and started another beside it. Six restarts inside
+	// twenty minutes produced six rows all reading "→ live" at once, most
+	// of them with no screenshots at all, because each one was abandoned
+	// before its first capture interval elapsed.
+	//
+	// StartStaleSessionSweep does eventually close them, but it is the
+	// backstop for an agent that never comes back, not an answer to one
+	// that did: it waits out staleAfter before acting, and in the meantime
+	// the dashboard shows work fragmented across sessions that were really
+	// one stretch at the desk.
+	//
+	// So a device that already has an open session continues it. The same
+	// staleness rule the sweep uses decides "already": a session still
+	// being written to is the one this agent was in before it restarted,
+	// while one that went quiet long enough for the sweep to be about to
+	// close anyway is genuinely over, and the work resuming now deserves a
+	// row of its own.
+	var existing models.WorkSession
+	err := h.db.Where("device_id = ? AND ended_at IS NULL AND updated_at >= ?", deviceID, time.Now().Add(-StaleSessionAfter)).
+		Order("updated_at DESC").
+		First(&existing).Error
+	if err == nil {
+		c.JSON(http.StatusOK, gin.H{"session_id": existing.ID, "resumed": true})
+		return
+	}
+
 	session := models.WorkSession{
 		OrgID:      orgID,
 		EmployeeID: empID,

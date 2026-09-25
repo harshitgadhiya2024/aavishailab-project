@@ -65,7 +65,7 @@ func main() {
 	// the default screenshot interval (up to 420s) plus a missed cycle,
 	// without being so long that a genuinely dead session sits reading
 	// "live" for the rest of the day.
-	handlers.StartStaleSessionSweep(db, 5*time.Minute, 15*time.Minute)
+	handlers.StartStaleSessionSweep(db, 5*time.Minute, handlers.StaleSessionAfter)
 
 	// Enforce the platform's data_retention setting for activity events and
 	// audit log rows — without this the setting would just be a UI that
