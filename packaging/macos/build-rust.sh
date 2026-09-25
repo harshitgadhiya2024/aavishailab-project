@@ -107,12 +107,54 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
 PLIST
 
 # ─── 3. Sign the app bundle ───────────────────────────────────────────────────
+# Always signed, never "unsigned", because there is no such thing here: an
+# un-codesigned Rust binary still carries the ad-hoc, linker-generated
+# signature the toolchain puts there, and that signature is actively wrong
+# for a bundle. It identifies the app as `aavishield_agent-<hash of the
+# binary>` rather than $IDENTIFIER, leaves `Info.plist=not bound`, and
+# seals no resources — so macOS never reads the bundle identity this
+# Info.plist declares.
+#
+# That is not cosmetic. TCC grants (Screen Recording, Input Monitoring)
+# are recorded against the signing identity, so with the linker's
+# signature every rebuild is a *different app* to the OS. A device that
+# was granted Screen Recording shows its grant against an identity the
+# next build no longer has, screenshots silently become wallpaper (see
+# screenshot.rs), and the permission list fills with one stale entry per
+# build — observed exactly that way on a real Mac.
+#
+# Re-signing ad-hoc with an explicit --identifier fixes the identity and
+# the sealing. It does NOT fix updates: an ad-hoc signature has no stable
+# designated requirement, so TCC still matches on the code directory hash
+# and a new build is still a new app. Only a Developer ID certificate
+# gives a grant something stable to survive an update against, which is
+# why DEVELOPER_ID_APP is what a real release must set.
 if [[ -n "${DEVELOPER_ID_APP:-}" ]]; then
     echo "==> Signing app bundle as: $DEVELOPER_ID_APP"
-    codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID_APP" "$APP_DIR"
+    codesign --force --options runtime --timestamp --identifier "$IDENTIFIER" --sign "$DEVELOPER_ID_APP" "$APP_DIR"
 else
-    echo "==> DEVELOPER_ID_APP unset — building UNSIGNED (testing only)"
+    echo "==> DEVELOPER_ID_APP unset — signing ad-hoc as $IDENTIFIER"
+    echo "    NOTE: TCC grants will not survive an update. Set DEVELOPER_ID_APP for a real release."
+    codesign --force --options runtime --identifier "$IDENTIFIER" --sign - "$APP_DIR"
 fi
+
+# Proves the two things that were wrong before: the bundle identity is
+# $IDENTIFIER, and the Info.plist declaring it is sealed into the
+# signature. Cheap, and it fails the build rather than shipping a package
+# whose permissions quietly will not stick.
+echo "==> Verifying the bundle's signed identity"
+codesign --verify --strict "$APP_DIR"
+sig_info="$(codesign -dv --verbose=2 "$APP_DIR" 2>&1)"
+grep -q "^Identifier=$IDENTIFIER\$" <<<"$sig_info" || {
+    echo "!! signed identifier is not $IDENTIFIER:" >&2
+    grep "^Identifier=" <<<"$sig_info" >&2
+    exit 1
+}
+grep -q "Info.plist=not bound" <<<"$sig_info" && {
+    echo "!! Info.plist is not sealed into the signature — TCC will not bind grants to $IDENTIFIER" >&2
+    exit 1
+}
+echo "    ok: $(grep '^Identifier=' <<<"$sig_info")"
 
 # ─── 4. LaunchAgent ────────────────────────────────────────────────────────────
 # Per-user, not per-machine, for the same reason build.sh's does: the agent
