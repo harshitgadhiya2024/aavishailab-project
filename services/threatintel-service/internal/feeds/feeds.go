@@ -3,7 +3,7 @@
 // never touch the network.
 //
 // Sources (all abuse.ch / OpenPhish public feeds, no signup / API key):
-//   - URLhaus       (malware distribution URLs -> domains)
+//   - URLhaus       (malware distribution hosts, abuse.ch's own host export)
 //   - OpenPhish     (phishing URLs -> domains)
 //   - Feodo Tracker (botnet C2 IP blocklist)
 //   - MalwareBazaar (recent malware sample SHA-256 hashes)
@@ -25,12 +25,40 @@ type Source struct {
 	Name     string
 	Category string
 	URL      string
-	Kind     string // domain | ip | hash
+	Kind     string // domain | hostfile | ip | hash
 }
 
 // DefaultSources are the public feeds synced in production.
+//
+// URLhaus is read from `hostfile`, not from `text_online`, and the
+// difference is not cosmetic — it is the difference between this service
+// working and this service taking GitHub away from every device in the
+// fleet. `text_online` lists individual malware *URLs*, and malware is
+// overwhelmingly distributed from hosting that other people use for
+// legitimate things. Reducing those URLs to their hostnames and blocking
+// the hostname is what this did until it was caught in production: of
+// 16,734 listings, 16,624 had a path, and the resulting 1,964 "malicious
+// domains" included raw.githubusercontent.com (5,270 listings),
+// img1.wsimg.com, github.com (852), drive.google.com, docs.google.com,
+// codeload.github.com and web.archive.org. Devices could not reach any of
+// them, with no way to override it — a threat-intel block beats a policy
+// allow in the agent's own precedence.
+//
+// `hostfile` is abuse.ch's answer to exactly that question: the hosts
+// they are willing to say are themselves malicious, with popular domains
+// excluded upstream. It is ~400 entries rather than ~1,900, and none of
+// the names above appear in it. Curation stays with the people who
+// maintain the feed instead of becoming an allowlist here that nobody
+// remembers to update.
+//
+// OpenPhish stays URL-derived on purpose. Phishing pages are not uploaded
+// to shared hosting the way payloads are; they get their own hostname
+// (`www.roblox.com.mu`, `mail-xfinitylogin.weebly.com`,
+// `insta-reelz928282818.github.io`), so the hostname *is* the indicator.
+// Note the last one: the full hostname is stored, so a throwaway
+// github.io subdomain is blocked without touching github.io itself.
 var DefaultSources = []Source{
-	{"urlhaus", "malware", "https://urlhaus.abuse.ch/downloads/text_online/", "domain"},
+	{"urlhaus", "malware", "https://urlhaus.abuse.ch/downloads/hostfile/", "hostfile"},
 	{"openphish", "phishing", "https://openphish.com/feed.txt", "domain"},
 	{"feodotracker", "botnet", "https://feodotracker.abuse.ch/downloads/ipblocklist.txt", "ip"},
 	{"malwarebazaar", "malware", "https://bazaar.abuse.ch/export/txt/sha256/recent/", "hash"},
@@ -97,6 +125,19 @@ func load(s *store.Store, src Source, r io.Reader) int {
 		switch src.Kind {
 		case "domain":
 			if d := extractDomain(line); d != "" {
+				s.SetDomain(d, entry)
+				n++
+			}
+		case "hostfile":
+			// Hosts-file format: "0.0.0.0 baddomain.com". Anything else
+			// on the line is a comment or a malformed entry; both are
+			// skipped rather than guessed at. Same parse as admin-api's
+			// riskengine, which has always read this feed.
+			fields := strings.Fields(line)
+			if len(fields) != 2 {
+				continue
+			}
+			if d := extractDomain(fields[1]); d != "" {
 				s.SetDomain(d, entry)
 				n++
 			}
