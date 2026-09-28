@@ -15,13 +15,32 @@
 #
 set -euo pipefail
 
+# The agent has to be *gone* before anything below runs, not merely
+# unloaded from one plist path. A running agent puts back what this script
+# removes — its proxy watchdog re-applies the system proxy within seconds
+# and its CA loop reinstalls the certificate — which is exactly what
+# happened on a real Mac: this used to boot out only the
+# /Library/LaunchAgents copy, the agent there had been loaded from
+# ~/Library/LaunchAgents, and it kept running and restored both. So: boot
+# out by label (whichever plist loaded it), then make sure no process is
+# left, and wait for it.
 echo "==> Stopping the connector"
 sudo launchctl bootout system /Library/LaunchDaemons/com.aavishield.catrust.plist 2>/dev/null || true
+launchctl bootout "gui/$(id -u)/com.aavishield.agent" 2>/dev/null || true
 launchctl bootout "gui/$(id -u)" /Library/LaunchAgents/com.aavishield.agent.plist 2>/dev/null || true
+pkill -x aavishield-agent 2>/dev/null || true
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+    pgrep -x aavishield-agent >/dev/null || break
+    sleep 1
+done
+if pgrep -x aavishield-agent >/dev/null; then
+    sudo pkill -9 -x aavishield-agent 2>/dev/null || true
+fi
 
 echo "==> Removing LaunchAgent/LaunchDaemon"
 sudo rm -f /Library/LaunchDaemons/com.aavishield.catrust.plist
 sudo rm -f /Library/LaunchAgents/com.aavishield.agent.plist
+rm -f "$HOME/Library/LaunchAgents/com.aavishield.agent.plist"
 
 echo "==> Removing the app and data directories"
 sudo rm -rf /Applications/Aavishield.app
@@ -39,6 +58,7 @@ sudo rm -rf /usr/local/aavishield
 # the GUI ever shows a Connect button.
 echo "==> Removing the per-user state directory (config, enrollment token, certs)"
 rm -rf "$HOME/.aavishield"
+rm -rf "$HOME/Library/Application Support/Aavishield"   # window state only
 
 echo "==> Forgetting the pkg receipt"
 sudo pkgutil --forget com.aavishield.agent 2>/dev/null || true
@@ -67,9 +87,22 @@ tccutil reset ListenEvent com.aavishield.agent 2>/dev/null || true
 # used to say "Aavishield Root CA", a name the server has never actually
 # issued a certificate under, so this step deleted nothing, ever, on any
 # machine, until now.
-echo "==> Removing the trusted CA certificate (if present)"
-security delete-certificate -c "Aavishield SSL Inspection CA" "$HOME/Library/Keychains/login.keychain-db" 2>/dev/null || true
-sudo security delete-certificate -c "Aavishield SSL Inspection CA" /Library/Keychains/System.keychain 2>/dev/null || true
+#
+# Deleted by SHA-1, every copy: `delete-certificate -c <name>` refuses
+# outright when more than one certificate matches ("Unable to delete
+# certificate matching …"), and a Mac that has had the agent reinstalled
+# can carry several — one had three, and none of them went.
+CA_NAME="Aavishield SSL Inspection CA"
+remove_ca_copies() {  # $1 = keychain, $2 = "sudo" or ""
+    local hashes
+    hashes=$(security find-certificate -a -c "$CA_NAME" -Z "$1" 2>/dev/null | awk '/SHA-1 hash:/{print $3}' | sort -u) || true
+    for h in $hashes; do
+        $2 security delete-certificate -Z "$h" "$1" >/dev/null 2>&1 || true
+    done
+}
+echo "==> Removing the trusted CA certificate (every copy, if present)"
+remove_ca_copies "$HOME/Library/Keychains/login.keychain-db" ""
+remove_ca_copies /Library/Keychains/System.keychain sudo
 
 # Every enabled service, not just Wi-Fi/Ethernet — system_proxy.rs's own
 # macos_network_services() enumerates all of them the same way (skipping
@@ -77,12 +110,13 @@ sudo security delete-certificate -c "Aavishield SSL Inspection CA" /Library/Keyc
 # leading "*"), because a Thunderbolt Bridge, a USB adapter or a VPN
 # service can just as easily be carrying the proxy setting this needs to
 # clear, and a hardcoded two-name list would silently miss it.
-echo "==> Resetting the system proxy on every enabled network service"
-# `|| true` on the grep matters under `set -o pipefail` above: if every
-# service happens to be disabled, `grep -v` legitimately matches nothing
-# and exits 1, which would otherwise abort the whole script right here
-# rather than just skipping a loop with nothing to iterate.
-networksetup -listallnetworkservices 2>/dev/null | tail -n +2 | { grep -v '^\*' || true; } | while IFS= read -r svc; do
+#
+# Disabled services (listed with a leading "*") too: the agent now sets
+# the proxy on those as well, so an adapter switched on later doesn't come
+# up unfiltered — and so it has to be cleared there too, or that same
+# adapter would come up pointing at a proxy that no longer exists.
+echo "==> Resetting the system proxy on every network service"
+networksetup -listallnetworkservices 2>/dev/null | tail -n +2 | sed 's/^\*//' | while IFS= read -r svc; do
     [ -z "$svc" ] && continue
     sudo networksetup -setwebproxystate "$svc" off 2>/dev/null || true
     sudo networksetup -setsecurewebproxystate "$svc" off 2>/dev/null || true
