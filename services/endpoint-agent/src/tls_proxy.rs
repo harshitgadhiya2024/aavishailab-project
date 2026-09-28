@@ -140,21 +140,15 @@ where
     let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(server_cfg));
     let client_tls = acceptor.accept(io).await?;
 
-    let upstream_tcp = TcpStream::connect((host.as_str(), port)).await?;
-    let connector = tokio_rustls::TlsConnector::from(upstream_tls_config());
-    let server_name = rustls_pki_types::ServerName::try_from(host.clone()).map_err(std::io::Error::other)?;
-    let upstream_tls = connector.connect(server_name, upstream_tcp).await?;
-
-    let (sender, conn) = hyper::client::conn::http1::handshake(TokioIo::new(upstream_tls)).await.map_err(std::io::Error::other)?;
-    tokio::spawn(async move {
-        if let Err(e) = conn.await {
-            tracing::debug!(error = %e, "upstream connection closed");
-        }
-    });
+    // The upstream connection is opened here and reopened on demand by
+    // `relay_one`: the browser keeps its side of this tunnel alive far
+    // longer than most servers keep an idle connection open, and a request
+    // sent down one the server already closed used to come back as a 502 —
+    // GitHub after about a minute idle, reproduced exactly that way.
     // http1::SendRequest isn't Clone/Sync — a Mutex is safe and cheap here
     // since HTTP/1.1 keep-alive on one connection is inherently one
     // request in flight at a time anyway.
-    let sender = Arc::new(Mutex::new(sender));
+    let sender = Arc::new(Mutex::new(Some(connect_upstream(&host, port).await?)));
 
     let deps_for_svc = deps.clone();
     let host_for_svc = host.clone();
@@ -162,22 +156,89 @@ where
         let sender = sender.clone();
         let deps = deps_for_svc.clone();
         let host = host_for_svc.clone();
-        async move { relay_one(req, sender, deps, host).await }
+        async move { relay_one(req, sender, deps, host, port).await }
     });
 
     server_http1::Builder::new().serve_connection(TokioIo::new(client_tls), service).await.map_err(std::io::Error::other)?;
     Ok(())
 }
 
+type UpstreamSender = hyper::client::conn::http1::SendRequest<BoxBody>;
+
+/// A verified TLS connection to the real `host:port`, ready for requests.
+async fn connect_upstream(host: &str, port: u16) -> std::io::Result<UpstreamSender> {
+    let upstream_tcp = TcpStream::connect((host, port)).await?;
+    let connector = tokio_rustls::TlsConnector::from(upstream_tls_config());
+    let server_name = rustls_pki_types::ServerName::try_from(host.to_string()).map_err(std::io::Error::other)?;
+    let upstream_tls = connector.connect(server_name, upstream_tcp).await?;
+    let (sender, conn) = hyper::client::conn::http1::handshake(TokioIo::new(upstream_tls)).await.map_err(std::io::Error::other)?;
+    tokio::spawn(async move {
+        if let Err(e) = conn.await {
+            tracing::debug!(error = %e, "upstream connection closed");
+        }
+    });
+    Ok(sender)
+}
+
+/// A request that may be sent a second time after its connection failed
+/// underneath it — the methods HTTP defines as idempotent.
+fn is_idempotent(method: &hyper::Method) -> bool {
+    use hyper::Method;
+    [Method::GET, Method::HEAD, Method::OPTIONS, Method::PUT, Method::DELETE, Method::TRACE].contains(method)
+}
+
+/// Sends one request upstream, reopening the connection when the server
+/// has closed it. A connection already known to be closed is replaced
+/// before sending, for any method. One that fails *while* sending is
+/// retried once on a fresh connection, but only for an idempotent method,
+/// or when hyper reports the request was never written — a POST that may
+/// have reached the server is never sent twice.
+async fn send_upstream(
+    sender: &Mutex<Option<UpstreamSender>>,
+    host: &str,
+    port: u16,
+    build: impl Fn() -> Request<BoxBody>,
+    method: &hyper::Method,
+) -> Result<Response<Incoming>, String> {
+    let mut guard = sender.lock().await;
+    for attempt in 0..2 {
+        let live = match guard.as_mut() {
+            Some(s) => s.ready().await.is_ok(),
+            None => false,
+        };
+        if !live {
+            *guard = Some(connect_upstream(host, port).await.map_err(|e| e.to_string())?);
+        }
+        let s = guard.as_mut().expect("connected just above");
+        match s.send_request(build()).await {
+            Ok(resp) => return Ok(resp),
+            Err(e) => {
+                *guard = None;
+                let retry = attempt == 0 && (is_idempotent(method) || e.is_canceled());
+                if !retry {
+                    return Err(e.to_string());
+                }
+                tracing::debug!(error = %e, %host, "upstream connection failed mid-request — retrying on a new one");
+            }
+        }
+    }
+    Err("upstream request failed twice".to_string())
+}
+
 async fn relay_one(
     req: Request<Incoming>,
-    sender: Arc<Mutex<hyper::client::conn::http1::SendRequest<BoxBody>>>,
+    sender: Arc<Mutex<Option<UpstreamSender>>>,
     deps: Arc<Deps>,
     host: String,
+    port: u16,
 ) -> Result<Response<BoxBody>, hyper::Error> {
     let (parts, body) = req.into_parts();
     let method = parts.method.clone();
     let path = parts.uri.path().to_string();
+    // What goes upstream is the path *and* query. Only the path used to be
+    // sent, so every `?…` was silently dropped — search, pagination and
+    // filters on every inspected site ("/get?foo=bar" arrived as "/get").
+    let path_and_query = parts.uri.path_and_query().map(|pq| pq.as_str().to_string()).unwrap_or_else(|| path.clone());
     let content_type = parts.headers.get(hyper::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
     let content_disposition = parts.headers.get(hyper::header::CONTENT_DISPOSITION).and_then(|v| v.to_str().ok());
     let filename = crate::scan::upload_filename(content_disposition, &path);
@@ -212,27 +273,31 @@ async fn relay_one(
         );
     }
 
-    let mut upstream_req = Request::builder().method(method).uri(&path);
+    let mut probe = Request::builder().method(method.clone()).uri(&path_and_query);
     for (name, value) in parts.headers.iter() {
-        upstream_req = upstream_req.header(name, value);
+        probe = probe.header(name, value);
     }
-    let upstream_req = match upstream_req.body(full_body(body_bytes)) {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::debug!(error = %e, %host, "failed building upstream request");
-            return Ok(crate::proxy::status_response(StatusCode::BAD_GATEWAY));
+    if let Err(e) = probe.body(full_body(Bytes::new())) {
+        tracing::debug!(error = %e, %host, "failed building upstream request");
+        return Ok(crate::proxy::status_response(StatusCode::BAD_GATEWAY));
+    }
+    // Rebuilt per attempt: a request is consumed by sending it. Validity was
+    // just checked above, and `Bytes` clones are a refcount, not a copy.
+    let build = || {
+        let mut b = Request::builder().method(method.clone()).uri(&path_and_query);
+        for (name, value) in parts.headers.iter() {
+            b = b.header(name, value);
         }
+        b.body(full_body(body_bytes.clone())).expect("validated above")
     };
 
-    let mut guard = sender.lock().await;
-    let resp = match guard.send_request(upstream_req).await {
+    let resp = match send_upstream(&sender, &host, port, build, &method).await {
         Ok(r) => r,
         Err(e) => {
             tracing::debug!(error = %e, %host, "upstream request failed");
             return Ok(crate::proxy::status_response(StatusCode::BAD_GATEWAY));
         }
     };
-    drop(guard);
 
     let (resp_parts, resp_body) = resp.into_parts();
     let resp_bytes = match resp_body.collect().await {
@@ -242,7 +307,16 @@ async fn relay_one(
 
     // Download scanning (malware): same bounded-buffer, fail-open pattern.
     if resp_parts.status.is_success() && resp_bytes.len() <= MAX_SCAN_BODY {
-        let verdict = crate::scan::download_verdict(&deps.client, &deps.gate, &host, &path, &resp_bytes).await;
+        let verdict = crate::scan::download_verdict(
+            &deps.client,
+            &deps.gate,
+            &host,
+            &path,
+            resp_parts.headers.get(hyper::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or(""),
+            resp_parts.headers.get(hyper::header::CONTENT_DISPOSITION).and_then(|v| v.to_str().ok()).unwrap_or(""),
+            &resp_bytes,
+        )
+        .await;
         if verdict.blocked {
             return Ok(crate::proxy::html_response(StatusCode::FORBIDDEN, &block_page_html(&deps, &host, &verdict.reason, "Malware Protection")));
         }

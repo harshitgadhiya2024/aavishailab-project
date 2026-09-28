@@ -265,7 +265,16 @@ async fn forward_plain_http(req: Request<Incoming>, host: &str, port: u16, path_
     let resp_bytes = resp_body.collect().await.map_err(std::io::Error::other)?.to_bytes();
 
     if resp_parts.status.is_success() && resp_bytes.len() <= crate::scan::MAX_SCAN_BODY {
-        let verdict = crate::scan::download_verdict(&deps.client, &deps.gate, host, &path, &resp_bytes).await;
+        let verdict = crate::scan::download_verdict(
+            &deps.client,
+            &deps.gate,
+            host,
+            &path,
+            resp_parts.headers.get(hyper::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or(""),
+            resp_parts.headers.get(hyper::header::CONTENT_DISPOSITION).and_then(|v| v.to_str().ok()).unwrap_or(""),
+            &resp_bytes,
+        )
+        .await;
         if verdict.blocked {
             return Ok(html_response(StatusCode::FORBIDDEN, &block_page_html(deps, host, &verdict.reason, "Malware Protection")));
         }

@@ -168,8 +168,19 @@ pub async fn upload_verdict(
 
 /// Malware scan on a download — a port of the scan half of
 /// `_relay_scanned_spool`.
-pub async fn download_verdict(client: &AgentClient, gate: &EnforcementGate, host: &str, path: &str, body: &[u8]) -> ScanVerdict {
-    if !gate.scans_downloads() || body.is_empty() {
+/// `content_type`/`content_disposition` are the response's own headers
+/// (empty when absent): only a response that is a file being downloaded is
+/// scanned — see `is_file_download`.
+pub async fn download_verdict(
+    client: &AgentClient,
+    gate: &EnforcementGate,
+    host: &str,
+    path: &str,
+    content_type: &str,
+    content_disposition: &str,
+    body: &[u8],
+) -> ScanVerdict {
+    if !gate.scans_downloads() || body.is_empty() || !is_file_download(content_type, content_disposition, path) {
         return ScanVerdict::allow();
     }
     if let Some(verdict) = scan_malware(client, host, path, body).await {
@@ -180,6 +191,63 @@ pub async fn download_verdict(client: &AgentClient, gate: &EnforcementGate, host
         }
     }
     ScanVerdict::allow()
+}
+
+/// Whether a response is a file being downloaded, rather than part of a
+/// web page. Only files are sent for malware scanning.
+///
+/// Every successful response used to be: each page's HTML, stylesheets,
+/// scripts, images and API responses were uploaded to admin-api and the
+/// browser was made to wait for each verdict before receiving any of it. A
+/// GitHub page — dozens of those — took 10–12s to load or timed out, and
+/// under a busy scanner every open tab stalled together (found with 50
+/// connections stuck at once). It also meant every page anyone viewed was
+/// copied to the server. A file is identified the way browsers themselves
+/// decide to save rather than render: an `attachment` disposition, a
+/// file-type extension, or a content type that isn't a page part.
+pub fn is_file_download(content_type: &str, content_disposition: &str, path: &str) -> bool {
+    if content_disposition.trim_start().to_ascii_lowercase().starts_with("attachment") {
+        return true;
+    }
+
+    const FILE_EXTENSIONS: &[&str] = &[
+        "exe", "msi", "msix", "appx", "dmg", "pkg", "mpkg", "deb", "rpm", "appimage", "apk", "ipa", "jar",
+        "zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz", "zst", "cab", "iso", "img",
+        "bat", "cmd", "ps1", "vbs", "sh", "scr", "com", "dll", "so", "dylib", "hta", "lnk",
+        "pdf", "doc", "docx", "docm", "xls", "xlsx", "xlsm", "ppt", "pptx", "pptm", "rtf", "one",
+    ];
+    let ext = path
+        .rsplit('/')
+        .next()
+        .and_then(|name| name.rsplit_once('.'))
+        .map(|(_, ext)| ext.to_ascii_lowercase())
+        .unwrap_or_default();
+    if FILE_EXTENSIONS.contains(&ext.as_str()) {
+        return true;
+    }
+
+    let mime = content_type.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
+    if mime.is_empty() {
+        return false;
+    }
+    let page_part = ["text/", "image/", "font/", "audio/", "video/", "multipart/"].iter().any(|p| mime.starts_with(p))
+        || mime.ends_with("+json")
+        || mime.ends_with("+xml")
+        || matches!(
+            mime.as_str(),
+            "application/javascript"
+                | "application/x-javascript"
+                | "application/ecmascript"
+                | "application/json"
+                | "application/xml"
+                | "application/wasm"
+                | "application/x-protobuf"
+                | "application/protobuf"
+                | "application/grpc-web"
+                | "application/grpc-web+proto"
+                | "application/x-www-form-urlencoded"
+        );
+    !page_part
 }
 
 /// POSTs the upload body to admin-api's DLP scanner. Fail-open: any
@@ -232,6 +300,34 @@ fn urlencode(s: &str) -> String {
 mod tests {
     use super::*;
     use crate::casb_cache::Verdict;
+
+    /// The parts of an ordinary page are never uploaded for scanning.
+    #[test]
+    fn test_page_parts_are_not_file_downloads() {
+        for (ct, path) in [
+            ("text/html; charset=utf-8", "/Delphic-Services/delphic-secure"),
+            ("text/css", "/assets/app.css"),
+            ("application/javascript", "/assets/app.js"),
+            ("application/json", "/api/v1/user"),
+            ("image/png", "/avatar.png"),
+            ("font/woff2", "/f.woff2"),
+            ("application/manifest+json", "/manifest.json"),
+            ("", "/"),
+        ] {
+            assert!(!is_file_download(ct, "", path), "{ct} {path} should not be scanned");
+        }
+    }
+
+    /// Files are, however they are marked.
+    #[test]
+    fn test_files_are_file_downloads() {
+        assert!(is_file_download("text/plain", "attachment; filename=\"notes.txt\"", "/dl"));
+        assert!(is_file_download("", "", "/releases/setup.EXE"));
+        assert!(is_file_download("text/html", "", "/files/report.pdf"));
+        assert!(is_file_download("application/octet-stream", "", "/download"));
+        assert!(is_file_download("application/zip", "", "/archive"));
+        assert!(is_file_download("application/x-apple-diskimage", "", "/get"));
+    }
 
     #[test]
     fn test_urlencode_leaves_safe_chars_alone() {
