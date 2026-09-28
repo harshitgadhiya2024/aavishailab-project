@@ -154,6 +154,21 @@
       ]
     },
     {
+      "slug": "finance",
+      "name": "Finance",
+      "description": "Trading, investing and cryptocurrency platforms and market data — personal finance activity, as opposed to the banks and payment portals in Banking & Finance (Sensitive)",
+      "risk_level": 20,
+      "color": "#15803d",
+      "domains": [
+        "zerodha.com", "groww.in", "upstox.com", "angelone.in", "5paisa.com",
+        "dhan.co", "paytmmoney.com", "smallcase.com", "nseindia.com", "bseindia.com",
+        "moneycontrol.com", "tradingview.com", "investing.com", "finance.yahoo.com",
+        "robinhood.com", "etrade.com", "schwab.com", "fidelity.com", "vanguard.com",
+        "interactivebrokers.com", "webull.com", "etoro.com",
+        "coinbase.com", "binance.com", "kraken.com", "crypto.com", "coindcx.com", "wazirx.com"
+      ]
+    },
+    {
       "slug": "government_sensitive",
       "name": "Government (Sensitive)",
       "description": "Government, tax, and identity portals that should normally be excluded from SSL inspection",
