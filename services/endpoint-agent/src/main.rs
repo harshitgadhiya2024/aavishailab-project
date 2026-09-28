@@ -203,7 +203,13 @@ fn main() {
     let result = eframe::run_native(
         "Aavishield",
         native_options,
-        Box::new(move |cc| {
+        // `_cc`, not `cc`: the only use of it is inside the macOS-only
+        // block below, so on every other platform the parameter is
+        // genuinely unused — `cargo clippy -D warnings` on Linux (where CI
+        // runs) failed on exactly this, and would keep doing so on a real
+        // Windows/Linux build. The underscore only silences the "unused"
+        // lint; the binding still works normally where it *is* used.
+        Box::new(move |_cc| {
             // Only now does the window exist to be remembered. Anything
             // that asked for it before this point left `ShowSignal`'s flag
             // set, and the first frame picks that up. See mac_window.rs for
@@ -213,7 +219,7 @@ fn main() {
             #[cfg(target_os = "macos")]
             {
                 use raw_window_handle::HasWindowHandle as _;
-                match cc.window_handle() {
+                match _cc.window_handle() {
                     Ok(h) => aavishield_agent::mac_window::remember(&h.as_raw()),
                     Err(e) => tracing::warn!(error = %e, "no window handle — the tray's Open will not reopen the window"),
                 }
