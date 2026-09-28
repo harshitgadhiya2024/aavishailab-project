@@ -140,7 +140,11 @@ fn reset_tcc_permissions() {
 
 #[cfg(target_os = "macos")]
 fn uninstall_macos() {
-    const CA_COMMON_NAME: &str = "Aavishield Root CA";
+    // Must match mitm/ca.go's actual Subject.CommonName exactly — this
+    // used to say "Aavishield Root CA", a name the server-issued
+    // certificate has never had (it has always been "...SSL Inspection
+    // CA"), so this step deleted nothing, on any machine, ever.
+    const CA_COMMON_NAME: &str = "Aavishield SSL Inspection CA";
 
     // Before the elevated block removes the app: clear the Privacy grants
     // while still running as the console user (see this function's doc).
@@ -153,6 +157,14 @@ fn uninstall_macos() {
     // explicitly instead of trusting $HOME.
     let state_dir = shell_quote(&crate::config::state_dir().to_string_lossy());
     let rm_state_dir = format!("/bin/rm -rf {state_dir}");
+    // Resolved here, the same way and for the same reason as state_dir
+    // just above: the shell string below runs as root via osascript's
+    // admin prompt, where `$HOME` would resolve to root's home, not the
+    // logged-in user's — whose keychain (see ca_trust.rs: the CA is
+    // installed into the login keychain, not System) this actually needs
+    // to reach.
+    let login_keychain = directories::BaseDirs::new().map(|d| d.home_dir().join("Library/Keychains/login.keychain-db"));
+    let login_keychain_quoted = login_keychain.as_deref().map(|p| shell_quote(&p.to_string_lossy()));
     let steps = [
         "/bin/launchctl bootout system /Library/LaunchDaemons/com.aavishield.catrust.plist 2>/dev/null",
         &format!("/bin/launchctl bootout gui/{}/com.aavishield.agent 2>/dev/null", unsafe { libc::getuid() }),
@@ -166,6 +178,20 @@ fn uninstall_macos() {
         // reusing (or re-consuming) a token instead of enrolling fresh.
         &rm_state_dir,
         "/usr/sbin/pkgutil --forget com.aavishield.agent 2>/dev/null",
+        // ca_trust.rs installs into the *login* keychain, not System — see
+        // its own doc comment for why (a System-keychain install needs a
+        // root prompt this hidden, LSUIElement agent could never actually
+        // get answered; the login keychain needs no elevation and covers
+        // exactly the scope this proxy needs, this user's own traffic).
+        // Deleted here from both keychains regardless: the login one for
+        // every real install, the System one only ever matters for a
+        // machine that carries a leftover cert from an earlier build that
+        // tried the System-keychain approach — harmless to also attempt
+        // and skip silently where there's nothing to remove.
+        &login_keychain_quoted
+            .as_deref()
+            .map(|kc| format!("/usr/bin/security delete-certificate -c {} {kc} 2>/dev/null", shell_quote(CA_COMMON_NAME)))
+            .unwrap_or_else(|| "true".to_string()),
         &format!(
             "/usr/bin/security delete-certificate -c {} /Library/Keychains/System.keychain 2>/dev/null",
             shell_quote(CA_COMMON_NAME)
