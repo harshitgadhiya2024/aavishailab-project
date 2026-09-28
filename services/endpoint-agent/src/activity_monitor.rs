@@ -74,9 +74,11 @@ mod input_permission {
 /// `Event::name`. That API asserts it is on the main queue — the tap
 /// callback runs on the listener's own thread — and macOS aborts:
 ///
-///     dispatch_assert_queue$V2.cold.1
-///     HIToolbox  TSMGetInputSourceProperty
-///     rdev::macos::listen::raw_callback
+/// ```text
+/// dispatch_assert_queue$V2.cold.1
+/// HIToolbox  TSMGetInputSourceProperty
+/// rdev::macos::listen::raw_callback
+/// ```
 ///
 /// EXC_BREAKPOINT, every keypress, caught only once Input Monitoring was
 /// granted on a real device — before that no key events reached the tap,
@@ -349,7 +351,6 @@ impl ActivityMonitor {
                              Keyboard, mouse and scroll counts will stay at zero"
                         );
                     }
-                    return;
                 }
 
                 #[cfg(not(target_os = "macos"))]

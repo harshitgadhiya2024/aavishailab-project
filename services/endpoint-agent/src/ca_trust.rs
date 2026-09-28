@@ -13,7 +13,6 @@
 //! story and are follow-up work, not part of this pass.
 
 use crate::http_client::AgentClient;
-use serde::Deserialize;
 
 /// Just the one field this module needs from `/internal/agent/mitm-config`
 /// — a small, deliberate duplication of `mitm.rs`'s own (private) response
@@ -21,7 +20,13 @@ use serde::Deserialize;
 /// it. This module only ever asks "does the org's policy want inspection
 /// at all", never the bypass list `mitm.rs` itself owns and refreshes on
 /// its own loop.
-#[derive(Deserialize, Default)]
+///
+/// `#[cfg(target_os = "macos")]`, matching its one call site: the non-macOS
+/// `install_if_needed` below never reaches it, so on Linux/Windows CI this
+/// would otherwise be a real, if harmless, dead-code warning — caught by
+/// `cargo clippy -D warnings` failing every push while this was ungated.
+#[cfg(target_os = "macos")]
+#[derive(serde::Deserialize, Default)]
 struct MitmConfigResponse {
     #[serde(default)]
     enabled: bool,

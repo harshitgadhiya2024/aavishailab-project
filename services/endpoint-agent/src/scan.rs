@@ -88,7 +88,6 @@ pub fn upload_filename(content_disposition: Option<&str>, path: &str) -> String 
 /// still block — malware is a threat to the machine, sensitive data leaving
 /// is a thing to know about. Those are different decisions and only one of
 /// them was reversed.
-#[allow(clippy::too_many_arguments)]
 /// Fires `upload_verdict` in the background instead of making the actual
 /// upload wait for it — the caller relays the upload upstream immediately,
 /// on its own task, while this one runs to completion independently.
@@ -132,6 +131,7 @@ pub fn spawn_upload_verdict(
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn upload_verdict(
     client: &AgentClient,
     casb: &CASBControlCache,
