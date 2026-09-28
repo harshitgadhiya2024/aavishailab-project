@@ -416,10 +416,15 @@ func (h *AgentHandler) GetAppControl(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"applications": appControlMatchers(h.db, orgID, empID, teamID),
-		// The watcher sleeps this long between sweeps. Long enough not to
-		// matter on battery, short enough that a blocked app dies seconds
-		// after launch.
-		"poll_interval_sec": 15,
+		// The watcher sleeps this long between sweeps, and — since this
+		// endpoint has no cache in front of it, unlike /internal/agent/rules
+		// — refetches the rule list on the same cadence. 5s, not 15s: an
+		// app that was already running when an admin blocked it starts no
+		// new process for the agent's launch guard to notice, so this poll
+		// is what reaches it, and it was taking up to a minute. The agent's
+		// own MIN_INTERVAL floor matches this value; anything lower would be
+		// clamped back up on the agent side.
+		"poll_interval_sec": 5,
 	})
 }
 
