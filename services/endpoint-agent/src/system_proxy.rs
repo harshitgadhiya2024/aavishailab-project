@@ -17,19 +17,35 @@
 //! kill the agent.
 
 use crate::enforcement::Mode;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 #[cfg(unix)]
 use tokio::process::Command;
 
 const LOCAL_PORT: u16 = crate::config::LOCAL_PORT;
 
+/// How often the watchdog makes sure the proxy is still set everywhere.
+const WATCH_INTERVAL: Duration = Duration::from_secs(10);
+
+/// True while the agent has deliberately taken the proxy down — Disconnect,
+/// uninstall, outside working hours, or its own listener dying — and until
+/// it deliberately puts it back. The watchdog only ever restores what the
+/// agent last chose, never overrides one of those decisions. Starts true:
+/// nothing is armed until startup (or a mode change) actually applies it.
+static HELD_OFF: AtomicBool = AtomicBool::new(true);
+
+/// Serialises apply/clear with the watchdog, so a watchdog pass that
+/// decided "missing, re-apply" can't land just after a clear.
+static CHANGE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// Whether *any* network service still points at this agent — the
+/// question for taking the proxy down.
 pub async fn system_proxy_active() -> bool {
     #[cfg(target_os = "macos")]
     {
         for svc in macos_network_services().await {
-            if let Ok(out) = run(&["networksetup", "-getwebproxy", &svc]).await {
-                if out.contains("Enabled: Yes") && out.contains(&LOCAL_PORT.to_string()) {
-                    return true;
-                }
+            if macos_service_points_here(&svc).await.0 {
+                return true;
             }
         }
         false
@@ -47,10 +63,62 @@ pub async fn system_proxy_active() -> bool {
     }
 }
 
+/// Whether *every* network service points at this agent, for both HTTP and
+/// HTTPS — the question for keeping the proxy up.
+///
+/// "Any" used to be the only check, in both directions. On macOS the proxy
+/// is a per-network-service setting (Wi-Fi, each Ethernet/USB-LAN adapter,
+/// iPhone USB, Bluetooth PAN, Thunderbolt Bridge…), and a service that
+/// didn't exist at install time — the first time a phone is tethered over
+/// USB, a new dock's Ethernet — was never configured. Because Wi-Fi still
+/// had the proxy, the agent considered it applied and never looked again,
+/// so everything over the new connection went out unfiltered. Switching
+/// Wi-Fi networks (office, home, a phone's hotspot) never had this problem:
+/// that is one service, whatever network it joins.
+///
+/// Returns the services that are missing it, empty when fully applied.
+pub async fn services_missing_proxy() -> Vec<String> {
+    #[cfg(target_os = "macos")]
+    {
+        let mut missing = Vec::new();
+        for svc in macos_network_services().await {
+            if macos_service_points_here(&svc).await != (true, true) {
+                missing.push(svc);
+            }
+        }
+        missing
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        if system_proxy_active().await { Vec::new() } else { vec!["system".to_string()] }
+    }
+}
+
+/// Keeps the proxy where the agent last put it. Runs for the life of the
+/// agent; see `services_missing_proxy` for what it catches. Does nothing
+/// while the proxy is deliberately down (`HELD_OFF`).
+pub async fn watchdog() {
+    loop {
+        tokio::time::sleep(WATCH_INTERVAL).await;
+        let _guard = CHANGE.lock().await;
+        if HELD_OFF.load(Ordering::SeqCst) {
+            continue;
+        }
+        let missing = services_missing_proxy().await;
+        if missing.is_empty() {
+            continue;
+        }
+        tracing::warn!(?missing, "system proxy missing on a network connection — re-applying");
+        apply_locked().await;
+    }
+}
+
 /// Points the OS back at a direct connection. This is what makes "paused"
 /// safe on a personal laptop: leaving the proxy armed while the agent
 /// stops serving would break every request on the machine.
 pub async fn clear_system_proxy() -> bool {
+    let _guard = CHANGE.lock().await;
+    HELD_OFF.store(true, Ordering::SeqCst);
     #[cfg(target_os = "macos")]
     {
         let mut ok = false;
@@ -73,6 +141,12 @@ pub async fn clear_system_proxy() -> bool {
 
 /// Points the OS at this agent. Returns true if it looks applied.
 pub async fn apply_system_proxy() -> bool {
+    let _guard = CHANGE.lock().await;
+    apply_locked().await
+}
+
+async fn apply_locked() -> bool {
+    HELD_OFF.store(false, Ordering::SeqCst);
     let port = LOCAL_PORT.to_string();
     #[cfg(target_os = "macos")]
     {
@@ -123,7 +197,7 @@ pub async fn apply_enforcement_transition(mode: &Mode) {
         return;
     }
     tracing::info!("enforcement active");
-    if !system_proxy_active().await {
+    if !services_missing_proxy().await.is_empty() {
         apply_system_proxy().await;
     }
 }
@@ -134,13 +208,63 @@ async fn run(argv: &[&str]) -> std::io::Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
+/// Every network service, including ones currently disabled (listed with a
+/// leading `*`): a disabled adapter the person switches on later is exactly
+/// the connection that would otherwise come up without the proxy.
 #[cfg(target_os = "macos")]
 async fn macos_network_services() -> Vec<String> {
     let out = match run(&["networksetup", "-listallnetworkservices"]).await {
         Ok(o) => o,
         Err(_) => return Vec::new(),
     };
-    out.lines().skip(1).filter(|l| !l.starts_with('*')).map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect()
+    parse_network_services(&out)
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn parse_network_services(out: &str) -> Vec<String> {
+    out.lines()
+        .skip(1) // "An asterisk (*) denotes that a network service is disabled."
+        .map(|l| l.trim().trim_start_matches('*').trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect()
+}
+
+/// (HTTP proxy points here, HTTPS proxy points here) for one service.
+#[cfg(target_os = "macos")]
+async fn macos_service_points_here(svc: &str) -> (bool, bool) {
+    let http = run(&["networksetup", "-getwebproxy", svc]).await.map(|o| points_here(&o)).unwrap_or(false);
+    let https = run(&["networksetup", "-getsecurewebproxy", svc]).await.map(|o| points_here(&o)).unwrap_or(false);
+    (http, https)
+}
+
+/// Parses `networksetup -get[secure]webproxy` output.
+#[cfg(any(target_os = "macos", test))]
+fn points_here(out: &str) -> bool {
+    let field = |name: &str| {
+        out.lines().find_map(|l| l.strip_prefix(name).map(|v| v.trim().to_string())).unwrap_or_default()
+    };
+    field("Enabled:") == "Yes" && field("Server:") == "127.0.0.1" && field("Port:") == LOCAL_PORT.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_disabled_services_are_included() {
+        let out = "An asterisk (*) denotes that a network service is disabled.\nWi-Fi\n*iPhone USB\nThunderbolt Bridge\n";
+        assert_eq!(parse_network_services(out), vec!["Wi-Fi", "iPhone USB", "Thunderbolt Bridge"]);
+    }
+
+    #[test]
+    fn test_points_here_needs_enabled_host_and_port() {
+        let on = "Enabled: Yes\nServer: 127.0.0.1\nPort: 6118\nAuthenticated Proxy Enabled: 0\n";
+        assert!(points_here(on));
+        assert!(!points_here(&on.replace("Enabled: Yes", "Enabled: No")));
+        assert!(!points_here(&on.replace("127.0.0.1", "10.0.0.5")));
+        assert!(!points_here(&on.replace("6118", "61180")));
+        assert!(!points_here("Enabled: No\nServer: \nPort: 0\n"));
+    }
 }
 
 #[cfg(target_os = "windows")]

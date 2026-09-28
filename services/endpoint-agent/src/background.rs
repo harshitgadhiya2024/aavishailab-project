@@ -353,6 +353,10 @@ async fn run_full_agent(config: Config, ui: UiState, client_slot: ClientSlot, mu
     if gate.intercepts() {
         crate::system_proxy::apply_system_proxy().await;
     }
+    // Keeps it on every network connection from here on — one plugged in
+    // later, or one where it was switched off — without ever undoing a
+    // deliberate Disconnect, uninstall or working-hours stand-down.
+    tokio::spawn(crate::system_proxy::watchdog());
 
     // Disconnect is handled on its own task: it has to run concurrently
     // with the proxy below (which occupies this async fn for the rest of
