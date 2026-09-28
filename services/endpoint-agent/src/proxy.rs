@@ -128,8 +128,9 @@ async fn handle_connect(mut req: Request<Incoming>, deps: Arc<Deps>) -> Response
         // browser treats it as "the tunnel itself failed", not content.
         // The only way to show our own block page for an HTTPS site is to
         // terminate TLS and serve it as that site's "response", which
-        // needs SSL Inspection on and a leaf for this host.
-        let can_show_block_page = deps.gate.intercepts() && deps.mitm.should_intercept(&host).await;
+        // needs SSL Inspection on and a leaf for this host — but not for the
+        // host to be off the bypass list; see `can_serve_block_page`.
+        let can_show_block_page = deps.gate.intercepts() && deps.mitm.can_serve_block_page().await;
         let leaf = if can_show_block_page { deps.mitm.get_leaf(&host).await } else { None };
 
         if let Some(leaf) = leaf {

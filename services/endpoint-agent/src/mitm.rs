@@ -106,6 +106,26 @@ impl MitmEngine {
         }
     }
 
+    /// Whether a *blocked* HTTPS host can be answered with the block page.
+    ///
+    /// Same conditions as `should_intercept`, minus the bypass list. The
+    /// bypass list exists so that real traffic to banking, healthcare and
+    /// government sites is never decrypted — but a blocked host has no real
+    /// traffic: nothing is forwarded to it, the browser's request never
+    /// leaves this machine, and the only thing sent back is our own page. So
+    /// honouring the list here protects nothing, and it was the reason every
+    /// blocked bank or government site showed the browser's own "tunnel
+    /// failed" error (ERR_TUNNEL_CONNECTION_FAILED, NS_ERROR_PROXY_FORBIDDEN)
+    /// instead of the company's page — found testing Chrome, Edge, Brave,
+    /// Firefox and WebKit against every domain in those categories.
+    ///
+    /// SSL Inspection being switched off for the org still means no: then
+    /// the CA may not be trusted, and a leaf from it would be a certificate
+    /// error rather than a page.
+    pub async fn can_serve_block_page(&self) -> bool {
+        !self.client.revoked.is_set() && self.state.read().await.enabled
+    }
+
     /// Terminating TLS on a personal laptop outside working hours is the
     /// single most intrusive thing this agent does, so `gate.intercepts()`
     /// is checked first by the caller (see proxy.rs).
@@ -217,6 +237,24 @@ mod tests {
         }
         assert!(!e.should_intercept("bank.com").await);
         assert!(!e.should_intercept("www.bank.com").await); // www-stripped before lookup
+    }
+
+    /// A bypassed (e.g. banking) host is never inspected, but when it is
+    /// blocked it still gets the block page — and only while SSL Inspection
+    /// is actually on and the device's credentials are still accepted.
+    #[tokio::test]
+    async fn test_block_page_ignores_bypass_but_not_disabled_or_revoked() {
+        let e = engine(true);
+        assert!(!e.can_serve_block_page().await, "SSL Inspection off: no page");
+        {
+            let mut s = e.state.write().await;
+            s.enabled = true;
+            s.bypass.insert("hdfcbank.com".to_string());
+        }
+        assert!(!e.should_intercept("hdfcbank.com").await);
+        assert!(e.can_serve_block_page().await);
+        e.client.revoked.set();
+        assert!(!e.can_serve_block_page().await, "revoked device: no page");
     }
 
     #[tokio::test]

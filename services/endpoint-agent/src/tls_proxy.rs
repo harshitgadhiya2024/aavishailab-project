@@ -25,7 +25,7 @@ use hyper_util::rt::TokioIo;
 use rustls_pemfile as pemfile;
 use std::io::Cursor;
 use std::sync::Arc;
-use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio_rustls::rustls;
@@ -68,6 +68,15 @@ where
     let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(cfg));
     let mut tls = acceptor.accept(io).await?;
 
+    // Read the browser's request before answering it. This used to write
+    // the page straight after the handshake and close: with the request
+    // still unread in the socket, closing makes the kernel send RST rather
+    // than FIN, and a browser that sees the RST before it has read the
+    // response shows ERR_SOCKET_NOT_CONNECTED instead of the page — a
+    // race, so it only showed up under load (about 1 in 200 navigations
+    // with five browsers opening blocked sites at once).
+    let _ = tokio::time::timeout(BLOCK_PAGE_READ_TIMEOUT, read_request_head(&mut tls)).await;
+
     let html = block_page_html(deps, host, reason, category);
     let response = format!(
         "HTTP/1.1 403 Forbidden\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
@@ -76,7 +85,35 @@ where
     );
     tls.write_all(response.as_bytes()).await?;
     tls.shutdown().await?;
+
+    // Same reason, after the fact: let the browser close its side first
+    // (or give up after a moment), so nothing it sends late turns our
+    // close into a reset.
+    let mut sink = [0u8; 1024];
+    let _ = tokio::time::timeout(BLOCK_PAGE_READ_TIMEOUT, async {
+        while matches!(tls.read(&mut sink).await, Ok(n) if n > 0) {}
+    })
+    .await;
     Ok(())
+}
+
+const BLOCK_PAGE_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// Reads up to the end of an HTTP/1.1 request head (or 16 KiB, or EOF).
+async fn read_request_head<T: AsyncRead + Unpin>(io: &mut T) {
+    let mut buf = Vec::with_capacity(2048);
+    let mut chunk = [0u8; 2048];
+    while buf.len() < 16 * 1024 {
+        match io.read(&mut chunk).await {
+            Ok(0) | Err(_) => return,
+            Ok(n) => {
+                buf.extend_from_slice(&chunk[..n]);
+                if buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                    return;
+                }
+            }
+        }
+    }
 }
 
 /// Opens a blind (unintercepted) tunnel to `host:port` and relays bytes
