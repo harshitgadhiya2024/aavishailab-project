@@ -1924,6 +1924,36 @@ func (h *AgentHandler) GetDevice(c *gin.Context) {
 	})
 }
 
+// revokeAgentToken invalidates a device's ongoing credential immediately —
+// both the database row (revoked=true) and, since agentTokenCacheTTL means
+// authAgent can otherwise keep answering from a cached verdict for up to a
+// minute, the Redis entry that cache would serve from. The lookup happens
+// before the update so the token's hash (needed for the cache key) is
+// still available once it's marked revoked.
+//
+// Shared by RevokeDevice (an admin pulling any device from the dashboard)
+// and AuthorizeUninstall (the connector's own Uninstall flow) so the two
+// can never again drift into one invalidating the credential and the
+// other not — which is exactly what had happened: uninstalling only ever
+// set the device's status to "offline" and never touched the token at
+// all, so its credential stayed valid forever. Verified live: a fresh
+// device's token kept authenticating successfully after simulating that
+// exact "uninstalled" state, and every heartbeat it sent kept the old
+// org's dashboard showing it online — meaning a config.json that survived
+// an uninstall (or was ever copied to another machine) would silently
+// keep operating as that device, under that org, under that employee,
+// with nothing on either side to notice.
+func revokeAgentToken(db *gorm.DB, rdb *redis.Client, ctx context.Context, deviceID uuid.UUID) {
+	var tok models.AgentToken
+	hasToken := db.Where("device_id = ? AND revoked = false", deviceID).First(&tok).Error == nil
+
+	db.Model(&models.AgentToken{}).Where("device_id = ?", deviceID).Update("revoked", true)
+
+	if hasToken && rdb != nil {
+		rdb.Del(ctx, agentTokenCacheKey(deviceID.String(), tok.TokenHash))
+	}
+}
+
 // RevokeDevice handles DELETE /devices/:id
 // Revokes the device's agent token so it can no longer report events.
 func (h *AgentHandler) RevokeDevice(c *gin.Context) {
@@ -1936,19 +1966,8 @@ func (h *AgentHandler) RevokeDevice(c *gin.Context) {
 		return
 	}
 
-	// Look up the live token hash before revoking so the Redis cache entry
-	// (agentTokenCacheTTL, see authAgent) can be evicted immediately — without
-	// this, a stolen/compromised device stays authenticated against the cache
-	// for up to a minute after an admin revokes it.
-	var tok models.AgentToken
-	hasToken := h.db.Where("device_id = ? AND revoked = false", devID).First(&tok).Error == nil
-
-	h.db.Model(&models.AgentToken{}).Where("device_id = ?", devID).Update("revoked", true)
+	revokeAgentToken(h.db, h.rdb, c.Request.Context(), device.ID)
 	h.db.Model(&device).Update("status", "revoked")
-
-	if hasToken && h.rdb != nil {
-		h.rdb.Del(c.Request.Context(), agentTokenCacheKey(devID, tok.TokenHash))
-	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Device revoked. The agent will stop reporting on next heartbeat."})
 }

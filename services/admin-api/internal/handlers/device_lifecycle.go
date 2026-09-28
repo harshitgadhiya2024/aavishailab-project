@@ -180,6 +180,17 @@ func (h *AgentHandler) AuthorizeUninstall(c *gin.Context) {
 
 	recordDeviceLifecycleEvent(h.db, ctx, models.EventTypeDeviceUninstall,
 		"Connector uninstalled (approved by "+approvedBy+")")
+	// The credential dies here, not just the status. Before this, nothing
+	// ever invalidated the device's agent token on uninstall — only its
+	// display status flipped to "offline" — so a config.json that survived
+	// the uninstall (uninstall.rs/manual-uninstall.sh both remove it, but
+	// nothing stops a copy elsewhere, or the file surviving because
+	// neither ever ran) kept authenticating forever. Status stays
+	// "offline" rather than "revoked": this is an ordinary, legitimate
+	// removal, not a security incident, and the dashboard's own "revoked"
+	// label is reserved for RevokeDevice's admin-initiated pull — but the
+	// credential itself needs killing exactly the same way either time.
+	revokeAgentToken(h.db, h.rdb, c.Request.Context(), deviceID)
 	h.db.Model(&models.Device{}).Where("id = ?", deviceID).Update("status", "offline")
 
 	writeAudit(h.db, c, &orgID, "device.uninstall_authorized", "device", &deviceID,
