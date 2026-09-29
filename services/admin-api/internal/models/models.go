@@ -275,8 +275,13 @@ type Device struct {
 	OSVersion    string     `json:"os_version"`
 	AgentVersion string     `json:"agent_version"`
 	MACAddress   string     `json:"mac_address"`
-	IPAddress    string     `json:"ip_address"`
-	Status       string     `gorm:"default:'offline'" json:"status"`
+	// MachineID is a hash of the machine's hardware identity, sent by the
+	// agent at enrollment. It is how a reinstall on the same laptop is
+	// recognised as the same device even when it is enrolled for someone
+	// else, or the hostname is one many machines share.
+	MachineID string `gorm:"index" json:"-"`
+	IPAddress string `json:"ip_address"`
+	Status    string `gorm:"default:'offline'" json:"status"`
 	// company | personal. Personal (BYOD) devices are the reason working-hours
 	// schedules exist; see models/enforcement.go. A company-owned device is
 	// never paused, whatever schedule it inherits — see deviceEnforcement.

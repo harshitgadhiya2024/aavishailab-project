@@ -402,6 +402,14 @@ func (h *InventoryHandler) ListInstalled(c *gin.Context) {
 	}
 
 	q := h.db.Model(&models.InstalledApplication{}).Where("org_id = ?", orgID)
+	// Only software on devices that still exist and still belong to a
+	// current employee. A device left behind by a removed employee (the
+	// same laptop re-enrolled for someone new) listed every app a second
+	// time, and a control set on that stale copy never reached anyone.
+	q = q.Where(`device_id IN (
+		SELECT d.id FROM devices d
+		LEFT JOIN employees e ON e.id = d.employee_id
+		WHERE d.org_id = ? AND d.deleted_at IS NULL AND (d.employee_id IS NULL OR e.deleted_at IS NULL))`, orgID)
 	q = applyEmployeeTeamScope(h.db, c, q, "employee_id")
 
 	if emp := c.Query("employee_id"); emp != "" {

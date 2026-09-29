@@ -11,6 +11,11 @@ struct EnrollRequest<'a> {
     hostname: &'a str,
     os_type: &'a str,
     agent_version: &'a str,
+    /// A stable, hashed identifier of this physical machine — see
+    /// `machine_id`. Lets the server recognise a reinstall on the same
+    /// laptop as the same device, whoever it is enrolled for.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    machine_id: String,
 }
 
 #[derive(Deserialize)]
@@ -80,7 +85,13 @@ pub async fn enroll_with_token(token: &str, admin_url: &str, portal_url: &str) -
     let admin_url = admin_url.trim_end_matches('/').to_string();
     let portal_url = portal_url.trim_end_matches('/').to_string();
     let hostname = hostname_string();
-    let body = EnrollRequest { token, hostname: &hostname, os_type: os_type_str(), agent_version: crate::config::AGENT_VERSION };
+    let body = EnrollRequest {
+        token,
+        hostname: &hostname,
+        os_type: os_type_str(),
+        agent_version: crate::config::AGENT_VERSION,
+        machine_id: machine_id().unwrap_or_default(),
+    };
 
     let http = reqwest::Client::builder()
         .no_proxy()
@@ -155,6 +166,45 @@ fn hostname_impl() -> Option<String> {
     std::env::var("COMPUTERNAME").ok()
 }
 
+/// This machine's identity, independent of its hostname (many Macs are all
+/// "MacBook-Pro.local") and of who it is enrolled for: the hardware UUID on
+/// macOS, MachineGuid on Windows, /etc/machine-id on Linux. Sent hashed —
+/// the server only ever needs to compare it, never to know it.
+pub fn machine_id() -> Option<String> {
+    use sha2::{Digest, Sha256};
+    let raw = raw_machine_id()?;
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    Some(hex::encode(Sha256::digest(format!("aavishield-machine:{raw}").as_bytes())))
+}
+
+#[cfg(target_os = "macos")]
+fn raw_machine_id() -> Option<String> {
+    let out = std::process::Command::new("/usr/sbin/ioreg").args(["-rd1", "-c", "IOPlatformExpertDevice"]).output().ok()?;
+    parse_ioreg_uuid(&String::from_utf8_lossy(&out.stdout))
+}
+
+#[cfg(target_os = "windows")]
+fn raw_machine_id() -> Option<String> {
+    let key = winreg::RegKey::predef(winreg::enums::HKEY_LOCAL_MACHINE)
+        .open_subkey_with_flags("SOFTWARE\\Microsoft\\Cryptography", winreg::enums::KEY_READ | winreg::enums::KEY_WOW64_64KEY)
+        .ok()?;
+    key.get_value::<String, _>("MachineGuid").ok()
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn raw_machine_id() -> Option<String> {
+    ["/etc/machine-id", "/var/lib/dbus/machine-id"].iter().find_map(|p| std::fs::read_to_string(p).ok())
+}
+
+/// `"IOPlatformUUID" = "9A1B…"` out of `ioreg -rd1 -c IOPlatformExpertDevice`.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn parse_ioreg_uuid(ioreg: &str) -> Option<String> {
+    ioreg.lines().find(|l| l.contains("\"IOPlatformUUID\"")).and_then(|l| l.split('"').nth(3)).map(str::to_string)
+}
+
 fn os_type_str() -> &'static str {
     if cfg!(target_os = "windows") {
         "windows"
@@ -162,5 +212,26 @@ fn os_type_str() -> &'static str {
         "darwin"
     } else {
         "linux"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ioreg_uuid_is_parsed() {
+        let out = "+-o J314sAP  <class IOPlatformExpertDevice>\n    {\n      \"IOPlatformSerialNumber\" = \"C02XYZ\"\n      \"IOPlatformUUID\" = \"9A1B2C3D-0000-1111-2222-333344445555\"\n    }";
+        assert_eq!(parse_ioreg_uuid(out).as_deref(), Some("9A1B2C3D-0000-1111-2222-333344445555"));
+        assert_eq!(parse_ioreg_uuid("nothing here"), None);
+    }
+
+    #[test]
+    fn machine_id_is_stable_and_hashed() {
+        if let Some(id) = machine_id() {
+            assert_eq!(Some(id.clone()), machine_id(), "same machine, same id");
+            assert_eq!(id.len(), 64);
+            assert!(!id.contains('-'), "the raw hardware UUID is never sent");
+        }
     }
 }

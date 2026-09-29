@@ -180,6 +180,7 @@ func (h *AgentHandler) Enroll(c *gin.Context) {
 		OSType       string `json:"os_type"`
 		OSVersion    string `json:"os_version"`
 		MACAddress   string `json:"mac_address"`
+		MachineID    string `json:"machine_id"`
 		AgentVersion string `json:"agent_version"`
 		IPAddress    string `json:"ip_address"`
 	}
@@ -203,18 +204,32 @@ func (h *AgentHandler) Enroll(c *gin.Context) {
 	// Re-enrolling the same physical machine (re-run installer, reinstall,
 	// fresh enrollment token) must reuse its existing Device row instead of
 	// inserting a new one, otherwise the same laptop shows up twice in the
-	// dashboard/portal. Match by MAC address when available (most reliable
-	// machine fingerprint); fall back to hostname+employee when the agent
-	// didn't report one.
+	// dashboard/portal — twice in the device list, every app twice in
+	// Application Control, and rules made on the stale copy never reaching
+	// the machine. The machine's hardware identity decides, whoever the
+	// device is now enrolled for; MAC address, then hostname+employee, are
+	// the fallbacks for agents that don't send one and for devices enrolled
+	// before they did.
 	now := time.Now()
 	var device models.Device
-	lookup := h.db.Where("org_id = ?", enrollToken.OrgID)
-	if req.MACAddress != "" {
-		lookup = lookup.Where("mac_address = ?", req.MACAddress)
-	} else {
-		lookup = lookup.Where("mac_address = '' AND hostname = ? AND employee_id = ?", req.Hostname, enrollToken.EmployeeID)
+	machineID := strings.TrimSpace(req.MachineID)
+	isNewDevice := true
+	if machineID != "" {
+		isNewDevice = h.db.Where("org_id = ? AND machine_id = ?", enrollToken.OrgID, machineID).
+			Order("last_seen_at DESC NULLS LAST").First(&device).Error != nil
 	}
-	isNewDevice := lookup.First(&device).Error != nil
+	if isNewDevice {
+		lookup := h.db.Where("org_id = ?", enrollToken.OrgID)
+		if req.MACAddress != "" {
+			lookup = lookup.Where("mac_address = ?", req.MACAddress)
+		} else {
+			lookup = lookup.Where("mac_address = '' AND hostname = ? AND employee_id = ?", req.Hostname, enrollToken.EmployeeID)
+		}
+		isNewDevice = lookup.First(&device).Error != nil
+	}
+	if machineID != "" {
+		device.MachineID = machineID
+	}
 
 	// Re-enrolling is allowed. Protection is now accountability rather than
 	// prevention: an employee may disconnect and reconnect their own machine,
@@ -245,6 +260,10 @@ func (h *AgentHandler) Enroll(c *gin.Context) {
 		}
 		// Invalidate the previous install's agent key — it's being replaced.
 		h.db.Where("device_id = ?", device.ID).Delete(&models.AgentToken{})
+		// The same machine may now belong to someone else; its software goes
+		// with it rather than staying listed under the previous employee.
+		h.db.Model(&models.InstalledApplication{}).Where("device_id = ?", device.ID).
+			Update("employee_id", enrollToken.EmployeeID)
 	}
 
 	rawKey := make([]byte, 32)
