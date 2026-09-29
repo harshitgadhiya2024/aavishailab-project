@@ -128,6 +128,7 @@ pub fn inspect(meta: &RequestMeta, body: &[u8]) -> Inspection {
 
     let ct = mime_of(&meta.content_type);
     let file = find_file(&ct, &meta.content_type, &meta.filename_hint, body)
+        .or_else(|| raw_upload(&ct, &path, body).then(String::new))
         .map(|name| if name.is_empty() { filename_from_path(&meta.path).unwrap_or_default() } else { name });
     let op = known_operation(&host, &path).or_else(|| outlook_send(&host, &path, body));
 
@@ -448,6 +449,49 @@ fn find_file(ct: &str, raw_ct: &str, hint: &str, body: &[u8]) -> Option<String> 
         return Some(name.to_string());
     }
     None
+}
+
+/// Path segments that name a file-upload endpoint.
+const UPLOAD_SEGMENTS: &[&str] = &[
+    "upload", "uploads", "_upload", "attachment", "attachments", "createattachment",
+    "createattachmentfromlocalfile", "addattachment", "files.upload", "fileupload",
+];
+
+/// A file's raw bytes sent to an upload endpoint with a content type that
+/// doesn't say so. Google's resumable uploads (Gmail and Drive
+/// attachments) send the bytes of a .txt or .csv as
+/// "application/x-www-form-urlencoded"; a PDF or DOCX is still recognised
+/// by its magic bytes, but plain text was taken for a form and skipped.
+/// Structured bodies (JSON, a real key=value form) are still not files.
+fn raw_upload(ct: &str, path: &str, body: &[u8]) -> bool {
+    if body.is_empty() || ct.contains("json") || ct.starts_with("multipart/") {
+        return false;
+    }
+    let path_only = path.split(['?', '#']).next().unwrap_or("");
+    let is_upload_endpoint = path_only.split('/').any(|seg| {
+        let seg = seg.to_ascii_lowercase();
+        UPLOAD_SEGMENTS.contains(&seg.as_str())
+    });
+    if !is_upload_endpoint {
+        return false;
+    }
+    let head = trim_ascii_start(&body[..body.len().min(4096)]);
+    if head.starts_with(b"{") || head.starts_with(b"[") || head.starts_with(b"<") {
+        return false;
+    }
+    !looks_like_form(head)
+}
+
+/// "a=1&b=two" — every piece a short key without spaces.
+fn looks_like_form(head: &[u8]) -> bool {
+    let text = String::from_utf8_lossy(head);
+    let first_line = text.lines().next().unwrap_or("");
+    !first_line.is_empty()
+        && first_line.contains('=')
+        && first_line.split('&').all(|kv| {
+            let key = kv.split('=').next().unwrap_or("");
+            !key.is_empty() && key.len() <= 64 && !key.contains(' ') && kv.contains('=')
+        })
 }
 
 /// The document name a storage API carries in its URL, when the body
@@ -1137,6 +1181,21 @@ mod tests {
         assert_eq!(filename_from_path("/upload/drive/v3/files?uploadType=resumable"), None);
         // A '%' before multi-byte UTF-8 must not panic.
         assert_eq!(filename_from_path("/a/%é/%/r%C3%A9sum%C3%A9.pdf"), Some("résumé.pdf".into()));
+    }
+
+    /// Gmail/Drive resumable uploads send a text file's bytes labelled as
+    /// a form body.
+    #[test]
+    fn raw_text_sent_to_an_upload_endpoint_is_a_file() {
+        let txt = b"Vendor payment details\nCorporate card: 4111 1111 1111 1111\n";
+        let r = inspect(&meta("mail.google.com", "/upload/?upload_id=abc&upload_protocol=resumable", "application/x-www-form-urlencoded;charset=utf-8"), txt);
+        assert!(r.relevant, "{:?}", r.skip_reason);
+        assert_eq!(r.kind, Some(Kind::File));
+        // A real form posted to an upload path, and JSON, are not files.
+        assert!(!inspect(&meta("x.example.com", "/upload", "application/x-www-form-urlencoded"), b"name=a&size=12&type=text").relevant);
+        assert!(!inspect(&meta("x.example.com", "/upload", "application/json"), br#"{"name":"a"}"#).relevant);
+        // Text posted to a non-upload path is still not a file.
+        assert!(!inspect(&meta("x.example.com", "/api/sync", "text/plain"), txt).relevant);
     }
 
     #[test]

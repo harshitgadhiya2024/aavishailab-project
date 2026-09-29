@@ -345,8 +345,16 @@ async fn scan_upload(State(state): State<SharedState>, headers: HeaderMap, mut f
         cfg: &state.config,
         ai: state.ai.as_deref(),
     };
+    let bytes = (*body).as_ref().len();
     let outcome = pipeline::scan_upload(&meta, body, &scanner, &state.limits).await;
 
+    // One line per decision — what was seen and why it was or wasn't
+    // recorded — so a "my upload wasn't logged" report can be answered from
+    // the logs. Never the content, and never the query (it carries tokens).
+    // Background telemetry, the bulk of all traffic, stays at debug.
+    let path = meta.path.split('?').next().unwrap_or("");
+    let ct = inspect::mime_of(&meta.content_type);
+    let insp = &outcome.inspection;
     if let Some(v) = &outcome.verdict {
         state.metrics.scans_total.fetch_add(1, Ordering::Relaxed);
         match v.action.as_str() {
@@ -354,8 +362,14 @@ async fn scan_upload(State(state): State<SharedState>, headers: HeaderMap, mut f
             "alert" => state.metrics.alerted_total.fetch_add(1, Ordering::Relaxed),
             _ => 0,
         };
+        tracing::info!(org = %req.org_id, host = %meta.host, path, ct = %ct, bytes, source = %insp.request_source,
+            operation = %insp.operation, file = %insp.filename, matched = v.matched, band = %v.band,
+            detectors = ?v.detectors, "dlp scanned");
+    } else if insp.skip_reason == "background_traffic" {
+        tracing::debug!(host = %meta.host, path, "dlp skipped: background traffic");
     } else {
-        tracing::debug!(host = %meta.host, path = %meta.path, reason = %outcome.inspection.skip_reason, "not a user action — not scanned");
+        tracing::info!(org = %req.org_id, host = %meta.host, path, method = %meta.method, ct = %ct, bytes,
+            reason = %insp.skip_reason, "dlp skipped");
     }
     (StatusCode::OK, Json(outcome)).into_response()
 }
