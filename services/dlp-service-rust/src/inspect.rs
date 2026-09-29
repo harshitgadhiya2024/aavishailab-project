@@ -123,7 +123,7 @@ pub fn inspect(meta: &RequestMeta, body: &[u8]) -> Inspection {
 
     let ct = mime_of(&meta.content_type);
     let file = find_file(&ct, &meta.content_type, &meta.filename_hint, body);
-    let op = known_operation(&host, &path);
+    let op = known_operation(&host, &path).or_else(|| outlook_send(&host, &path, body));
 
     if let Some(name) = file {
         out.relevant = true;
@@ -274,6 +274,23 @@ pub fn known_operation(host: &str, path: &str) -> Option<&'static str> {
                 && (r.paths.is_empty() || r.paths.iter().any(|p| path.contains(p)))
         })
         .map(|r| r.label)
+}
+
+/// Outlook on the web sends mail with the same service.svc action it uses to
+/// autosave a draft (CreateItem); only the message disposition in the body
+/// tells a send from a save. A saved draft is not an email sent.
+fn outlook_send(host: &str, path: &str, body: &[u8]) -> Option<&'static str> {
+    let is_outlook = ["outlook.office.com", "outlook.office365.com", "outlook.live.com", "outlook.cloud.microsoft"]
+        .iter()
+        .any(|h| host == *h || host.ends_with(&format!(".{h}")));
+    if !is_outlook || !path.contains("service.svc") {
+        return None;
+    }
+    if !(path.contains("action=createitem") || path.contains("action=senditem") || path.contains("action=updateitem")) {
+        return None;
+    }
+    let head = String::from_utf8_lossy(&body[..body.len().min(256 * 1024)]).to_ascii_lowercase();
+    (head.contains("sendandsavecopy") || head.contains("\"sendonly\"")).then_some(OP_EMAIL_SENT)
 }
 
 // ─── Forms ──────────────────────────────────────────────────────────────────
@@ -968,6 +985,17 @@ mod tests {
         assert!(!r.user_text.contains("abcdefabcdef"));
         m.path = "/login".to_string();
         assert!(!inspect(&m, b"user=a&password=hunter2hunter2").relevant);
+    }
+
+    #[test]
+    fn outlook_send_is_an_email_but_a_draft_save_is_not() {
+        let path = "/owa/service.svc?action=CreateItem&app=Mail&n=42";
+        let send = br#"{"__type":"CreateItemJsonRequest:#Exchange","Body":{"MessageDisposition":"SendAndSaveCopy","Items":[{"Subject":"Q3","Body":{"Value":"card 4111 1111 1111 1111"}}]}}"#;
+        let r = inspect(&meta("outlook.cloud.microsoft", path, "application/json; charset=utf-8"), send);
+        assert_eq!(r.operation, OP_EMAIL_SENT);
+        assert!(r.user_text.contains("4111 1111 1111 1111"));
+        let draft = br#"{"Body":{"MessageDisposition":"SaveOnly","Items":[{"Body":{"Value":"card 4111 1111 1111 1111"}}]}}"#;
+        assert!(!inspect(&meta("outlook.cloud.microsoft", path, "application/json"), draft).relevant);
     }
 
     #[test]
