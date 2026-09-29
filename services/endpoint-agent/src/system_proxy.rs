@@ -147,6 +147,20 @@ pub async fn apply_system_proxy() -> bool {
 
 async fn apply_locked() -> bool {
     HELD_OFF.store(false, Ordering::SeqCst);
+    // Turning protection on from fully off (install, login, working hours
+    // starting, a Disconnect ended): browsers open right now hold
+    // connections that will never go through the proxy. See
+    // app_control::close_running_browsers. Not when only a newly added
+    // network connection is being covered — everything else already was.
+    let was_off = !system_proxy_active().await;
+    let applied = apply_os_proxy().await;
+    if applied && was_off {
+        tokio::spawn(crate::app_control::close_running_browsers());
+    }
+    applied
+}
+
+async fn apply_os_proxy() -> bool {
     let port = LOCAL_PORT.to_string();
     #[cfg(target_os = "macos")]
     {

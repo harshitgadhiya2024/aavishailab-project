@@ -757,6 +757,119 @@ fn terminate(pid: i32) -> bool {
     }
 }
 
+/// Web browsers, by their main executable's file name. Matched on the name
+/// alone (case-insensitively) so a browser installed anywhere — /Applications,
+/// ~/Applications, Program Files, a Linux distro path — is found.
+const BROWSER_EXECUTABLES: &[(&str, &str)] = &[
+    // macOS bundle executables
+    ("google chrome", "Google Chrome"),
+    ("google chrome canary", "Google Chrome"),
+    ("google chrome beta", "Google Chrome"),
+    ("microsoft edge", "Microsoft Edge"),
+    ("brave browser", "Brave"),
+    ("safari", "Safari"),
+    ("firefox", "Firefox"),
+    ("arc", "Arc"),
+    ("opera", "Opera"),
+    ("vivaldi", "Vivaldi"),
+    ("chromium", "Chromium"),
+    ("comet", "Comet"),
+    // Windows
+    ("chrome.exe", "Google Chrome"),
+    ("msedge.exe", "Microsoft Edge"),
+    ("brave.exe", "Brave"),
+    ("firefox.exe", "Firefox"),
+    ("opera.exe", "Opera"),
+    ("vivaldi.exe", "Vivaldi"),
+    // Linux
+    ("chrome", "Google Chrome"),
+    ("google-chrome", "Google Chrome"),
+    ("google-chrome-stable", "Google Chrome"),
+    ("chromium-browser", "Chromium"),
+    ("msedge", "Microsoft Edge"),
+    ("brave", "Brave"),
+];
+
+/// The browser a process is the main executable of, if it is one. Helper
+/// processes ("Google Chrome Helper (Renderer)") don't count: they go down
+/// with their browser.
+fn browser_name(exe_path: &str) -> Option<&'static str> {
+    let file = exe_path.rsplit(['/', '\\']).next().unwrap_or(exe_path).to_ascii_lowercase();
+    let name = BROWSER_EXECUTABLES.iter().find(|(exe, _)| *exe == file).map(|(_, n)| *n)?;
+    // On macOS the main executable sits directly in <Bundle>.app/Contents/MacOS.
+    if exe_path.contains(".app/") && !is_primary_executable(exe_path) {
+        return None;
+    }
+    Some(name)
+}
+
+/// Closes every browser that is running right now, and says so.
+///
+/// Called at the moment the agent points the system proxy at itself. A
+/// browser that was already open keeps the connections it opened before
+/// that — a reload reuses them — so until it is closed, every tab it
+/// already had bypasses the proxy entirely: no web filtering, no DLP (found
+/// testing on a second Mac: Gmail and Outlook tabs opened before install
+/// were never inspected, while sites first opened after install were).
+/// There is no way to make another process drop its sockets, so the
+/// browser itself has to go. It is not reopened; the next time the person
+/// opens it, every connection goes through the agent.
+///
+/// SIGTERM first, so the browser shuts down the way it does on Quit and
+/// keeps its session; anything still alive a few seconds later is killed.
+pub async fn close_running_browsers() -> Vec<&'static str> {
+    let closed = tokio::task::spawn_blocking(|| {
+        let processes = list_processes();
+        let browsers: Vec<(i32, &str, &'static str)> =
+            processes.iter().filter_map(|p| browser_name(&p.path).map(|n| (p.pid, p.path.as_str(), n))).collect();
+        let mut families = Vec::new();
+        let mut names: Vec<&'static str> = Vec::new();
+        for (pid, path, name) in &browsers {
+            families.push(app_family(*pid, path, &processes));
+            polite_stop(*pid);
+            if !names.contains(name) {
+                names.push(name);
+            }
+        }
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        while std::time::Instant::now() < deadline && browsers.iter().any(|(pid, _, _)| is_alive(*pid)) {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        for member in families.into_iter().flatten() {
+            if is_alive(member) {
+                terminate(member);
+            }
+        }
+        names
+    })
+    .await
+    .unwrap_or_default();
+
+    if !closed.is_empty() {
+        tracing::info!(browsers = ?closed, "closed browsers that were open before protection turned on");
+        let list = closed.join(", ");
+        notify(
+            "Browser closed by your company",
+            &format!("{list} was closed so company protection covers it. You can open it again now."),
+        )
+        .await;
+    }
+    closed
+}
+
+/// Asks a process to exit the way it does on Quit.
+fn polite_stop(pid: i32) {
+    #[cfg(unix)]
+    // SAFETY: kill(2) with a positive pid; failure is harmless.
+    unsafe {
+        libc::kill(pid, libc::SIGTERM);
+    }
+    #[cfg(windows)]
+    {
+        let _ = std::process::Command::new("taskkill").args(["/PID", &pid.to_string()]).output();
+    }
+}
+
 /// Tells the person why an application just closed.
 ///
 /// Best-effort and fire-and-forget: a laptop with no notification daemon, or
@@ -936,6 +1049,24 @@ mod tests {
     }
 
     #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn test_browsers_are_recognised_by_their_main_executable_only() {
+        assert_eq!(browser_name("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"), Some("Google Chrome"));
+        assert_eq!(browser_name("/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"), Some("Microsoft Edge"));
+        assert_eq!(browser_name("/Applications/Safari.app/Contents/MacOS/Safari"), Some("Safari"));
+        assert_eq!(browser_name("/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"), Some("Brave"));
+        assert_eq!(browser_name("C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"), Some("Google Chrome"));
+        assert_eq!(browser_name("/usr/lib/firefox/firefox"), Some("Firefox"));
+        // Helpers go down with their browser; they are not browsers themselves.
+        assert_eq!(
+            browser_name("/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/140/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)"),
+            None
+        );
+        // Desktop apps built on a browser engine are not browsers.
+        assert_eq!(browser_name("/Applications/Microsoft Teams.app/Contents/MacOS/MSTeams"), None);
+        assert_eq!(browser_name("/Applications/Slack.app/Contents/MacOS/Slack"), None);
+    }
+
     #[test]
     fn test_parse_ps_line_keeps_spaces_in_the_executable_path() {
         assert_eq!(
