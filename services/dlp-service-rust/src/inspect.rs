@@ -221,7 +221,9 @@ pub fn is_background(host: &str, path: &str) -> bool {
 
 struct OpRule {
     hosts: &'static [&'static str],
-    /// Empty matches any path on the host.
+    /// Empty matches any path on the host. A pattern is a substring of the
+    /// path and query, unless it starts with `=` (the whole path, query and
+    /// trailing slash ignored) or ends with `$` (how the path ends).
     paths: &'static [&'static str],
     label: &'static str,
 }
@@ -253,9 +255,12 @@ const OP_RULES: &[OpRule] = &[
     OpRule { hosts: &["wetransfer.com", "mega.nz", "mega.co.nz"], paths: &["upload", "/transfers", "/ul/"], label: OP_FILE_UPLOAD },
     OpRule { hosts: &["drive.google.com", "docs.google.com"], paths: &["/share", "permissions"], label: OP_FILE_SHARED },
     // AI assistants — the prompt endpoint only, not their telemetry.
-    OpRule { hosts: &["chatgpt.com", "chat.openai.com"], paths: &["/backend-api/conversation", "/backend-api/f/conversation", "/backend-anon/conversation"], label: OP_AI_PROMPT },
+    // Exact: ChatGPT also posts the draft to …/conversation/prepare while
+    // the person is still typing, which is not a send.
+    OpRule { hosts: &["chatgpt.com", "chat.openai.com"],
+        paths: &["=/backend-api/conversation", "=/backend-api/f/conversation", "=/backend-anon/conversation", "=/backend-anon/f/conversation"], label: OP_AI_PROMPT },
     OpRule { hosts: &["api.openai.com"], paths: &["/chat/completions", "/completions", "/responses", "/assistants", "/threads"], label: OP_AI_PROMPT },
-    OpRule { hosts: &["claude.ai"], paths: &["/completion", "/chat_conversations"], label: OP_AI_PROMPT },
+    OpRule { hosts: &["claude.ai"], paths: &["/completion$", "/retry_completion$"], label: OP_AI_PROMPT },
     OpRule { hosts: &["api.anthropic.com"], paths: &["/v1/messages", "/v1/complete"], label: OP_AI_PROMPT },
     OpRule { hosts: &["gemini.google.com", "bard.google.com"], paths: &["streamgenerate"], label: OP_AI_PROMPT },
     OpRule { hosts: &["perplexity.ai"], paths: &["perplexity_ask", "/rest/sse/"], label: OP_AI_PROMPT },
@@ -266,12 +271,24 @@ const OP_RULES: &[OpRule] = &[
     OpRule { hosts: &["atlassian.net", "jira.com"], paths: &["/comment", "/issue"], label: OP_COMMENT_POSTED },
 ];
 
+fn path_matches(pattern: &str, path_and_query: &str) -> bool {
+    let path = path_and_query.split(['?', '#']).next().unwrap_or("");
+    let path = if path.len() > 1 { path.trim_end_matches('/') } else { path };
+    if let Some(exact) = pattern.strip_prefix('=') {
+        path == exact
+    } else if let Some(suffix) = pattern.strip_suffix('$') {
+        path.ends_with(suffix)
+    } else {
+        path_and_query.contains(pattern)
+    }
+}
+
 pub fn known_operation(host: &str, path: &str) -> Option<&'static str> {
     OP_RULES
         .iter()
         .find(|r| {
             r.hosts.iter().any(|h| host == *h || host.ends_with(&format!(".{h}")))
-                && (r.paths.is_empty() || r.paths.iter().any(|p| path.contains(p)))
+                && (r.paths.is_empty() || r.paths.iter().any(|p| path_matches(p, path)))
         })
         .map(|r| r.label)
 }
@@ -965,6 +982,22 @@ mod tests {
         let r = inspect(&meta("chatgpt.com", "/backend-api/conversation", "application/json"), body);
         assert_eq!(r.operation, OP_AI_PROMPT);
         assert!(r.user_text.contains("acme-deploy-secret-Zq81LmX0pT7wR4vN2kB9"));
+    }
+
+    /// Found on a real device: one ChatGPT prompt was logged four times,
+    /// because ChatGPT posts the draft to …/prepare while it is typed.
+    #[test]
+    fn chatgpt_draft_prepare_is_not_a_prompt_but_the_send_is() {
+        let body = br#"{"action":"next","messages":[{"content":{"parts":["aws_access_key_id = AKIAZ7XQ3W5R2TLKM4NB"]}}]}"#;
+        for path in ["/backend-api/f/conversation/prepare", "/backend-api/conversation/init", "/backend-api/f/conversation/abc/textdocs"] {
+            assert!(!inspect(&meta("chatgpt.com", path, "application/json"), body).relevant, "{path}");
+        }
+        for path in ["/backend-api/f/conversation", "/backend-api/conversation", "/backend-api/f/conversation/"] {
+            assert_eq!(inspect(&meta("chatgpt.com", path, "application/json"), body).operation, OP_AI_PROMPT, "{path}");
+        }
+        let claude = "/api/organizations/o/chat_conversations/c/completion";
+        assert_eq!(inspect(&meta("claude.ai", claude, "application/json"), br#"{"prompt":"hi there"}"#).operation, OP_AI_PROMPT);
+        assert!(!inspect(&meta("claude.ai", "/api/organizations/o/chat_conversations/c/title", "application/json"), br#"{"title":"x"}"#).relevant);
     }
 
     #[test]
