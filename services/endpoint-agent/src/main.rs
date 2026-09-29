@@ -233,7 +233,11 @@ fn main() {
         }),
     );
 
-    if let Err(e) = result {
-        tracing::error!(error = %e, "desktop window exited with an error");
+    match result {
+        // Quit from the app menu (Cmd+Q) ends the window loop and with it the
+        // process; the LaunchAgent / systemd unit starts it again. Said out
+        // loud so a restart in the log has a visible cause.
+        Ok(()) => tracing::info!("window quit — exiting; the service manager restarts the agent"),
+        Err(e) => tracing::error!(error = %e, "desktop window exited with an error"),
     }
 }
