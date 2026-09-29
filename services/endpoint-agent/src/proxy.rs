@@ -276,7 +276,7 @@ async fn forward_plain_http(req: Request<Incoming>, host: &str, port: u16, path_
         )
         .await;
         if verdict.blocked {
-            return Ok(html_response(StatusCode::FORBIDDEN, &block_page_html(deps, host, &verdict.reason, "Malware Protection")));
+            return Ok(html_response(StatusCode::FORBIDDEN, &block_page_html(deps, host, &verdict.reason, &verdict.category)));
         }
     }
 

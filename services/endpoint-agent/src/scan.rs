@@ -45,11 +45,14 @@ pub struct MalwareVerdict {
 pub struct ScanVerdict {
     pub blocked: bool,
     pub reason: String,
+    /// Which protection stopped it, shown on the block page. Empty when not
+    /// blocked; the caller substitutes a default only if it ever needs one.
+    pub category: String,
 }
 
 impl ScanVerdict {
     fn allow() -> Self {
-        ScanVerdict { blocked: false, reason: String::new() }
+        ScanVerdict { blocked: false, reason: String::new(), category: String::new() }
     }
 }
 
@@ -183,14 +186,71 @@ pub async fn download_verdict(
     if !gate.scans_downloads() || body.is_empty() || !is_file_download(content_type, content_disposition, path) {
         return ScanVerdict::allow();
     }
+
+    // A VPN client being downloaded is stopped before it ever lands, the
+    // same as an installed one is stopped from running (app_control.rs):
+    // letting the installer download and only killing it after it runs
+    // leaves a window, and on a locked-down device there is no legitimate
+    // reason to pull one down. Recognised by the download's own file name,
+    // so it is caught even from a mirror or file-share the domain block
+    // (the vpn_proxy category) never sees. Checked before the malware round
+    // trip because it needs no network and gives a clearer reason.
+    let filename = upload_filename(Some(content_disposition), path);
+    if let Some(product) = vpn_installer(&filename) {
+        let reason = format!("{product} is blocked on this device. Contact your IT administrator if you need access.");
+        tracing::info!(%host, %path, %product, "VPN download blocked");
+        return ScanVerdict { blocked: true, reason, category: "Application Control".to_string() };
+    }
+
     if let Some(verdict) = scan_malware(client, host, path, body).await {
         if verdict.action == "block" {
             let reason = if verdict.reason.is_empty() { "Malicious file detected".to_string() } else { verdict.reason };
             tracing::info!(%host, %path, %reason, "malware block");
-            return ScanVerdict { blocked: true, reason };
+            return ScanVerdict { blocked: true, reason, category: "Malware Protection".to_string() };
         }
     }
     ScanVerdict::allow()
+}
+
+/// Names the VPN product a download is an installer for, if it is one.
+///
+/// Distinctive product names (nordvpn, expressvpn, wireguard…) match on
+/// their own — those are never anything but the VPN. The bare word "vpn"
+/// matches only together with an executable/installer extension, so a
+/// document like "vpn-setup-guide.pdf" is left alone while "AnyConnectVPN
+/// .exe" or "vpn.dmg" is caught. Purely name-based and best-effort: it is
+/// the download-time layer of VPN control, backed by the domain block
+/// (vpn_proxy) on the vendors' own sites and the running-process block
+/// (app_control) for anything that still gets installed.
+fn vpn_installer(filename: &str) -> Option<&'static str> {
+    let f = filename.to_lowercase();
+
+    // (token in the file name, name shown to the person)
+    const NAMED: &[(&str, &str)] = &[
+        ("nordvpn", "NordVPN"), ("expressvpn", "ExpressVPN"), ("surfshark", "Surfshark"),
+        ("cyberghost", "CyberGhost VPN"), ("tunnelbear", "TunnelBear"), ("windscribe", "Windscribe"),
+        ("hotspotshield", "Hotspot Shield"), ("hotspot-shield", "Hotspot Shield"),
+        ("protonvpn", "Proton VPN"), ("proton-vpn", "Proton VPN"), ("mullvad", "Mullvad VPN"),
+        ("ipvanish", "IPVanish"), ("purevpn", "PureVPN"), ("wireguard", "WireGuard"),
+        ("openvpn", "OpenVPN"), ("hidemyass", "HideMyAss VPN"), ("privateinternetaccess", "Private Internet Access"),
+        ("private-internet-access", "Private Internet Access"), ("vyprvpn", "VyprVPN"),
+        ("atlasvpn", "Atlas VPN"), ("privadovpn", "PrivadoVPN"), ("torguard", "TorGuard"),
+        ("strongvpn", "StrongVPN"), ("zenmate", "ZenMate"), ("psiphon", "Psiphon"),
+        ("ultrasurf", "Ultrasurf"), ("softether", "SoftEther VPN"), ("forticlient", "FortiClient VPN"),
+    ];
+    for (token, name) in NAMED {
+        if f.contains(token) {
+            return Some(name);
+        }
+    }
+
+    // Generic: any installer whose name contains "vpn".
+    const INSTALLER_EXT: &[&str] =
+        &[".exe", ".msi", ".msix", ".appx", ".dmg", ".pkg", ".mpkg", ".deb", ".rpm", ".appimage", ".apk"];
+    if f.contains("vpn") && INSTALLER_EXT.iter().any(|e| f.ends_with(e)) {
+        return Some("VPN software");
+    }
+    None
 }
 
 /// Whether a response is a file being downloaded, rather than part of a
@@ -327,6 +387,28 @@ mod tests {
         assert!(is_file_download("application/octet-stream", "", "/download"));
         assert!(is_file_download("application/zip", "", "/archive"));
         assert!(is_file_download("application/x-apple-diskimage", "", "/get"));
+    }
+
+    #[test]
+    fn test_vpn_installers_are_recognised_by_name() {
+        assert_eq!(vpn_installer("NordVPN.pkg"), Some("NordVPN"));
+        assert_eq!(vpn_installer("ExpressVPN_installer.exe"), Some("ExpressVPN"));
+        assert_eq!(vpn_installer("wireguard-installer.msi"), Some("WireGuard"));
+        assert_eq!(vpn_installer("proton-vpn-stable.deb"), Some("Proton VPN"));
+        // A distinctive product name is caught whatever the extension.
+        assert_eq!(vpn_installer("surfshark-portable.zip"), Some("Surfshark"));
+        // Generic "vpn" only with an installer extension.
+        assert_eq!(vpn_installer("SomeCorpVPN.dmg"), Some("VPN software"));
+        assert_eq!(vpn_installer("vpn-setup.exe"), Some("VPN software"));
+    }
+
+    #[test]
+    fn test_non_vpn_downloads_are_left_alone() {
+        assert_eq!(vpn_installer("vpn-setup-guide.pdf"), None); // a document, not an installer
+        assert_eq!(vpn_installer("company-handbook.pdf"), None);
+        assert_eq!(vpn_installer("slack-desktop.dmg"), None);
+        assert_eq!(vpn_installer("report.xlsx"), None);
+        assert_eq!(vpn_installer("photo.png"), None);
     }
 
     #[test]

@@ -318,7 +318,7 @@ async fn relay_one(
         )
         .await;
         if verdict.blocked {
-            return Ok(crate::proxy::html_response(StatusCode::FORBIDDEN, &block_page_html(&deps, &host, &verdict.reason, "Malware Protection")));
+            return Ok(crate::proxy::html_response(StatusCode::FORBIDDEN, &block_page_html(&deps, &host, &verdict.reason, &verdict.category)));
         }
     }
 
