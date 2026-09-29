@@ -475,7 +475,39 @@ func (h *AgentHandler) GetAppControl(c *gin.Context) {
 		// own MIN_INTERVAL floor matches this value; anything lower would be
 		// clamped back up on the agent side.
 		"poll_interval_sec": 5,
+		// The browser VPN/proxy extensions the agent watches each browser
+		// profile for. Blocking a VPN *app* does nothing about a VPN browser
+		// extension — a different mechanism entirely — and on an unmanaged
+		// macOS device the browser's own ExtensionInstallBlocklist policy is
+		// not honoured (it needs an MDM configuration profile; verified live
+		// against real Chrome). So the agent's job here is to detect one and
+		// report it, giving the company visibility and the employee a notice,
+		// even where it cannot be blocked outright.
+		"vpn_extensions": vpnBrowserExtensions,
 	})
+}
+
+// vpnBrowserExtensions is the built-in list of known VPN/proxy browser
+// extensions (same id in Chrome, Edge and Brave — they share the Chrome Web
+// Store). Delivered to the agent rather than hard-coded in it so the list can
+// grow without shipping a new agent build. A starter set of the most common
+// ones; extend as new ones show up in the wild.
+var vpnBrowserExtensions = []gin.H{
+	{"id": "gkojfkhlekighikafcpjkiklfbnlmeio", "name": "Hola VPN"},
+	{"id": "bihmplhobchoageeokmgbdihknkjbknd", "name": "Touch VPN"},
+	{"id": "eppiocemhmnlbhjplcgkofciiegomcon", "name": "Urban VPN"},
+	{"id": "omghfjlpggmjjaagoclmmobgdodcjboh", "name": "Browsec VPN"},
+	{"id": "fdcgdnkidjaadafnichfpabhfomcebme", "name": "ZenMate VPN"},
+	{"id": "majdfhpaihoncoakbjgbdhglocklcgno", "name": "VeePN"},
+	{"id": "nlbejmccbhkncgokjcmghpfloaajcffj", "name": "Hotspot Shield VPN"},
+	{"id": "oofgbpoabipfcfjapgnbbjjaenockbdp", "name": "SetupVPN"},
+	{"id": "gjknjjomckknofjidppipffbpoekiipm", "name": "Betternet VPN"},
+	{"id": "fjoaledfpmneenckfbpdfhkmimnjocfa", "name": "NordVPN"},
+	{"id": "fgddmllnllkalaagkghckoinaemmogpe", "name": "ExpressVPN"},
+	{"id": "hnmpcagpplmpfojmgmnngilcnanddlhb", "name": "Windscribe"},
+	{"id": "pgnfaifdbfoiehcndkoeemaifhhbgkmm", "name": "DotVPN"},
+	{"id": "jplgfhogcmcnhbmaddhgmklackkjdnfp", "name": "Proton VPN"},
+	{"id": "jajilbjjinjmgcibalabgjoddnmpmhlc", "name": "Free Avira Phantom VPN"},
 }
 
 // ReportAppBlock handles POST /internal/agent/app-block — the agent telling us
@@ -521,6 +553,80 @@ func (h *AgentHandler) ReportAppBlock(c *gin.Context) {
 			"path":         in.Path,
 			"terminated":   in.Terminated,
 			"app_id":       in.AppID,
+		},
+		Timestamp: time.Now(),
+	}
+	if err := h.db.Create(&event).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to record the event"})
+		return
+	}
+
+	events := []models.ActivityEvent{event}
+	attachEmployees(h.db, events)
+	h.hub.BroadcastActivityEvent(events[0])
+
+	c.JSON(http.StatusOK, gin.H{"recorded": true})
+}
+
+// ReportBrowserExtension handles POST /internal/agent/browser-extension — the
+// agent telling us it found a VPN/proxy browser extension installed in one of
+// the device's browsers. Unlike a controlled application (ReportAppBlock),
+// this is observed, not terminated: on an unmanaged device the extension
+// cannot be silently blocked (see GetAppControl's vpn_extensions note), so
+// the value here is the visibility — the company sees who has one, and the
+// employee is told it is against policy.
+func (h *AgentHandler) ReportBrowserExtension(c *gin.Context) {
+	deviceID, orgID, empID := h.authAgent(c)
+	if deviceID == uuid.Nil {
+		return
+	}
+
+	var in struct {
+		ExtensionID string `json:"extension_id"`
+		Name        string `json:"name"`
+		Browser     string `json:"browser"`
+		Profile     string `json:"profile"`
+		Enabled     bool   `json:"enabled"`
+		Status      string `json:"status"` // "installed" (default) | "removed"
+	}
+	if err := c.ShouldBindJSON(&in); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	name := strings.TrimSpace(in.Name)
+	if name == "" {
+		name = "VPN browser extension"
+	}
+
+	// A lifecycle, like a device's connect/disconnect: "installed" is the
+	// alert the company acts on; "removed" is the informational follow-up
+	// that the employee took it off. Anything unrecognised is treated as an
+	// install so a detection is never silently dropped.
+	operation := OpBrowserExtInstalled
+	action := models.EventActionAlerted
+	if in.Status == "removed" {
+		operation = OpBrowserExtRemoved
+		action = models.EventActionLogged
+	}
+
+	event := models.ActivityEvent{
+		OrgID:      orgID,
+		EmployeeID: empID,
+		DeviceID:   &deviceID,
+		EventType:  models.EventTypeProcessStart,
+		Action:     action,
+		Target:     name,
+		Operation:  operation,
+		Category:   "application_control",
+		PolicyName: operation + ": " + name,
+		Metadata: map[string]any{
+			"extension_id": in.ExtensionID,
+			"browser":      in.Browser,
+			"profile":      in.Profile,
+			"enabled":      in.Enabled,
+			"kind":         "browser_extension",
+			"status":       in.Status,
 		},
 		Timestamp: time.Now(),
 	}

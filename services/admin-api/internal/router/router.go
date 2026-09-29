@@ -579,6 +579,7 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 			// report when one is stopped.
 			agent.GET("/app-control", agentH.GetAppControl)
 			agent.POST("/app-block", agentH.ReportAppBlock)
+			agent.POST("/browser-extension", agentH.ReportBrowserExtension)
 			// Software inventory: the device's full installed-app snapshot.
 			agent.POST("/inventory", invH.ReportInventory)
 			// Time-and-activity monitoring: sessions and screenshots.
