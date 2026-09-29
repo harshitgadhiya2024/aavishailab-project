@@ -80,9 +80,8 @@ pub struct ScanRequest {
     pub text: Option<String>,
     #[serde(default, deserialize_with = "null_as_default")]
     pub policies: Vec<PolicyIn>,
-    /// Detector hits computed outside this service — currently just
-    /// ai-service's vision classification of an image extract-service
-    /// pulled out of the upload. Each one only counts toward a policy that
+    /// Detector hits computed outside the pattern detectors, such as an AI
+    /// classifier's verdict. Each one only counts toward a policy that
     /// has explicitly enabled its `detector` name (ai_visual), exactly
     /// like every built-in detector — see scoring::run_detectors.
     #[serde(default, deserialize_with = "null_as_default")]

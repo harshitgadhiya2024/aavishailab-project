@@ -324,6 +324,47 @@ fn photographed_card_image_is_ocrd() {
     assert!(ocr.replace(' ', "").contains("4111111111111111"), "OCR text: {ocr:?}");
 }
 
+/// A screenshot with a transparent background: black text, alpha-0 around it.
+#[test]
+fn transparent_screenshot_is_ocrd() {
+    if !tesseract_available() {
+        eprintln!("skipped: tesseract not installed");
+        return;
+    }
+    let Some(pic) = picture_of("Card 4111 1111 1111 1111") else {
+        eprintln!("skipped: PDFIUM_LIB_PATH not set");
+        return;
+    };
+    let mut rgba = pic.to_rgba8();
+    for p in rgba.pixels_mut() {
+        // White background → fully transparent black, like a UI screenshot.
+        if p[0] > 200 && p[1] > 200 && p[2] > 200 {
+            *p = image::Rgba([0, 0, 0, 0]);
+        }
+    }
+    let mut png = Vec::new();
+    image::DynamicImage::ImageRgba8(rgba).write_to(&mut Cursor::new(&mut png), image::ImageFormat::Png).unwrap();
+    let ocr: String = run(&png, "screenshot.png")
+        .iter()
+        .filter_map(|i| match i {
+            Item::Segment(s) if s.source == "ocr" => Some(s.text.clone()),
+            _ => None,
+        })
+        .collect();
+    assert!(ocr.replace(' ', "").contains("4111111111111111"), "OCR text: {ocr:?}");
+}
+
+#[test]
+fn corrupt_pdf_text_is_still_scanned() {
+    if !dlp_service::extract::pdf::available() {
+        eprintln!("skipped: PDFIUM_LIB_PATH not set");
+        return;
+    }
+    let items = run(b"%PDF-1.4\n1 0 obj << >> stream\nCard 4111 1111 1111 1111\nendstream", "broken.pdf");
+    assert!(unscannable(&items).contains(&"corrupt"));
+    assert!(all_text(&items).contains(CARD));
+}
+
 #[test]
 fn scanned_pdf_page_is_ocrd() {
     use pdfium_render::prelude::*;

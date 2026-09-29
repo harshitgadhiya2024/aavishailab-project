@@ -61,8 +61,17 @@ pub fn extract(data: &[u8], part: &str, filename: &str, ctx: &mut Ctx) -> Result
         Ok(d) => d,
         Err(e) => {
             let msg = format!("{e:?}");
-            let reason = if msg.contains("Password") { "encrypted_document" } else { "corrupt" };
-            ctx.emit(Item::unscannable(part, reason, msg));
+            if msg.contains("Password") {
+                ctx.emit(Item::unscannable(part, "encrypted_document", msg));
+                return Ok(());
+            }
+            // A PDF too broken to open still gets its readable text scanned
+            // rather than becoming a blind spot.
+            ctx.emit(Item::unscannable(part, "corrupt", msg));
+            let runs = super::ole::printable_runs(data);
+            if !runs.trim().is_empty() {
+                ctx.emit(Item::segment(part, filename, "application/pdf", "pdf_raw", runs));
+            }
             return Ok(());
         }
     };
@@ -91,8 +100,6 @@ pub fn extract(data: &[u8], part: &str, filename: &str, ctx: &mut Ctx) -> Result
                 continue;
             }
         };
-        let (w, h) = (rendered.width() as u64, rendered.height() as u64);
-        ctx.check_budget(w * h)?;
         let img = images::prepare(rendered, &page_part, ctx, images::OcrBudget::Page);
         let ocr = img.ocr_text.clone();
         if ctx.images_budget_remaining() {

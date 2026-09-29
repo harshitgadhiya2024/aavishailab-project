@@ -72,11 +72,17 @@ pub fn extract(data: &[u8], part: &str, filename: &str, ctx: &mut Ctx) -> Result
     let mut chunks = Vec::new();
     for name in &streams {
         let Some(b) = read(name, ctx)? else { continue };
-        chunks.extend(ASCII_RUN.find_iter(&b).map(|m| String::from_utf8_lossy(m.as_bytes()).into_owned()));
-        chunks.extend(UTF16_RUN.find_iter(&b).map(|m| utf16le(m.as_bytes())));
+        chunks.push(printable_runs(&b));
     }
     ctx.emit(Item::segment(part, filename, "application/x-ole-storage", "legacy_office", chunks.join("\n")));
     Ok(())
+}
+
+/// Every run of printable ASCII or UTF-16LE text of four or more characters.
+pub fn printable_runs(b: &[u8]) -> String {
+    let mut chunks: Vec<String> = ASCII_RUN.find_iter(b).map(|m| String::from_utf8_lossy(m.as_bytes()).into_owned()).collect();
+    chunks.extend(UTF16_RUN.find_iter(b).map(|m| utf16le(m.as_bytes())));
+    chunks.join("\n")
 }
 
 /// Property streams ending 001F are UTF-16LE; the rest are 8-bit.

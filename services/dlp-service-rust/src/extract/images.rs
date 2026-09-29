@@ -81,6 +81,8 @@ pub fn prepare(img: DynamicImage, part: &str, ctx: &mut Ctx, budget: OcrBudget) 
             }
         }
     }
+    // The vision model gets the same white-backed picture a person sees.
+    let img = if img.color().has_alpha() { DynamicImage::ImageRgb8(rgb_on_white(&img)) } else { img };
     let thumb = if w > VISION_LONG_EDGE || h > VISION_LONG_EDGE {
         img.resize(VISION_LONG_EDGE, VISION_LONG_EDGE, FilterType::Lanczos3)
     } else {
@@ -94,7 +96,7 @@ pub fn prepare(img: DynamicImage, part: &str, ctx: &mut Ctx, budget: OcrBudget) 
 /// Grayscale, stretch contrast, and upscale small images — cheap steps that
 /// measurably help Tesseract on phone photos of documents.
 fn preprocess(img: &DynamicImage) -> image::GrayImage {
-    let mut gray = img.to_luma8();
+    let mut gray = flatten_on_white(img);
     let (lo, hi) = gray.pixels().fold((255u8, 0u8), |(lo, hi), p| (lo.min(p[0]), hi.max(p[0])));
     if hi > lo {
         let range = (hi - lo) as f32;
@@ -108,6 +110,33 @@ fn preprocess(img: &DynamicImage) -> image::GrayImage {
         gray = image::imageops::resize(&gray, 1000, (h as f32 * scale) as u32, FilterType::Lanczos3);
     }
     gray
+}
+
+/// Colour with transparency composited onto white.
+fn rgb_on_white(img: &DynamicImage) -> image::RgbImage {
+    let rgba = img.to_rgba8();
+    image::RgbImage::from_fn(rgba.width(), rgba.height(), |x, y| {
+        let p = rgba.get_pixel(x, y);
+        let a = p[3] as f32 / 255.0;
+        let mix = |c: u8| (c as f32 * a + 255.0 * (1.0 - a)).round() as u8;
+        image::Rgb([mix(p[0]), mix(p[1]), mix(p[2])])
+    })
+}
+
+/// Grayscale with transparency composited onto white. Dropping alpha
+/// instead turns a transparent screenshot's background black — black text on
+/// black, which OCR reads as nothing.
+fn flatten_on_white(img: &DynamicImage) -> image::GrayImage {
+    if !img.color().has_alpha() {
+        return img.to_luma8();
+    }
+    let rgba = img.to_rgba8();
+    image::GrayImage::from_fn(rgba.width(), rgba.height(), |x, y| {
+        let p = rgba.get_pixel(x, y);
+        let a = p[3] as f32 / 255.0;
+        let luma = 0.299 * p[0] as f32 + 0.587 * p[1] as f32 + 0.114 * p[2] as f32;
+        image::Luma([(luma * a + 255.0 * (1.0 - a)).round() as u8])
+    })
 }
 
 static TESSERACT_MISSING_LOGGED: AtomicBool = AtomicBool::new(false);
@@ -156,5 +185,19 @@ pub fn ocr(img: &DynamicImage, langs: &str, timeout: Duration) -> String {
             tracing::debug!("tesseract timed out after {:?}", timeout);
             String::new()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transparent_background_becomes_white_not_black() {
+        let mut img = image::RgbaImage::from_pixel(4, 1, image::Rgba([0, 0, 0, 0]));
+        img.put_pixel(0, 0, image::Rgba([0, 0, 0, 255]));
+        let g = flatten_on_white(&DynamicImage::ImageRgba8(img));
+        assert_eq!(g.get_pixel(0, 0)[0], 0, "opaque black text stays black");
+        assert_eq!(g.get_pixel(1, 0)[0], 255, "transparent background becomes white");
     }
 }
