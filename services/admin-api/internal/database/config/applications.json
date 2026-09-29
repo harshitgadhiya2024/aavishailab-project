@@ -1,7 +1,7 @@
 {
   "_comment": [
     "Built-in application catalog. Each entry pairs an app's process identity",
-    "with the full set of backend domains it needs — the 'domain bundle'.",
+    "with the full set of backend domains it needs \u2014 the 'domain bundle'.",
     "Blocking only the front door (chatgpt.com) leaves an installed desktop",
     "client working because it talks to the API, auth and telemetry hosts",
     "instead; blocking the bundle is what actually makes the installed app",
@@ -16,10 +16,27 @@
       "category": "ai_tools",
       "risk_level": 70,
       "description": "OpenAI's ChatGPT desktop and web client. Pasted source code, customer data and documents leave the organization through it.",
-      "process_names": ["chatgpt.exe", "chatgpt", "ChatGPT"],
-      "bundle_ids": ["com.openai.chat"],
-      "path_patterns": ["/ChatGPT.app/", "\\OpenAI\\ChatGPT"],
-      "domains": ["chatgpt.com", "chat.openai.com", "openai.com", "oaistatic.com", "oaiusercontent.com", "auth0.openai.com", "featuregates.org"]
+      "process_names": [
+        "chatgpt.exe",
+        "chatgpt",
+        "ChatGPT"
+      ],
+      "bundle_ids": [
+        "com.openai.chat"
+      ],
+      "path_patterns": [
+        "/ChatGPT.app/",
+        "\\OpenAI\\ChatGPT"
+      ],
+      "domains": [
+        "chatgpt.com",
+        "chat.openai.com",
+        "openai.com",
+        "oaistatic.com",
+        "oaiusercontent.com",
+        "auth0.openai.com",
+        "featuregates.org"
+      ]
     },
     {
       "slug": "claude-desktop",
@@ -28,10 +45,24 @@
       "category": "ai_tools",
       "risk_level": 70,
       "description": "Anthropic's Claude desktop and web client.",
-      "process_names": ["claude.exe", "claude", "Claude"],
-      "bundle_ids": ["com.anthropic.claudefordesktop", "com.anthropic.claude"],
-      "path_patterns": ["/Claude.app/", "\\AnthropicClaude\\"],
-      "domains": ["claude.ai", "anthropic.com", "api.anthropic.com"]
+      "process_names": [
+        "claude.exe",
+        "claude",
+        "Claude"
+      ],
+      "bundle_ids": [
+        "com.anthropic.claudefordesktop",
+        "com.anthropic.claude"
+      ],
+      "path_patterns": [
+        "/Claude.app/",
+        "\\AnthropicClaude\\"
+      ],
+      "domains": [
+        "claude.ai",
+        "anthropic.com",
+        "api.anthropic.com"
+      ]
     },
     {
       "slug": "google-gemini",
@@ -43,7 +74,12 @@
       "process_names": [],
       "bundle_ids": [],
       "path_patterns": [],
-      "domains": ["gemini.google.com", "bard.google.com", "generativelanguage.googleapis.com", "aistudio.google.com"]
+      "domains": [
+        "gemini.google.com",
+        "bard.google.com",
+        "generativelanguage.googleapis.com",
+        "aistudio.google.com"
+      ]
     },
     {
       "slug": "github-copilot",
@@ -51,11 +87,20 @@
       "vendor": "GitHub",
       "category": "ai_tools",
       "risk_level": 60,
-      "description": "AI pair programmer embedded in editors — sends source code to GitHub for completion.",
-      "process_names": ["copilot-language-server", "copilot-agent"],
+      "description": "AI pair programmer embedded in editors \u2014 sends source code to GitHub for completion.",
+      "process_names": [
+        "copilot-language-server",
+        "copilot-agent"
+      ],
       "bundle_ids": [],
-      "path_patterns": ["copilot"],
-      "domains": ["copilot-proxy.githubusercontent.com", "api.githubcopilot.com", "copilot.microsoft.com"]
+      "path_patterns": [
+        "copilot"
+      ],
+      "domains": [
+        "copilot-proxy.githubusercontent.com",
+        "api.githubcopilot.com",
+        "copilot.microsoft.com"
+      ]
     },
     {
       "slug": "dropbox",
@@ -64,10 +109,25 @@
       "category": "file_sharing",
       "risk_level": 65,
       "description": "Consumer file sync. The desktop client keeps syncing whether or not the website is reachable.",
-      "process_names": ["dropbox.exe", "dropbox", "Dropbox"],
-      "bundle_ids": ["com.getdropbox.dropbox", "com.dropbox.desktop"],
-      "path_patterns": ["/Dropbox.app/", "\\Dropbox\\"],
-      "domains": ["dropbox.com", "dropboxapi.com", "dropboxusercontent.com", "dropboxstatic.com"]
+      "process_names": [
+        "dropbox.exe",
+        "dropbox",
+        "Dropbox"
+      ],
+      "bundle_ids": [
+        "com.getdropbox.dropbox",
+        "com.dropbox.desktop"
+      ],
+      "path_patterns": [
+        "/Dropbox.app/",
+        "\\Dropbox\\"
+      ],
+      "domains": [
+        "dropbox.com",
+        "dropboxapi.com",
+        "dropboxusercontent.com",
+        "dropboxstatic.com"
+      ]
     },
     {
       "slug": "google-drive-desktop",
@@ -76,10 +136,23 @@
       "category": "file_sharing",
       "risk_level": 55,
       "description": "Desktop sync client for Google Drive.",
-      "process_names": ["googledrivefs.exe", "google drive.exe", "Google Drive"],
-      "bundle_ids": ["com.google.GoogleDrive"],
-      "path_patterns": ["/Google Drive.app/", "\\Google\\Drive"],
-      "domains": ["drive.google.com", "clients5.google.com", "driveusercontent.google.com"]
+      "process_names": [
+        "googledrivefs.exe",
+        "google drive.exe",
+        "Google Drive"
+      ],
+      "bundle_ids": [
+        "com.google.GoogleDrive"
+      ],
+      "path_patterns": [
+        "/Google Drive.app/",
+        "\\Google\\Drive"
+      ],
+      "domains": [
+        "drive.google.com",
+        "clients5.google.com",
+        "driveusercontent.google.com"
+      ]
     },
     {
       "slug": "onedrive",
@@ -87,11 +160,24 @@
       "vendor": "Microsoft",
       "category": "file_sharing",
       "risk_level": 45,
-      "description": "Microsoft's file sync client — usually sanctioned, listed so personal accounts can be controlled.",
-      "process_names": ["onedrive.exe", "OneDrive"],
-      "bundle_ids": ["com.microsoft.OneDrive"],
-      "path_patterns": ["/OneDrive.app/", "\\OneDrive\\"],
-      "domains": ["onedrive.live.com", "storage.live.com", "1drv.com", "onedrive.com"]
+      "description": "Microsoft's file sync client \u2014 usually sanctioned, listed so personal accounts can be controlled.",
+      "process_names": [
+        "onedrive.exe",
+        "OneDrive"
+      ],
+      "bundle_ids": [
+        "com.microsoft.OneDrive"
+      ],
+      "path_patterns": [
+        "/OneDrive.app/",
+        "\\OneDrive\\"
+      ],
+      "domains": [
+        "onedrive.live.com",
+        "storage.live.com",
+        "1drv.com",
+        "onedrive.com"
+      ]
     },
     {
       "slug": "wetransfer",
@@ -99,11 +185,15 @@
       "vendor": "WeTransfer",
       "category": "file_sharing",
       "risk_level": 75,
-      "description": "Anonymous large-file transfer — a common exfiltration route.",
+      "description": "Anonymous large-file transfer \u2014 a common exfiltration route.",
       "process_names": [],
       "bundle_ids": [],
       "path_patterns": [],
-      "domains": ["wetransfer.com", "wetransfer.net", "we.tl"]
+      "domains": [
+        "wetransfer.com",
+        "wetransfer.net",
+        "we.tl"
+      ]
     },
     {
       "slug": "telegram",
@@ -112,10 +202,26 @@
       "category": "messaging",
       "risk_level": 70,
       "description": "Encrypted messenger with unrestricted file sharing.",
-      "process_names": ["telegram.exe", "telegram", "Telegram"],
-      "bundle_ids": ["ru.keepcoder.Telegram", "org.telegram.desktop"],
-      "path_patterns": ["/Telegram.app/", "\\Telegram Desktop\\"],
-      "domains": ["telegram.org", "web.telegram.org", "t.me", "telegra.ph", "telesco.pe"]
+      "process_names": [
+        "telegram.exe",
+        "telegram",
+        "Telegram"
+      ],
+      "bundle_ids": [
+        "ru.keepcoder.Telegram",
+        "org.telegram.desktop"
+      ],
+      "path_patterns": [
+        "/Telegram.app/",
+        "\\Telegram Desktop\\"
+      ],
+      "domains": [
+        "telegram.org",
+        "web.telegram.org",
+        "t.me",
+        "telegra.ph",
+        "telesco.pe"
+      ]
     },
     {
       "slug": "whatsapp",
@@ -124,10 +230,24 @@
       "category": "messaging",
       "risk_level": 60,
       "description": "Consumer messenger, frequently used to move documents off managed devices.",
-      "process_names": ["whatsapp.exe", "whatsapp", "WhatsApp"],
-      "bundle_ids": ["net.whatsapp.WhatsApp", "desktop.WhatsApp"],
-      "path_patterns": ["/WhatsApp.app/", "\\WhatsApp\\"],
-      "domains": ["whatsapp.com", "web.whatsapp.com", "whatsapp.net"]
+      "process_names": [
+        "whatsapp.exe",
+        "whatsapp",
+        "WhatsApp"
+      ],
+      "bundle_ids": [
+        "net.whatsapp.WhatsApp",
+        "desktop.WhatsApp"
+      ],
+      "path_patterns": [
+        "/WhatsApp.app/",
+        "\\WhatsApp\\"
+      ],
+      "domains": [
+        "whatsapp.com",
+        "web.whatsapp.com",
+        "whatsapp.net"
+      ]
     },
     {
       "slug": "anydesk",
@@ -136,10 +256,23 @@
       "category": "remote_access",
       "risk_level": 90,
       "description": "Remote desktop tool. Widely abused for unsanctioned access and support scams.",
-      "process_names": ["anydesk.exe", "anydesk", "AnyDesk"],
-      "bundle_ids": ["com.philandro.anydesk"],
-      "path_patterns": ["/AnyDesk.app/", "\\AnyDesk\\"],
-      "domains": ["anydesk.com", "net.anydesk.com", "boot.net.anydesk.com"]
+      "process_names": [
+        "anydesk.exe",
+        "anydesk",
+        "AnyDesk"
+      ],
+      "bundle_ids": [
+        "com.philandro.anydesk"
+      ],
+      "path_patterns": [
+        "/AnyDesk.app/",
+        "\\AnyDesk\\"
+      ],
+      "domains": [
+        "anydesk.com",
+        "net.anydesk.com",
+        "boot.net.anydesk.com"
+      ]
     },
     {
       "slug": "teamviewer",
@@ -148,10 +281,23 @@
       "category": "remote_access",
       "risk_level": 85,
       "description": "Remote desktop and file transfer tool.",
-      "process_names": ["teamviewer.exe", "teamviewer_service.exe", "TeamViewer"],
-      "bundle_ids": ["com.teamviewer.TeamViewer"],
-      "path_patterns": ["/TeamViewer.app/", "\\TeamViewer\\"],
-      "domains": ["teamviewer.com", "dyngate.com", "teamviewer-api.com"]
+      "process_names": [
+        "teamviewer.exe",
+        "teamviewer_service.exe",
+        "TeamViewer"
+      ],
+      "bundle_ids": [
+        "com.teamviewer.TeamViewer"
+      ],
+      "path_patterns": [
+        "/TeamViewer.app/",
+        "\\TeamViewer\\"
+      ],
+      "domains": [
+        "teamviewer.com",
+        "dyngate.com",
+        "teamviewer-api.com"
+      ]
     },
     {
       "slug": "tor-browser",
@@ -160,10 +306,24 @@
       "category": "anonymizer",
       "risk_level": 95,
       "description": "Anonymising browser that routes around network policy entirely.",
-      "process_names": ["tor.exe", "firefox.exe", "tor", "Tor Browser"],
-      "bundle_ids": ["org.torproject.torbrowser"],
-      "path_patterns": ["/Tor Browser.app/", "\\Tor Browser\\", "tor-browser"],
-      "domains": ["torproject.org", "torproject.net"]
+      "process_names": [
+        "tor.exe",
+        "firefox.exe",
+        "tor",
+        "Tor Browser"
+      ],
+      "bundle_ids": [
+        "org.torproject.torbrowser"
+      ],
+      "path_patterns": [
+        "/Tor Browser.app/",
+        "\\Tor Browser\\",
+        "tor-browser"
+      ],
+      "domains": [
+        "torproject.org",
+        "torproject.net"
+      ]
     },
     {
       "slug": "utorrent",
@@ -171,11 +331,29 @@
       "vendor": "BitTorrent Inc.",
       "category": "p2p",
       "risk_level": 90,
-      "description": "BitTorrent client — bandwidth abuse, piracy liability and a malware delivery route.",
-      "process_names": ["utorrent.exe", "bittorrent.exe", "transmission", "qbittorrent", "qbittorrent.exe"],
-      "bundle_ids": ["org.m0k.transmission", "org.qbittorrent.qBittorrent"],
-      "path_patterns": ["/uTorrent.app/", "\\uTorrent\\", "qbittorrent"],
-      "domains": ["utorrent.com", "bittorrent.com", "qbittorrent.org", "transmissionbt.com"]
+      "description": "BitTorrent client \u2014 bandwidth abuse, piracy liability and a malware delivery route.",
+      "process_names": [
+        "utorrent.exe",
+        "bittorrent.exe",
+        "transmission",
+        "qbittorrent",
+        "qbittorrent.exe"
+      ],
+      "bundle_ids": [
+        "org.m0k.transmission",
+        "org.qbittorrent.qBittorrent"
+      ],
+      "path_patterns": [
+        "/uTorrent.app/",
+        "\\uTorrent\\",
+        "qbittorrent"
+      ],
+      "domains": [
+        "utorrent.com",
+        "bittorrent.com",
+        "qbittorrent.org",
+        "transmissionbt.com"
+      ]
     },
     {
       "slug": "nordvpn",
@@ -183,11 +361,24 @@
       "vendor": "Nord Security",
       "category": "vpn",
       "risk_level": 80,
-      "description": "Consumer VPN — tunnels traffic past inspection and policy.",
-      "process_names": ["nordvpn.exe", "nordvpn", "NordVPN"],
-      "bundle_ids": ["com.nordvpn.macos", "com.nordvpn.NordVPN"],
-      "path_patterns": ["/NordVPN.app/", "\\NordVPN\\"],
-      "domains": ["nordvpn.com", "nordcdn.com"]
+      "description": "Consumer VPN \u2014 tunnels traffic past inspection and policy.",
+      "process_names": [
+        "nordvpn.exe",
+        "nordvpn",
+        "NordVPN"
+      ],
+      "bundle_ids": [
+        "com.nordvpn.macos",
+        "com.nordvpn.NordVPN"
+      ],
+      "path_patterns": [
+        "/NordVPN.app/",
+        "\\NordVPN\\"
+      ],
+      "domains": [
+        "nordvpn.com",
+        "nordcdn.com"
+      ]
     },
     {
       "slug": "protonvpn",
@@ -195,11 +386,385 @@
       "vendor": "Proton AG",
       "category": "vpn",
       "risk_level": 80,
-      "description": "Consumer VPN — tunnels traffic past inspection and policy.",
-      "process_names": ["protonvpn.exe", "protonvpn", "ProtonVPN"],
-      "bundle_ids": ["ch.protonvpn.mac"],
-      "path_patterns": ["/ProtonVPN.app/", "\\Proton\\"],
-      "domains": ["protonvpn.com", "protonvpn.ch", "proton.me"]
+      "description": "Consumer VPN \u2014 tunnels traffic past inspection and policy.",
+      "process_names": [
+        "protonvpn.exe",
+        "protonvpn",
+        "ProtonVPN"
+      ],
+      "bundle_ids": [
+        "ch.protonvpn.mac"
+      ],
+      "path_patterns": [
+        "/ProtonVPN.app/",
+        "\\Proton\\"
+      ],
+      "domains": [
+        "protonvpn.com",
+        "protonvpn.ch",
+        "proton.me"
+      ]
+    },
+    {
+      "slug": "expressvpn",
+      "name": "ExpressVPN",
+      "vendor": "ExpressVPN",
+      "category": "vpn",
+      "risk_level": 80,
+      "description": "Consumer VPN \u2014 tunnels traffic past inspection and policy.",
+      "process_names": [
+        "expressvpn",
+        "ExpressVPN",
+        "ExpressVPN.exe",
+        "expressvpnd",
+        "expressvpn-browser-helper"
+      ],
+      "bundle_ids": [
+        "com.expressvpn.ExpressVPN"
+      ],
+      "path_patterns": [
+        "/ExpressVPN.app/",
+        "\\ExpressVPN\\"
+      ],
+      "domains": [
+        "expressvpn.com"
+      ]
+    },
+    {
+      "slug": "surfshark",
+      "name": "Surfshark",
+      "vendor": "Surfshark",
+      "category": "vpn",
+      "risk_level": 80,
+      "description": "Consumer VPN \u2014 tunnels traffic past inspection and policy.",
+      "process_names": [
+        "surfshark",
+        "Surfshark",
+        "Surfshark.exe"
+      ],
+      "bundle_ids": [
+        "com.surfshark.vpnclient.macos",
+        "com.surfshark.Surfshark"
+      ],
+      "path_patterns": [
+        "/Surfshark.app/",
+        "\\Surfshark\\"
+      ],
+      "domains": [
+        "surfshark.com"
+      ]
+    },
+    {
+      "slug": "cyberghost",
+      "name": "CyberGhost VPN",
+      "vendor": "CyberGhost",
+      "category": "vpn",
+      "risk_level": 80,
+      "description": "Consumer VPN \u2014 tunnels traffic past inspection and policy.",
+      "process_names": [
+        "cyberghost",
+        "CyberGhost",
+        "CyberGhost.exe"
+      ],
+      "bundle_ids": [
+        "com.cyberghostsrl.cyberghost.mac",
+        "de.mobileconcepts.cyberghost"
+      ],
+      "path_patterns": [
+        "/CyberGhost VPN.app/",
+        "\\CyberGhost\\"
+      ],
+      "domains": [
+        "cyberghostvpn.com"
+      ]
+    },
+    {
+      "slug": "tunnelbear",
+      "name": "TunnelBear",
+      "vendor": "TunnelBear",
+      "category": "vpn",
+      "risk_level": 80,
+      "description": "Consumer VPN \u2014 tunnels traffic past inspection and policy.",
+      "process_names": [
+        "tunnelbear",
+        "TunnelBear",
+        "TunnelBear.exe"
+      ],
+      "bundle_ids": [
+        "com.tunnelbear.mac.TunnelBears"
+      ],
+      "path_patterns": [
+        "/TunnelBear.app/",
+        "\\TunnelBear\\"
+      ],
+      "domains": [
+        "tunnelbear.com"
+      ]
+    },
+    {
+      "slug": "windscribe",
+      "name": "Windscribe",
+      "vendor": "Windscribe",
+      "category": "vpn",
+      "risk_level": 80,
+      "description": "Consumer VPN \u2014 tunnels traffic past inspection and policy.",
+      "process_names": [
+        "windscribe",
+        "Windscribe",
+        "Windscribe.exe",
+        "WindscribeEngine.exe"
+      ],
+      "bundle_ids": [
+        "com.windscribe.desktop",
+        "com.windscribe.gui.macos"
+      ],
+      "path_patterns": [
+        "/Windscribe.app/",
+        "\\Windscribe\\"
+      ],
+      "domains": [
+        "windscribe.com"
+      ]
+    },
+    {
+      "slug": "hotspot-shield",
+      "name": "Hotspot Shield",
+      "vendor": "Aura / Pango",
+      "category": "vpn",
+      "risk_level": 80,
+      "description": "Consumer VPN \u2014 tunnels traffic past inspection and policy.",
+      "process_names": [
+        "hotspotshield",
+        "HotspotShield",
+        "HotspotShield.exe",
+        "hssvpn"
+      ],
+      "bundle_ids": [
+        "com.anchorfree.hotspotshield"
+      ],
+      "path_patterns": [
+        "/HotspotShield.app/",
+        "\\Hotspot Shield\\"
+      ],
+      "domains": [
+        "hotspotshield.com"
+      ]
+    },
+    {
+      "slug": "private-internet-access",
+      "name": "Private Internet Access",
+      "vendor": "Private Internet Access",
+      "category": "vpn",
+      "risk_level": 80,
+      "description": "Consumer VPN \u2014 tunnels traffic past inspection and policy.",
+      "process_names": [
+        "pia-client",
+        "pia_manager",
+        "PrivateInternetAccess",
+        "piahid",
+        "pia-daemon"
+      ],
+      "bundle_ids": [
+        "com.privateinternetaccess.vpn"
+      ],
+      "path_patterns": [
+        "/Private Internet Access.app/",
+        "\\Private Internet Access\\"
+      ],
+      "domains": [
+        "privateinternetaccess.com"
+      ]
+    },
+    {
+      "slug": "mullvad",
+      "name": "Mullvad VPN",
+      "vendor": "Mullvad",
+      "category": "vpn",
+      "risk_level": 80,
+      "description": "Consumer VPN \u2014 tunnels traffic past inspection and policy.",
+      "process_names": [
+        "mullvad",
+        "mullvad-daemon",
+        "MullvadVPN.exe",
+        "Mullvad VPN"
+      ],
+      "bundle_ids": [
+        "net.mullvad.vpn"
+      ],
+      "path_patterns": [
+        "/Mullvad VPN.app/",
+        "\\Mullvad VPN\\"
+      ],
+      "domains": [
+        "mullvad.net"
+      ]
+    },
+    {
+      "slug": "ipvanish",
+      "name": "IPVanish",
+      "vendor": "IPVanish",
+      "category": "vpn",
+      "risk_level": 80,
+      "description": "Consumer VPN \u2014 tunnels traffic past inspection and policy.",
+      "process_names": [
+        "ipvanish",
+        "IPVanish",
+        "IPVanish.exe"
+      ],
+      "bundle_ids": [
+        "com.ixc.IPVanish",
+        "com.stackpath.ipvanish"
+      ],
+      "path_patterns": [
+        "/IPVanish.app/",
+        "\\IPVanish\\"
+      ],
+      "domains": [
+        "ipvanish.com"
+      ]
+    },
+    {
+      "slug": "purevpn",
+      "name": "PureVPN",
+      "vendor": "GZ Systems",
+      "category": "vpn",
+      "risk_level": 80,
+      "description": "Consumer VPN \u2014 tunnels traffic past inspection and policy.",
+      "process_names": [
+        "purevpn",
+        "PureVPN",
+        "PureVPN.exe"
+      ],
+      "bundle_ids": [
+        "com.gaditek.purevpnmac"
+      ],
+      "path_patterns": [
+        "/PureVPN.app/",
+        "\\PureVPN\\"
+      ],
+      "domains": [
+        "purevpn.com"
+      ]
+    },
+    {
+      "slug": "hide-me",
+      "name": "hide.me VPN",
+      "vendor": "eVenture",
+      "category": "vpn",
+      "risk_level": 80,
+      "description": "Consumer VPN \u2014 tunnels traffic past inspection and policy.",
+      "process_names": [
+        "hideme",
+        "hide.me",
+        "hide.me.exe"
+      ],
+      "bundle_ids": [
+        "me.hide.hideme-macos"
+      ],
+      "path_patterns": [
+        "/hide.me.app/",
+        "\\hide.me\\"
+      ],
+      "domains": [
+        "hide.me"
+      ]
+    },
+    {
+      "slug": "hola-vpn",
+      "name": "Hola VPN",
+      "vendor": "Hola Networks",
+      "category": "vpn",
+      "risk_level": 80,
+      "description": "Peer-to-peer VPN/proxy \u2014 routes traffic through other users, past inspection and policy.",
+      "process_names": [
+        "hola",
+        "Hola",
+        "hola.exe",
+        "hola_svc"
+      ],
+      "bundle_ids": [
+        "org.hola.hola"
+      ],
+      "path_patterns": [
+        "/Hola.app/",
+        "\\Hola\\"
+      ],
+      "domains": [
+        "hola.org"
+      ]
+    },
+    {
+      "slug": "hidemyass",
+      "name": "HideMyAss VPN",
+      "vendor": "Avast",
+      "category": "vpn",
+      "risk_level": 80,
+      "description": "Consumer VPN \u2014 tunnels traffic past inspection and policy.",
+      "process_names": [
+        "hidemyass",
+        "HMA",
+        "HMA.VPN.exe",
+        "HMA! Pro VPN"
+      ],
+      "bundle_ids": [
+        "com.privax.hmapromac"
+      ],
+      "path_patterns": [
+        "/HMA VPN.app/",
+        "/HideMyAss.app/",
+        "\\HMA VPN\\"
+      ],
+      "domains": [
+        "hidemyass.com"
+      ]
+    },
+    {
+      "slug": "wireguard",
+      "name": "WireGuard",
+      "vendor": "WireGuard",
+      "category": "vpn",
+      "risk_level": 80,
+      "description": "VPN tunnel client \u2014 carries traffic past inspection and policy.",
+      "process_names": [
+        "WireGuard",
+        "wireguard",
+        "WireGuard.exe",
+        "wireguard-go"
+      ],
+      "bundle_ids": [
+        "com.wireguard.macos"
+      ],
+      "path_patterns": [
+        "/WireGuard.app/",
+        "\\WireGuard\\"
+      ],
+      "domains": [
+        "wireguard.com"
+      ]
+    },
+    {
+      "slug": "openvpn-connect",
+      "name": "OpenVPN Connect",
+      "vendor": "OpenVPN",
+      "category": "vpn",
+      "risk_level": 80,
+      "description": "VPN tunnel client \u2014 carries traffic past inspection and policy.",
+      "process_names": [
+        "OpenVPNConnect",
+        "OpenVPNConnect.exe",
+        "openvpn-connect"
+      ],
+      "bundle_ids": [
+        "net.openvpn.connect.app",
+        "org.openvpn.client"
+      ],
+      "path_patterns": [
+        "/OpenVPN Connect.app/",
+        "\\OpenVPN Connect\\"
+      ],
+      "domains": [
+        "openvpn.net"
+      ]
     }
   ]
 }

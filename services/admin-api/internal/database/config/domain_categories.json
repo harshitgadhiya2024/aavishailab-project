@@ -114,8 +114,13 @@
       "risk_level": 3,
       "color": "#e11d48",
       "domains": [
-        "nordvpn.com", "expressvpn.com", "surfshark.com", "protonvpn.com", "hidemyass.com",
-        "tunnelbear.com", "windscribe.com", "hotspotshield.com", "cyberghostvpn.com", "hola.org"
+        "nordvpn.com", "nordcdn.com", "expressvpn.com", "surfshark.com", "protonvpn.com",
+        "hidemyass.com", "tunnelbear.com", "windscribe.com", "hotspotshield.com", "cyberghostvpn.com",
+        "hola.org", "privateinternetaccess.com", "mullvad.net", "ipvanish.com", "purevpn.com",
+        "hide.me", "wireguard.com", "openvpn.net", "vyprvpn.com", "privadovpn.com",
+        "atlasvpn.com", "ivpn.net", "torguard.net", "strongvpn.com", "zenmate.com",
+        "hoxx.com", "browsec.com", "urban-vpn.com", "1clickvpn.net", "setupvpn.com",
+        "ultrasurf.us", "psiphon.ca", "getlantern.org", "tor.eff.org", "torproject.org"
       ]
     },
     {

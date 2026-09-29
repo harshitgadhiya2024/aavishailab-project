@@ -78,7 +78,9 @@ func appControlDomainRules(db *gorm.DB, orgID uuid.UUID, employeeID, teamID *uui
 // running processes against.
 func appControlMatchers(db *gorm.DB, orgID uuid.UUID, employeeID, teamID *uuid.UUID) []models.AppControlMatcher {
 	out := []models.AppControlMatcher{}
+	configured := map[uuid.UUID]bool{}
 	for _, r := range activeAppRules(db, orgID, employeeID, teamID) {
+		configured[r.ApplicationID] = true
 		if !r.BlockProcess {
 			continue
 		}
@@ -90,6 +92,54 @@ func appControlMatchers(db *gorm.DB, orgID uuid.UUID, employeeID, teamID *uuid.U
 			AppID:        app.ID.String(),
 			Name:         app.Name,
 			Action:       r.Action,
+			ProcessNames: app.ProcessNames,
+			BundleIDs:    app.BundleIDs,
+			PathPatterns: app.PathPatterns,
+		})
+	}
+	return append(out, defaultVPNMatchers(db, orgID, configured)...)
+}
+
+// defaultVPNBlockCategories are the catalog categories every organization
+// blocks unless it says otherwise. VPNs and anonymizers (Tor) exist to carry
+// traffic around the gateway's own inspection and policy, so blocking them is
+// the default security posture rather than something each company has to
+// remember to switch on — the same reasoning as the automatic default DLP
+// policy (see effectiveDLPPolicies).
+var defaultVPNBlockCategories = []string{"vpn", "anonymizer"}
+
+// defaultVPNMatchers blocks every built-in VPN/anonymizer application the org
+// has NOT already made its own decision about. An explicit rule always wins:
+// if an admin created a rule for one of these apps — to allow it, alert only,
+// or disabled the block — that app's ID is in `configured` (all rules,
+// enabled or not, see the caller) and no default is injected for it, so an
+// intentional exception is never overridden. Delivered to the agent the same
+// way an explicit block is; nothing is written to the database.
+func defaultVPNMatchers(db *gorm.DB, orgID uuid.UUID, configured map[uuid.UUID]bool) []models.AppControlMatcher {
+	// An admin's own rule counts as a decision even when disabled, so the
+	// set has to include disabled rows, which activeAppRules filters out.
+	var ruled []models.AppControlRule
+	db.Select("application_id").Where("org_id = ?", orgID).Find(&ruled)
+	for _, r := range ruled {
+		configured[r.ApplicationID] = true
+	}
+
+	var apps []models.ManagedApplication
+	db.Where("org_id IS NULL AND category IN ?", defaultVPNBlockCategories).Find(&apps)
+
+	out := []models.AppControlMatcher{}
+	for i := range apps {
+		app := apps[i]
+		if configured[app.ID] {
+			continue
+		}
+		if len(app.ProcessNames) == 0 && len(app.BundleIDs) == 0 && len(app.PathPatterns) == 0 {
+			continue
+		}
+		out = append(out, models.AppControlMatcher{
+			AppID:        app.ID.String(),
+			Name:         app.Name,
+			Action:       "block",
 			ProcessNames: app.ProcessNames,
 			BundleIDs:    app.BundleIDs,
 			PathPatterns: app.PathPatterns,
