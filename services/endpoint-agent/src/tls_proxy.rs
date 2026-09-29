@@ -60,7 +60,10 @@ fn upstream_tls_config() -> Arc<rustls::ClientConfig> {
 /// the HTTPS response — no upstream connection is ever made. Turns a
 /// domain block for an HTTPS site from a generic browser connection-error
 /// screen into our own page.
-pub async fn serve_block_page<T>(deps: &Deps, io: T, host: &str, leaf: &Leaf, reason: &str, category: &str) -> std::io::Result<()>
+/// Serves the block page, and returns whether the browser actually asked
+/// for a page (see `is_page_request`) — the caller records a Web Gateway
+/// event only then.
+pub async fn serve_block_page<T>(deps: &Deps, io: T, host: &str, leaf: &Leaf, reason: &str, category: &str) -> std::io::Result<bool>
 where
     T: AsyncRead + AsyncWrite + Unpin,
 {
@@ -75,7 +78,8 @@ where
     // response shows ERR_SOCKET_NOT_CONNECTED instead of the page — a
     // race, so it only showed up under load (about 1 in 200 navigations
     // with five browsers opening blocked sites at once).
-    let _ = tokio::time::timeout(BLOCK_PAGE_READ_TIMEOUT, read_request_head(&mut tls)).await;
+    let head = tokio::time::timeout(BLOCK_PAGE_READ_TIMEOUT, read_request_head(&mut tls)).await.unwrap_or_default();
+    let page_request = is_page_request(&head);
 
     let html = block_page_html(deps, host, reason, category);
     let response = format!(
@@ -94,26 +98,55 @@ where
         while matches!(tls.read(&mut sink).await, Ok(n) if n > 0) {}
     })
     .await;
-    Ok(())
+    Ok(page_request)
+}
+
+/// Whether a request head is someone opening a page, as opposed to a page
+/// fetching one of its parts. A blocked host is refused either way; only
+/// this decides whether it is worth an event. Without it, one page that
+/// embeds Stripe or an analytics script logged "Web request: r.stripe.com"
+/// dozens of times for a site the person never opened.
+///
+/// Browsers say which it is in Sec-Fetch-Mode / Sec-Fetch-Dest. A client
+/// that sends neither is not a browser (a desktop app, a script) and its
+/// connection is recorded as before. No request at all — a socket the
+/// browser opened speculatively and never used — is not recorded.
+pub fn is_page_request(head: &[u8]) -> bool {
+    if head.is_empty() {
+        return false;
+    }
+    let text = String::from_utf8_lossy(head).to_ascii_lowercase();
+    let header = |name: &str| {
+        text.lines().skip(1).find_map(|l| l.strip_prefix(name).map(|v| v.trim_start_matches(':').trim().to_string()))
+    };
+    // Dest is the precise answer: an embedded frame also navigates
+    // (mode "navigate") but its dest is "iframe".
+    match (header("sec-fetch-dest"), header("sec-fetch-mode")) {
+        (Some(dest), _) => dest == "document",
+        (None, Some(mode)) => mode == "navigate",
+        (None, None) => true,
+    }
 }
 
 const BLOCK_PAGE_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 
-/// Reads up to the end of an HTTP/1.1 request head (or 16 KiB, or EOF).
-async fn read_request_head<T: AsyncRead + Unpin>(io: &mut T) {
+/// Reads up to the end of an HTTP/1.1 request head (or 16 KiB, or EOF) and
+/// returns what it read.
+async fn read_request_head<T: AsyncRead + Unpin>(io: &mut T) -> Vec<u8> {
     let mut buf = Vec::with_capacity(2048);
     let mut chunk = [0u8; 2048];
     while buf.len() < 16 * 1024 {
         match io.read(&mut chunk).await {
-            Ok(0) | Err(_) => return,
+            Ok(0) | Err(_) => return buf,
             Ok(n) => {
                 buf.extend_from_slice(&chunk[..n]);
                 if buf.windows(4).any(|w| w == b"\r\n\r\n") {
-                    return;
+                    return buf;
                 }
             }
         }
     }
+    buf
 }
 
 /// Opens a blind (unintercepted) tunnel to `host:port` and relays bytes
@@ -321,4 +354,26 @@ async fn relay_one(
         builder = builder.header(name, value);
     }
     Ok(builder.body(full_body(resp_bytes)).unwrap())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_opening_a_page_counts() {
+        let nav = b"GET / HTTP/1.1\r\nHost: x\r\nSec-Fetch-Mode: navigate\r\nSec-Fetch-Dest: document\r\n\r\n";
+        let beacon = b"POST /b HTTP/1.1\r\nHost: r.stripe.com\r\nsec-fetch-mode: no-cors\r\nsec-fetch-dest: empty\r\n\r\n";
+        let script = b"GET /v3 HTTP/1.1\r\nHost: js.stripe.com\r\nSec-Fetch-Mode: no-cors\r\nSec-Fetch-Dest: script\r\n\r\n";
+        let iframe = b"GET /f HTTP/1.1\r\nHost: m.stripe.network\r\nSec-Fetch-Mode: navigate\r\nSec-Fetch-Dest: iframe\r\n\r\n";
+        let app = b"POST /api HTTP/1.1\r\nHost: x\r\nUser-Agent: Slack/4.41\r\n\r\n";
+        assert!(is_page_request(nav));
+        assert!(!is_page_request(beacon));
+        assert!(!is_page_request(script));
+        assert!(is_page_request(app), "a non-browser client is recorded as before");
+        assert!(!is_page_request(b""), "a speculative socket with no request is not");
+        // An embedded frame navigates, but it's the page's part, not the
+        // person opening a site.
+        assert!(!is_page_request(iframe));
+    }
 }

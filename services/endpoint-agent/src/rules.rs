@@ -13,6 +13,7 @@ use crate::deps::Deps;
 /// action/category/reason/risk_score, just via different structs, so this
 /// normalizes them once instead of every caller matching on which one it
 /// got.
+#[derive(Clone)]
 pub struct EffectiveRule {
     pub action: String, // "block" | "alert" | "" (no rule)
     pub reason: String,

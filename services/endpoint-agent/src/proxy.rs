@@ -122,7 +122,6 @@ async fn handle_connect(mut req: Request<Incoming>, deps: Arc<Deps>) -> Response
     if er.action == "block" {
         tracing::info!(%host, reason = %er.reason, "BLOCK https");
         let kind = if er.category == "threat_intelligence" { "security" } else { "activity" };
-        deps.reporter.record(&format!("https://{host}"), &host, "blocked", er.as_rule_like(), "web_request", kind);
 
         // A bare non-200 response to CONNECT can't carry a page — the
         // browser treats it as "the tunnel itself failed", not content.
@@ -135,13 +134,17 @@ async fn handle_connect(mut req: Request<Incoming>, deps: Arc<Deps>) -> Response
 
         if let Some(leaf) = leaf {
             let upgrade_fut = hyper::upgrade::on(&mut req);
-            let (host2, reason, category) = (host.clone(), er.reason.clone(), er.category.clone());
+            let (host2, er2) = (host.clone(), er.clone());
             let deps2 = deps.clone();
             tokio::spawn(async move {
                 match upgrade_fut.await {
                     Ok(upgraded) => {
-                        if let Err(e) = crate::tls_proxy::serve_block_page(&deps2, TokioIo::new(upgraded), &host2, &leaf, &reason, &category).await {
-                            tracing::debug!(error = %e, host = %host2, "block-page MITM failed");
+                        match crate::tls_proxy::serve_block_page(&deps2, TokioIo::new(upgraded), &host2, &leaf, &er2.reason, &er2.category).await {
+                            // Recorded only when someone opened a page here —
+                            // see is_page_request.
+                            Ok(true) => deps2.reporter.record(&format!("https://{host2}"), &host2, "blocked", er2.as_rule_like(), "web_request", kind),
+                            Ok(false) => tracing::debug!(host = %host2, "blocked a page part, not recorded"),
+                            Err(e) => tracing::debug!(error = %e, host = %host2, "block-page MITM failed"),
                         }
                     }
                     Err(e) => tracing::debug!(error = %e, "CONNECT upgrade failed"),
@@ -149,6 +152,9 @@ async fn handle_connect(mut req: Request<Incoming>, deps: Arc<Deps>) -> Response
             });
             return status_response(StatusCode::OK);
         }
+        // No block page possible (SSL inspection off): the tunnel is refused
+        // before any request is seen, so this is the only moment to record.
+        deps.reporter.record(&format!("https://{host}"), &host, "blocked", er.as_rule_like(), "web_request", kind);
         return status_response(StatusCode::FORBIDDEN);
     }
 
