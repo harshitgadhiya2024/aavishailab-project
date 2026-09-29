@@ -12,9 +12,9 @@ name: Agent packages
 # `python-manifest` as its own `agent-packages-python` CI artifact — kept
 # deliberately available, not deleted, as a same-pipeline rollback path if
 # the Rust connector needs to be pulled back for any device class. See
-# REQUIREMENT_AUDIT_AND_PLAN.md's Phase 6 for the verification history
-# behind this switch (real macOS hardware throughout the session that made
-# it, a first successful Windows build on a real windows-latest runner)
+# the verification history behind this switch (real macOS hardware
+# throughout the session that made it, a first successful Windows build
+# on a real windows-latest runner)
 # and its one open gap (nobody has yet installed the real .msi and clicked
 # through it on a Windows desktop — this cutover accepts that gap rather
 # than waiting on it, a decision made explicitly, not by default).

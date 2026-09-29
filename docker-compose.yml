@@ -329,7 +329,7 @@ services:
       - aavishield-net
 
   # shadowit-service and casb-service are deliberately NOT run — the
-  # required sidebar (requirement-details.md) doesn't include Shadow IT or
+  # required sidebar doesn't include Shadow IT or
   # CASB tabs, and both admin-api clients (internal/shadowitclient,
   # internal/casbclient) already fail open cleanly when their *_SERVICE_URL
   # is unset (Enabled() returns false, no network call is even attempted —

@@ -1,12 +1,6 @@
 
 # Logs
 logs
-/SOPS/
-/regulatory-guidance/
-services/query-service/scripts/
-/questionary/
-/docs/
-/questionary/
 .venv*/
 *.log
 npm-debug.log*
