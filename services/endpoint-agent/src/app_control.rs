@@ -764,13 +764,23 @@ fn terminate(pid: i32) -> bool {
 /// below uses a tool the OS already ships, for the same reason the rest of
 /// this crate does.
 async fn notify_blocked(app_name: &str) {
-    // Nothing the company controls reaches this string, but it is
-    // interpolated into an AppleScript/PowerShell literal, so quotes and
-    // backslashes are stripped rather than escaped per-language.
     let safe: String = app_name.chars().filter(|c| !matches!(c, '"' | '\\' | '\'' | '\n' | '\r')).take(80).collect();
-    let title = "Blocked by your company";
-    let body = format!("{safe} is not allowed on this device. Contact your IT administrator if you need access.");
+    notify(
+        "Blocked by your company",
+        &format!("{safe} is not allowed on this device. Contact your IT administrator if you need access."),
+    )
+    .await;
+}
 
+/// Shows a desktop notification, best-effort and fire-and-forget — a laptop
+/// with no notification daemon, or a locked screen, must never hold up or
+/// fail the caller. Every platform path uses a tool the OS already ships.
+///
+/// `title`/`body` are interpolated into an AppleScript/PowerShell literal, so
+/// the caller must pass text with quotes, backslashes and newlines already
+/// stripped (see `notify_blocked`); nothing here escapes per-language.
+pub(crate) async fn notify(title: &str, body: &str) {
+    let (title, body) = (title.to_string(), body.to_string());
     let _ = tokio::task::spawn_blocking(move || {
         #[cfg(target_os = "macos")]
         {
@@ -779,7 +789,7 @@ async fn notify_blocked(app_name: &str) {
         }
         #[cfg(target_os = "linux")]
         {
-            let _ = std::process::Command::new("notify-send").args([title, &body]).output();
+            let _ = std::process::Command::new("notify-send").args([title.as_str(), body.as_str()]).output();
         }
         #[cfg(target_os = "windows")]
         {

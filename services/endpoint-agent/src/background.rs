@@ -335,6 +335,7 @@ async fn run_full_agent(config: Config, ui: UiState, client_slot: ClientSlot, mu
     tokio::spawn(crate::heartbeat::loop_heartbeat(deps.clone(), HEARTBEAT_INTERVAL));
     tokio::spawn(crate::inventory::loop_report(client.clone(), gate.clone()));
     tokio::spawn(Arc::new(crate::app_control::AppControlWatcher::new(client.clone(), gate.clone())).run());
+    tokio::spawn(crate::browser_ext::loop_scan(client.clone(), gate.clone()));
     // Activity monitoring only ever touches the OS input APIs once the org
     // has screenshots on — start_when_enabled polls for that rather than
     // starting eagerly, so a device that is never monitored never triggers
