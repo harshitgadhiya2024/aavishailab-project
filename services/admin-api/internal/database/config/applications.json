@@ -765,6 +765,31 @@
       "domains": [
         "openvpn.net"
       ]
+    },
+    {
+      "slug": "aws-vpn-client",
+      "name": "AWS VPN Client",
+      "vendor": "Amazon Web Services",
+      "category": "vpn",
+      "risk_level": 80,
+      "description": "VPN tunnel client for AWS Client VPN \u2014 carries traffic past inspection and policy. Allow it explicitly if the company's own AWS Client VPN is in use.",
+      "process_names": [
+        "AWS VPN Client",
+        "acvc-openvpn",
+        "AWSVPNClient.exe",
+        "acvc-openvpn.exe",
+        "awsvpnclient"
+      ],
+      "bundle_ids": [
+        "com.amazonaws.acvc.osx"
+      ],
+      "path_patterns": [
+        "/AWS VPN Client.app/",
+        "\\AWS VPN Client\\"
+      ],
+      "domains": [
+        "self-service.clientvpn.amazonaws.com"
+      ]
     }
   ]
 }
