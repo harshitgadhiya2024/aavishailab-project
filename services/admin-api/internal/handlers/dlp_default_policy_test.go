@@ -56,3 +56,17 @@ func TestEffectiveDLPPolicies_NonEmptyListPassesThrough(t *testing.T) {
 		t.Fatalf("a non-empty policy list must not be replaced by the default, got %+v", effective)
 	}
 }
+
+// anyPolicyEnablesDetector reports whether any policy turns on the named
+// detector — the check dlp-service makes before each AI tier.
+func anyPolicyEnablesDetector(policies []models.Policy, name string) bool {
+	for _, p := range policies {
+		detectors, _ := p.Rules["detectors"].([]any)
+		for _, d := range detectors {
+			if s, ok := d.(string); ok && s == name {
+				return true
+			}
+		}
+	}
+	return false
+}

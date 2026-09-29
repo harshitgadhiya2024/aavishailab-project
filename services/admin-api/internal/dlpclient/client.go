@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"strings"
@@ -31,16 +32,18 @@ type CustomPattern struct {
 // PolicyEnvelope is one DLP policy flattened into what dlp-service needs. It
 // intentionally carries no DB types — just the scanning config.
 type PolicyEnvelope struct {
-	Name            string         `json:"name"`
-	Action          string         `json:"action"`
-	Detectors       []string       `json:"detectors"`
-	Keywords        []string       `json:"keywords"`
+	Name            string          `json:"name"`
+	Action          string          `json:"action"`
+	Detectors       []string        `json:"detectors"`
+	Keywords        []string        `json:"keywords"`
 	CustomPatterns  []CustomPattern `json:"custom_patterns"`
-	BypassFileTypes []string       `json:"bypass_file_types"`
-	DetectorWeights map[string]int `json:"detector_weights"`
-	BlockThreshold  *int           `json:"block_threshold,omitempty"`
-	AlertThreshold  *int           `json:"alert_threshold,omitempty"`
-	Priority        int            `json:"priority"`
+	BypassFileTypes []string        `json:"bypass_file_types"`
+	DetectorWeights map[string]int  `json:"detector_weights"`
+	BlockThreshold  *int            `json:"block_threshold,omitempty"`
+	AlertThreshold  *int            `json:"alert_threshold,omitempty"`
+	Priority        int             `json:"priority"`
+	// Reason a part couldn't be inspected → "alert" | "block" | "allow".
+	OnUnscannable map[string]string `json:"on_unscannable"`
 }
 
 // Match is one detector hit (already masked — never a raw sensitive value).
@@ -49,18 +52,6 @@ type Match struct {
 	Label         string `json:"label"`
 	MaskedPreview string `json:"masked_preview"`
 	Weight        int    `json:"weight"`
-}
-
-// ExternalMatch is a detector hit computed outside dlp-service — currently
-// only ai-service's vision classification of an image. dlp-service folds
-// this into the same weighted aggregate as every regex/checksum detector,
-// but only for a policy that has explicitly enabled `Detector` (e.g.
-// "ai_visual") — see its scoring::run_detectors.
-type ExternalMatch struct {
-	Detector   string `json:"detector"`
-	Label      string `json:"label"`
-	Confidence int    `json:"confidence"` // 0-100; scales the policy's own weight for Detector
-	Preview    string `json:"preview"`
 }
 
 // Verdict is dlp-service's decision for a piece of content.
@@ -78,13 +69,12 @@ type Verdict struct {
 }
 
 type scanRequest struct {
-	OrgID           string           `json:"org_id"`
-	Filename        string           `json:"filename"`
-	ContentType     string           `json:"content_type"`
-	Destination     string           `json:"destination"`
-	ContentB64      string           `json:"content_b64"`
-	Policies        []PolicyEnvelope `json:"policies"`
-	ExternalMatches []ExternalMatch  `json:"external_matches,omitempty"`
+	OrgID       string           `json:"org_id"`
+	Filename    string           `json:"filename"`
+	ContentType string           `json:"content_type"`
+	Destination string           `json:"destination"`
+	ContentB64  string           `json:"content_b64"`
+	Policies    []PolicyEnvelope `json:"policies"`
 }
 
 // otelhttp.NewTransport creates a child span per call and propagates the
@@ -122,27 +112,17 @@ func MintToken(orgID string, ttl time.Duration) string {
 	return "v1." + enc.EncodeToString(payload) + "." + enc.EncodeToString(sig)
 }
 
-// Scan submits content + policy config to dlp-service and returns its verdict.
-// ctx should carry the inbound request's span (c.Request.Context() from the
-// Gin handler) so this hop joins that trace instead of starting a new one.
+// Scan submits one piece of content + policy config to dlp-service's
+// pattern detectors and returns its verdict. ctx should carry the inbound
+// request's span so this hop joins that trace.
 func Scan(ctx context.Context, orgID, filename, contentType, destination string, content []byte, policies []PolicyEnvelope) (*Verdict, error) {
-	return ScanExt(ctx, orgID, filename, contentType, destination, content, policies, nil)
-}
-
-// ScanExt is Scan plus externalMatches — detector hits computed outside
-// dlp-service (currently only ai-service's vision classification) that
-// should be folded into the same weighted aggregate as the content itself.
-func ScanExt(ctx context.Context, orgID, filename, contentType, destination string, content []byte,
-	policies []PolicyEnvelope, externalMatches []ExternalMatch) (*Verdict, error) {
-
 	reqBody, err := json.Marshal(scanRequest{
-		OrgID:           orgID,
-		Filename:        filename,
-		ContentType:     contentType,
-		Destination:     destination,
-		ContentB64:      base64.StdEncoding.EncodeToString(content),
-		Policies:        policies,
-		ExternalMatches: externalMatches,
+		OrgID:       orgID,
+		Filename:    filename,
+		ContentType: contentType,
+		Destination: destination,
+		ContentB64:  base64.StdEncoding.EncodeToString(content),
+		Policies:    policies,
 	})
 	if err != nil {
 		return nil, err
@@ -174,9 +154,9 @@ func ScanExt(ctx context.Context, orgID, filename, contentType, destination stri
 	return &v, nil
 }
 
-// RequestMeta is one intercepted outbound request as the endpoint agent saw
-// it — everything dlp-service needs to decide whether a person sent it.
-type RequestMeta struct {
+// UploadMeta is one intercepted outbound request as the endpoint agent saw
+// it — what dlp-service needs to decide whether a person sent it.
+type UploadMeta struct {
 	Host         string `json:"host"`
 	Path         string `json:"path"`
 	Method       string `json:"method"`
@@ -189,7 +169,7 @@ type RequestMeta struct {
 }
 
 // Inspection is dlp-service's answer to "is this a user action, and what
-// was it". When Relevant is false nothing is scanned or recorded.
+// was it". When Relevant is false nothing was scanned.
 type Inspection struct {
 	Relevant   bool   `json:"relevant"`
 	SkipReason string `json:"skip_reason"`
@@ -197,50 +177,95 @@ type Inspection struct {
 	Kind      string `json:"kind"`
 	Operation string `json:"operation"`
 	// The attached file's real name, when there is one.
-	Filename string `json:"filename"`
-	// For Kind "text": only what the person wrote.
-	UserText      string `json:"user_text"`
+	Filename      string `json:"filename"`
 	RequestSource string `json:"request_source"`
 	AppName       string `json:"app_name"`
 	Site          string `json:"site"`
 	Destination   string `json:"destination"`
 }
 
-type inspectRequest struct {
-	OrgID string `json:"org_id"`
-	RequestMeta
-	ContentB64 string `json:"content_b64"`
+// UploadVerdict is the single verdict for everything the upload contained.
+type UploadVerdict struct {
+	Matched    bool     `json:"matched"`
+	Score      int      `json:"score"`
+	Band       string   `json:"band"`
+	Action     string   `json:"action"`
+	PolicyName string   `json:"policy_name"`
+	Detectors  []string `json:"detectors"`
+	// "Label: masked preview" per finding — never a raw sensitive value.
+	Previews []string `json:"previews"`
+	Reason   string   `json:"reason"`
 }
 
-// Inspect asks dlp-service whether an intercepted request is something a
-// person sent — a file, a message, a prompt, a form — rather than the
-// background telemetry that makes up most outbound traffic.
-func Inspect(ctx context.Context, orgID string, meta RequestMeta, content []byte) (*Inspection, error) {
-	reqBody, err := json.Marshal(inspectRequest{
-		OrgID:       orgID,
-		RequestMeta: meta,
-		ContentB64:  base64.StdEncoding.EncodeToString(content),
-	})
+// UploadOutcome is dlp-service's full answer. Verdict is nil when the
+// request was not a user action.
+type UploadOutcome struct {
+	Inspection Inspection     `json:"inspection"`
+	Verdict    *UploadVerdict `json:"verdict"`
+}
+
+// uploadClient allows for what a whole upload can take: extracting a large
+// archive, OCR of scanned pages, and LLM calls — minutes, not the 15s a
+// single text scan gets. The agent never waits on this (it fires the scan
+// and relays the upload straight away), so the long ceiling costs nobody.
+var uploadClient = &http.Client{Timeout: 5 * time.Minute, Transport: otelhttp.NewTransport(http.DefaultTransport)}
+
+// ScanUpload runs dlp-service's whole pipeline on one intercepted upload.
+// The body is streamed, never held in memory: multipart/form-data with the
+// JSON request first (so the service checks the token before reading any
+// of the body) and the raw body second.
+func ScanUpload(ctx context.Context, orgID string, meta UploadMeta, policies []PolicyEnvelope, body io.Reader) (*UploadOutcome, error) {
+	reqJSON, err := json.Marshal(struct {
+		OrgID string `json:"org_id"`
+		UploadMeta
+		Policies []PolicyEnvelope `json:"policies"`
+	}{orgID, meta, policies})
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, serviceURL()+"/v1/inspect", bytes.NewReader(reqBody))
+
+	pr, pw := io.Pipe()
+	mw := multipart.NewWriter(pw)
+	go func() {
+		err := func() error {
+			part, err := mw.CreateFormField("request")
+			if err != nil {
+				return err
+			}
+			if _, err := part.Write(reqJSON); err != nil {
+				return err
+			}
+			part, err = mw.CreateFormFile("body", "body")
+			if err != nil {
+				return err
+			}
+			if _, err := io.Copy(part, body); err != nil {
+				return err
+			}
+			return mw.Close()
+		}()
+		pw.CloseWithError(err)
+	}()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, serviceURL()+"/v1/scan-upload", pr)
 	if err != nil {
+		pr.Close()
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", mw.FormDataContentType())
 	req.Header.Set("Authorization", "Bearer "+MintToken(orgID, 5*time.Minute))
 
-	resp, err := httpClient.Do(req)
+	resp, err := uploadClient.Do(req)
 	if err != nil {
+		pr.Close()
 		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		detail, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return nil, fmt.Errorf("dlp-service inspect returned %d: %s", resp.StatusCode, strings.TrimSpace(string(detail)))
+		return nil, fmt.Errorf("dlp-service scan-upload returned %d: %s", resp.StatusCode, strings.TrimSpace(string(detail)))
 	}
-	var out Inspection
+	var out UploadOutcome
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return nil, err
 	}

@@ -16,9 +16,7 @@ import (
 	"time"
 
 	"github.com/aavishield/admin-api/internal/casbclient"
-	"github.com/aavishield/admin-api/internal/dlp"
 	"github.com/aavishield/admin-api/internal/dlpclient"
-	"github.com/aavishield/admin-api/internal/extractclient"
 	"github.com/aavishield/admin-api/internal/mailer"
 	"github.com/aavishield/admin-api/internal/malwareclient"
 	"github.com/aavishield/admin-api/internal/middleware"
@@ -958,7 +956,7 @@ func (h *AgentHandler) ScanDLP(c *gin.Context) {
 		return
 	}
 
-	spool, size, err := spoolBody(c.Request.Body)
+	spool, _, err := spoolBody(c.Request.Body)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read content", "scanned": false})
 		return
@@ -969,49 +967,6 @@ func (h *AgentHandler) ScanDLP(c *gin.Context) {
 	destination := c.Query("destination")
 	requestPath := c.Query("path")
 	requestMethod := c.Query("method")
-
-	// Most of what the agent forwards is not a person sending anything —
-	// analytics beacons, error reporters, a doc polling for changes. Only a
-	// real file, a known send (email, chat, AI prompt, comment) or a form the
-	// person submitted is scanned; everything else is dropped here, before a
-	// detector or an LLM ever sees it. dlp-service owns that decision (see
-	// its inspect.rs), and when it can't be asked nothing is recorded:
-	// scanning raw background bodies is exactly what filled the DLP log with
-	// false incidents.
-	if !dlpclient.Enabled() {
-		c.JSON(http.StatusOK, gin.H{"scanned": false, "action": "allow"})
-		return
-	}
-	head, err := readInspectBody(spool, size)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"scanned": false, "action": "allow"})
-		return
-	}
-	insp, err := dlpclient.Inspect(c.Request.Context(), orgID.String(), dlpclient.RequestMeta{
-		Host:         destination,
-		Path:         requestPath,
-		Method:       requestMethod,
-		ContentType:  contentType,
-		Filename:     c.Query("filename"),
-		UserAgent:    c.Query("user_agent"),
-		Source:       c.Query("source"),
-		SecFetchMode: c.Query("sec_fetch_mode"),
-		SecFetchDest: c.Query("sec_fetch_dest"),
-	}, head)
-	if err != nil {
-		log.Printf("dlp-service inspect failed (%v) — not recording %s%s", err, destination, requestPath)
-		c.JSON(http.StatusOK, gin.H{"scanned": false, "action": "allow"})
-		return
-	}
-	if !insp.Relevant {
-		c.JSON(http.StatusOK, gin.H{"scanned": false, "action": "allow", "skipped": insp.SkipReason})
-		return
-	}
-	if _, err := spool.Seek(0, io.SeekStart); err != nil {
-		c.JSON(http.StatusOK, gin.H{"scanned": false, "action": "allow"})
-		return
-	}
-	filename := insp.Filename
 
 	var policies []models.Policy
 	h.db.Where("org_id = ? AND enabled = true AND type = ?", orgID, models.PolicyTypeDLP).
@@ -1026,21 +981,41 @@ func (h *AgentHandler) ScanDLP(c *gin.Context) {
 		}
 	}
 	policies = filterPoliciesByTarget(policies, empID, teamID)
-	// Before scanDLPStream, not after: the media/vision/text-classification
-	// gates it calls into check "did a policy enable this AI tier" against
-	// whatever list they're handed, and used to see this org's raw
-	// (possibly empty) list — see effectiveDLPPolicies's doc comment.
 	policies = effectiveDLPPolicies(policies)
 
-	var v dlpVerdict
-	if insp.Kind == "file" {
-		v = scanDLPStream(c.Request.Context(), orgID.String(), filename, contentType, destination, spool, size, policies)
-	} else {
-		// Only the text the person wrote — never the request's ids, tokens
-		// and timestamps, which is what the checksum detectors used to match.
-		v = scanDLPSegmentWindowed(c.Request.Context(), orgID.String(),
-			extractclient.Item{Text: insp.UserText, Mime: "text/plain"}, destination, policies)
+	// Everything from here to the verdict is dlp-service's: whether this is
+	// a person sending something at all (most agent traffic is analytics
+	// beacons and background sync, and is dropped unscanned), extracting
+	// what a file contains, OCR, the detectors and the AI tier. When it
+	// can't be asked, nothing is recorded — guessing is what used to fill
+	// the DLP log with false incidents.
+	if !dlpclient.Enabled() {
+		c.JSON(http.StatusOK, gin.H{"scanned": false, "action": "allow"})
+		return
 	}
+	out, err := dlpclient.ScanUpload(c.Request.Context(), orgID.String(), dlpclient.UploadMeta{
+		Host:         destination,
+		Path:         requestPath,
+		Method:       requestMethod,
+		ContentType:  contentType,
+		Filename:     c.Query("filename"),
+		UserAgent:    c.Query("user_agent"),
+		Source:       c.Query("source"),
+		SecFetchMode: c.Query("sec_fetch_mode"),
+		SecFetchDest: c.Query("sec_fetch_dest"),
+	}, buildDLPEnvelopes(policies), spool)
+	if err != nil {
+		log.Printf("dlp-service scan failed (%v) — not recording %s%s", err, destination, strings.SplitN(requestPath, "?", 2)[0])
+		c.JSON(http.StatusOK, gin.H{"scanned": false, "action": "allow"})
+		return
+	}
+	insp := out.Inspection
+	if !insp.Relevant || out.Verdict == nil {
+		c.JSON(http.StatusOK, gin.H{"scanned": false, "action": "allow", "skipped": insp.SkipReason})
+		return
+	}
+	filename := insp.Filename
+	v := verdictFromUpload(out.Verdict, policies)
 
 	resp := gin.H{"scanned": true, "action": "allow", "score": v.score, "band": v.band}
 	if !v.matched {
@@ -1122,28 +1097,6 @@ func (h *AgentHandler) ScanDLP(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-// inspectMaxBytes is how much of a request body dlp-service's inspect call
-// sees. Bodies up to this size go whole (a text payload must be seen whole to
-// extract what the person wrote); anything larger is a file, and its first
-// megabyte carries everything that identifies one — multipart part headers
-// and magic bytes.
-const inspectMaxBytes = 16 << 20
-
-func readInspectBody(spool *os.File, size int64) ([]byte, error) {
-	n := size
-	if n > inspectMaxBytes {
-		n = 1 << 20
-	}
-	if _, err := spool.Seek(0, io.SeekStart); err != nil {
-		return nil, err
-	}
-	buf := make([]byte, n)
-	if _, err := io.ReadFull(spool, buf); err != nil && err != io.ErrUnexpectedEOF {
-		return nil, err
-	}
-	return buf, nil
-}
-
 func truncateRunes(s string, max int) string {
 	r := []rune(s)
 	if len(r) <= max {
@@ -1200,34 +1153,20 @@ func effectiveDLPPolicies(policies []models.Policy) []models.Policy {
 	return policies
 }
 
+// scanDLPContent scans one piece of text against the given policies in
+// dlp-service — the policy editor's "test a sample" tool. There is no
+// in-process fallback any more: the detectors live in dlp-service only.
 func scanDLPContent(ctx context.Context, orgID, filename, contentType, destination string, data []byte, policies []models.Policy) dlpVerdict {
-	return scanDLPContentExt(ctx, orgID, filename, contentType, destination, data, policies, nil)
-}
-
-// scanDLPContentExt is scanDLPContent plus externalMatches — detector hits
-// computed outside dlp-service (currently only ai-service's vision
-// classification of an image) that should be folded into the same weighted
-// aggregate as the content itself. Dropped silently when the in-process
-// fallback scanner is used instead of dlp-service, which has no scoring
-// concept to fold them into — a known, pre-existing limitation of that
-// fallback (see its own doc comment).
-func scanDLPContentExt(ctx context.Context, orgID, filename, contentType, destination string, data []byte,
-	policies []models.Policy, externalMatches []dlpclient.ExternalMatch) dlpVerdict {
-	// Defensive fallback for any caller that reaches this directly without
-	// going through ScanDLP's effectiveDLPPolicies call — see that
-	// function's doc comment for why the real injection now happens
-	// earlier, not here.
 	policies = effectiveDLPPolicies(policies)
-
-	if dlpclient.Enabled() {
-		envelopes := buildDLPEnvelopes(policies)
-		if v, err := dlpclient.ScanExt(ctx, orgID, filename, contentType, destination, data, envelopes, externalMatches); err == nil {
-			return verdictFromService(v, policies)
-		} else {
-			log.Printf("dlp-service scan failed (%v) — falling back to in-process scanner", err)
-		}
+	if !dlpclient.Enabled() {
+		return dlpVerdict{action: "allow", band: "allow"}
 	}
-	return verdictFromLocal(dlp.Scan(policies, filename, contentType, data))
+	v, err := dlpclient.Scan(ctx, orgID, filename, contentType, destination, data, buildDLPEnvelopes(policies))
+	if err != nil {
+		log.Printf("dlp-service scan failed: %v", err)
+		return dlpVerdict{action: "allow", band: "allow"}
+	}
+	return verdictFromService(v, policies)
 }
 
 // DefaultDLPPolicyName labels events produced by the built-in automatic DLP
@@ -1237,11 +1176,6 @@ const DefaultDLPPolicyName = "Automatic DLP (default)"
 // defaultDLPPolicy is the always-on ruleset used when an org has no custom DLP
 // policies. It enables every built-in detector and carries the 80/50 score
 // thresholds the dlp-service scorer uses for its block/alert/allow bands.
-//
-// Note: the in-process fallback scanner (dlp.Scan, used only when dlp-service
-// isn't deployed) has no 0-100 scoring — it acts on the policy Action on any
-// detector match. We set Action=block there so sensitive uploads are still
-// stopped; the graduated 70/50 banding requires dlp-service.
 func defaultDLPPolicy() models.Policy {
 	return models.Policy{
 		Name:     DefaultDLPPolicyName,
@@ -1251,18 +1185,18 @@ func defaultDLPPolicy() models.Policy {
 		Priority: 1000, // lowest precedence — any real policy wins
 		Rules: map[string]any{
 			"detectors": []any{
-				string(dlp.DetectorCreditCard),
-				string(dlp.DetectorPAN),
-				string(dlp.DetectorAadhaar),
-				string(dlp.DetectorAWSKey),
-				string(dlp.DetectorGitHubToken),
-				string(dlp.DetectorGenericAPIKey),
-				string(dlp.DetectorSourceCode),
+				"credit_card",
+				"pan_india",
+				"aadhaar",
+				"aws_key",
+				"github_token",
+				"generic_api_key",
+				"source_code",
 				// LLM tiers — on by default so semantic sensitivity
 				// (contracts, salary sheets, photographed IDs, spoken
 				// secrets) is caught with zero setup, exactly like the
-				// checksum detectors above. Only fire when ai-service is
-				// configured (AI_SERVICE_URL); otherwise a no-op.
+				// checksum detectors above. Only fire when dlp-service has
+				// an LLM provider key; otherwise a no-op.
 				"ai_text",
 				"ai_visual",
 				"ai_audio",
@@ -1302,51 +1236,36 @@ func verdictFromService(v *dlpclient.Verdict, policies []models.Policy) dlpVerdi
 	}
 }
 
-func verdictFromLocal(result dlp.Result) dlpVerdict {
-	if !result.Matched {
-		return dlpVerdict{matched: false, action: "allow", band: "allow"}
-	}
-	detectors := make([]string, 0, len(result.Matches))
-	previews := make([]string, 0, len(result.Matches))
-	for _, m := range result.Matches {
-		detectors = append(detectors, string(m.Detector))
-		previews = append(previews, m.Label+": "+m.Preview)
-	}
-	action, band := "log", "allow"
-	switch result.Action {
-	case models.PolicyActionBlock:
-		action, band = "block", "block"
-	case models.PolicyActionAlert:
-		action, band = "alert", "alert"
-	case models.PolicyActionAllow:
-		action = "allow"
-	}
-	reason := "Sensitive company data detected"
-	if len(result.Matches) > 0 {
-		reason = "Sensitive company data detected: " + result.Matches[0].Label
-	}
-	policyName := ""
+// verdictFromUpload maps dlp-service's scan-upload verdict onto the
+// handler's, resolving the policy name it reports back to a policy id.
+func verdictFromUpload(v *dlpclient.UploadVerdict, policies []models.Policy) dlpVerdict {
 	var policyID *uuid.UUID
-	if result.Policy != nil {
-		policyName = result.Policy.Name
-		policyID = &result.Policy.ID
+	for i := range policies {
+		if policies[i].Name == v.PolicyName {
+			policyID = &policies[i].ID
+			break
+		}
+	}
+	reason := v.Reason
+	if reason == "" && v.Matched {
+		reason = "Sensitive company data detected"
 	}
 	return dlpVerdict{
-		matched:    true,
-		score:      0,
-		band:       band,
-		action:     action,
-		policyName: policyName,
+		matched:    v.Matched,
+		score:      v.Score,
+		band:       v.Band,
+		action:     v.Action,
+		policyName: v.PolicyName,
 		policyID:   policyID,
-		detectors:  detectors,
-		previews:   previews,
+		detectors:  v.Detectors,
+		previews:   v.Previews,
 		reason:     reason,
 	}
 }
 
 // buildDLPEnvelopes flattens each org DLP policy's jsonb Rules into the
 // scanning config dlp-service expects. Missing/malformed fields degrade to
-// empty rather than erroring, mirroring dlp.parseRules.
+// empty rather than erroring.
 func buildDLPEnvelopes(policies []models.Policy) []dlpclient.PolicyEnvelope {
 	envelopes := make([]dlpclient.PolicyEnvelope, 0, len(policies))
 	for i := range policies {
@@ -1365,6 +1284,7 @@ func buildDLPEnvelopes(policies []models.Policy) []dlpclient.PolicyEnvelope {
 			CustomPatterns:  []dlpclient.CustomPattern{},
 			BypassFileTypes: []string{},
 			DetectorWeights: map[string]int{},
+			OnUnscannable:   map[string]string{},
 		}
 		r := p.Rules
 		if v := stringSliceFromAny(r["detectors"]); v != nil {
@@ -1402,6 +1322,13 @@ func buildDLPEnvelopes(policies []models.Policy) []dlpclient.PolicyEnvelope {
 		}
 		if n, ok := anyToInt(r["alert_threshold"]); ok {
 			env.AlertThreshold = &n
+		}
+		if m, ok := r["on_unscannable"].(map[string]any); ok {
+			for reason, action := range m {
+				if a, ok := action.(string); ok {
+					env.OnUnscannable[reason] = a
+				}
+			}
 		}
 		envelopes = append(envelopes, env)
 	}

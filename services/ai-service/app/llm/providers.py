@@ -178,9 +178,8 @@ class MultiLLMRouter:
 
     def _load_providers(self):
         """Load providers from environment variables."""
-        # OpenRouter is the default primary now (DLP text/vision classification
-        # runs through it); kie.ai stays on the chain as a fallback where a key
-        # is still configured.
+        # OpenRouter is the default primary; kie.ai stays on the chain as a
+        # fallback where a key is still configured.
         provider_chain = os.getenv("LLM_PROVIDER_CHAIN", "openrouter,kie_ai").split(",")
 
         provider_configs = {

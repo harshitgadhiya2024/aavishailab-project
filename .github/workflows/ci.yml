@@ -43,6 +43,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      # dlp-service's PDF and OCR tests use the real pdfium library and
+      # tesseract binary, exactly as its Dockerfile ships them; without them
+      # those tests skip rather than prove anything.
+      - name: Install tesseract and pdfium (dlp-service only)
+        if: matrix.service == 'dlp-service-rust'
+        run: |
+          sudo apt-get update && sudo apt-get install -y tesseract-ocr tesseract-ocr-eng
+          mkdir -p "$RUNNER_TEMP/pdfium"
+          curl -fsSL https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-linux-x64.tgz | tar -xz -C "$RUNNER_TEMP/pdfium"
+          echo "PDFIUM_LIB_PATH=$RUNNER_TEMP/pdfium/lib" >> "$GITHUB_ENV"
       - name: cargo test
         working-directory: services/${{ matrix.service }}
         run: cargo test
@@ -86,19 +96,11 @@ jobs:
           - malware-service
           - casb-service
           - ai-service
-          # Deep content extraction (documents/archives/images+OCR) feeding
-          # the DLP detector pipeline. Python/FastAPI; see its README.
-          - extract-service
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      # extract-service's OCR tests shell out to the real tesseract binary
-      # (matching its Dockerfile), so the runner needs it installed.
-      - name: Install tesseract (extract-service only)
-        if: matrix.service == 'extract-service'
-        run: sudo apt-get update && sudo apt-get install -y tesseract-ocr tesseract-ocr-hin
       - name: Install dependencies
         working-directory: services/${{ matrix.service }}
         run: |
