@@ -8,7 +8,7 @@ use axum::http::{Request, StatusCode};
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine;
 use dlp_service::config::Config;
-use dlp_service::{auth::mint_token, build_router, AppState, Metrics};
+use dlp_service::{auth::mint_token, build_router, AppState};
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -25,7 +25,7 @@ fn b64(s: &str) -> String {
 }
 
 fn app() -> axum::Router {
-    let state = Arc::new(AppState { config: Config::for_test(SECRET), metrics: Metrics::default() });
+    let state = Arc::new(AppState::new(Config::for_test(SECRET)));
     build_router(state)
 }
 
@@ -167,7 +167,7 @@ async fn test_oversize_rejected() {
     // natural way to override it per-test.
     let mut cfg = Config::for_test(SECRET);
     cfg.max_scan_size = 16;
-    let state = Arc::new(AppState { config: cfg, metrics: Metrics::default() });
+    let state = Arc::new(AppState::new(cfg));
     let app = build_router(state);
 
     let big = b64(&"x".repeat(100));

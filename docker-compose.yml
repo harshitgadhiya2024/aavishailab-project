@@ -190,25 +190,66 @@ services:
   # the same 80/50 per-scan, so a company gets protection with zero setup.
   dlp-service:
     build:
-      # Rust implementation (services/dlp-service-rust) — see its README for
-      # the differential-test + benchmark evidence behind the original
-      # cutover from the retired Python service.
+      # The whole DLP pipeline, in Rust (services/dlp-service-rust): which
+      # requests are a person sending something, extraction of documents/
+      # archives/PDFs/email, OCR, the detectors and the AI tier. admin-api
+      # only loads policies before it and records the event after.
       context: ./services/dlp-service-rust
       dockerfile: Dockerfile
     container_name: aavishield-dlp-service
     deploy:
       resources:
         limits:
-          memory: 256m
+          # PDF rendering and OCR need headroom that pattern matching never did.
+          memory: 2g
+          # tesseract is the only subprocess it legitimately spawns.
+          pids: 512
     restart: unless-stopped
+    # It parses untrusted, possibly hostile files: read-only root, no
+    # capabilities, and one writable scratch dir. The short `tmpfs:` form
+    # mounts root-owned, which the non-root user can't write — OCR then
+    # fails silently on every image — so the mode is set explicitly.
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - type: tmpfs
+        target: /tmp/dlp-scratch
+        tmpfs:
+          mode: 01777
     environment:
       DLP_SERVICE_SECRET: ${DLP_SERVICE_SECRET:-change-this-dlp-shared-secret-in-production}
       DLP_SERVICE_SECRET_PREVIOUS: ${DLP_SERVICE_SECRET_PREVIOUS:-}
       DLP_REQUIRE_AUTH: "true"
       DLP_BLOCK_THRESHOLD: ${DLP_BLOCK_THRESHOLD:-80}
       DLP_ALERT_THRESHOLD: ${DLP_ALERT_THRESHOLD:-50}
+      EXTRACT_OCR_LANGS: ${EXTRACT_OCR_LANGS:-eng+hin}
+      # ─── AI tier (ai_text / ai_visual / ai_audio) ─────────────────────────
+      # Off when no provider key is set; pattern detection then runs alone.
+      REDIS_URL: redis://:${REDIS_PASSWORD:-aavishield_redis_dev}@redis:6379/0
+      LLM_PROVIDER_CHAIN: ${LLM_PROVIDER_CHAIN:-openrouter,kie_ai}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      KIE_AI_API_KEY: ${KIE_AI_API_KEY:-}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-60}
+      DLP_TEXT_MODEL: ${DLP_TEXT_MODEL:-google/gemini-2.5-flash-lite}
+      DLP_TEXT_CACHE_TTL_SECONDS: ${DLP_TEXT_CACHE_TTL_SECONDS:-2592000}
+      DLP_TEXT_DAILY_CAP: ${DLP_TEXT_DAILY_CAP:-20000}
+      DLP_TEXT_MAX_CHARS: ${DLP_TEXT_MAX_CHARS:-24000}
+      DLP_VISION_MODEL: ${DLP_VISION_MODEL:-google/gemini-2.5-flash}
+      DLP_VISION_CACHE_TTL_SECONDS: ${DLP_VISION_CACHE_TTL_SECONDS:-2592000}
+      DLP_VISION_DAILY_CAP: ${DLP_VISION_DAILY_CAP:-2000}
+      DLP_AUDIO_MODEL: ${DLP_AUDIO_MODEL:-google/gemini-2.5-flash}
+      DLP_AUDIO_CACHE_TTL_SECONDS: ${DLP_AUDIO_CACHE_TTL_SECONDS:-2592000}
+      DLP_AUDIO_DAILY_CAP: ${DLP_AUDIO_DAILY_CAP:-500}
+      DLP_AUDIO_MAX_BYTES: ${DLP_AUDIO_MAX_BYTES:-25165824}
     ports:
       - "127.0.0.1:7200:6200"
+    depends_on:
+      redis:
+        condition: service_healthy
     networks:
       - aavishield-net
 

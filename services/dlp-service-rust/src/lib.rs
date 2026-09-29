@@ -14,10 +14,13 @@
 //! against an in-memory `Config`, the same way the Python suite's
 //! `TestClient(app)` exercises the full ASGI stack.
 
+pub mod ai;
 pub mod auth;
 pub mod config;
 pub mod detectors;
+pub mod extract;
 pub mod inspect;
+pub mod pipeline;
 pub mod scoring;
 pub mod schemas;
 pub mod trace_middleware;
@@ -35,7 +38,7 @@ use axum::{
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine;
 use config::Config;
-use schemas::{ErrorResponse, InspectRequest, MatchOut, ScanRequest, ScanResponse};
+use schemas::{ErrorResponse, MatchOut, ScanRequest, ScanResponse, UploadRequest};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -53,6 +56,17 @@ pub struct Metrics {
 pub struct AppState {
     pub config: Config,
     pub metrics: Metrics,
+    /// Extraction safety bounds (depth, entries, expansion, deadline, OCR).
+    pub limits: extract::Limits,
+    /// The AI tier; None when no LLM provider is configured.
+    pub ai: Option<Arc<ai::Ai>>,
+}
+
+impl AppState {
+    /// Pattern detection only — no AI tier, default extraction limits.
+    pub fn new(config: Config) -> Self {
+        AppState { config, metrics: Metrics::default(), limits: extract::Limits::default(), ai: None }
+    }
 }
 
 pub type SharedState = Arc<AppState>;
@@ -62,7 +76,7 @@ pub fn build_router(state: SharedState) -> Router {
         .route("/healthz", get(healthz))
         .route("/metrics", get(metrics))
         .route("/v1/scan", post(scan))
-        .route("/v1/inspect", post(inspect_upload))
+        .route("/v1/scan-upload", post(scan_upload))
         .with_state(state)
         // axum applies a 2MB request body cap by default; Starlette/FastAPI
         // has no such framework-level default, and app/config.py's
@@ -241,36 +255,78 @@ async fn scan(State(state): State<SharedState>, headers: HeaderMap, body: Bytes)
     (StatusCode::OK, Json(resp)).into_response()
 }
 
-/// POST /v1/inspect — is this intercepted request something a person sent,
-/// and if so what (a file, or text they wrote), where to, and from a browser
-/// or a desktop app. admin-api calls this before any scan and records
-/// nothing when `relevant` is false. See inspect.rs.
-async fn inspect_upload(State(state): State<SharedState>, headers: HeaderMap, body: Bytes) -> Response {
-    let req: InspectRequest = match serde_json::from_slice(&body) {
-        Ok(r) => r,
-        Err(e) => return ScanError::BadRequest(format!("invalid request body: {e}")).into_response(),
+/// POST /v1/scan-upload — one intercepted upload, end to end (see
+/// pipeline.rs). multipart/form-data with two parts, in order: `request`,
+/// JSON (UploadRequest) with the org, request metadata and policies; then
+/// `body`, the raw request body, streamed straight to an unlinked temp file
+/// so no upload has to fit in memory to be received.
+///
+/// The token is checked as soon as `request` arrives, before any body byte
+/// is read.
+async fn scan_upload(State(state): State<SharedState>, headers: HeaderMap, mut form: axum::extract::Multipart) -> Response {
+    let mut req: Option<UploadRequest> = None;
+    let mut spool: Option<std::fs::File> = None;
+    loop {
+        let field = match form.next_field().await {
+            Ok(Some(f)) => f,
+            Ok(None) => break,
+            Err(e) => return ScanError::BadRequest(format!("invalid multipart body: {e}")).into_response(),
+        };
+        match field.name() {
+            Some("request") => {
+                let raw = match field.bytes().await {
+                    Ok(b) => b,
+                    Err(e) => return ScanError::BadRequest(format!("unreadable request part: {e}")).into_response(),
+                };
+                let parsed: UploadRequest = match serde_json::from_slice(&raw) {
+                    Ok(r) => r,
+                    Err(e) => return ScanError::BadRequest(format!("invalid request part: {e}")).into_response(),
+                };
+                let auth_header = headers.get("authorization").and_then(|v| v.to_str().ok());
+                if let Err(e) = auth::verify_token(
+                    auth_header,
+                    &parsed.org_id,
+                    &state.config.service_secret,
+                    state.config.service_secret_previous.as_deref(),
+                    state.config.require_auth,
+                ) {
+                    state.metrics.auth_failures_total.fetch_add(1, Ordering::Relaxed);
+                    return ScanError::Unauthorized(e.message().to_string()).into_response();
+                }
+                req = Some(parsed);
+            }
+            Some("body") => {
+                if req.is_none() {
+                    return ScanError::BadRequest("the request part must come before the body".into()).into_response();
+                }
+                match spool_field(field).await {
+                    Ok(f) => spool = Some(f),
+                    Err(e) => return ScanError::BadRequest(format!("unreadable body part: {e}")).into_response(),
+                }
+            }
+            _ => {}
+        }
+    }
+    let Some(req) = req else { return ScanError::BadRequest("missing request part".into()).into_response() };
+
+    let body: Arc<dyn AsRef<[u8]> + Send + Sync> = match spool {
+        Some(f) if f.metadata().map(|m| m.len() > 0).unwrap_or(false) => {
+            // SAFETY: the file is private to this request (created unlinked)
+            // and nothing writes to it after this point.
+            match unsafe { memmap2::Mmap::map(&f) } {
+                Ok(m) => Arc::new(m),
+                Err(e) => return ScanError::BadRequest(format!("body spool: {e}")).into_response(),
+            }
+        }
+        _ => Arc::new(Vec::<u8>::new()),
     };
 
-    let auth_header = headers.get("authorization").and_then(|v| v.to_str().ok());
-    if let Err(e) = auth::verify_token(
-        auth_header,
-        &req.org_id,
-        &state.config.service_secret,
-        state.config.service_secret_previous.as_deref(),
-        state.config.require_auth,
-    ) {
-        state.metrics.auth_failures_total.fetch_add(1, Ordering::Relaxed);
-        return ScanError::Unauthorized(e.message().to_string()).into_response();
+    let mut on_unscannable = HashMap::new();
+    let mut policies = Vec::with_capacity(req.policies.len());
+    for p in req.policies {
+        on_unscannable.insert(p.name.clone(), p.on_unscannable.clone());
+        policies.push(policy_from_in(p));
     }
-
-    let raw = match BASE64_STANDARD.decode(&req.content_b64) {
-        Ok(r) => r,
-        Err(_) => return ScanError::BadRequest("content_b64 is not valid base64".to_string()).into_response(),
-    };
-    if raw.len() > state.config.max_scan_size {
-        return ScanError::TooLarge.into_response();
-    }
-
     let meta = inspect::RequestMeta {
         host: req.host,
         path: req.path,
@@ -282,9 +338,35 @@ async fn inspect_upload(State(state): State<SharedState>, headers: HeaderMap, bo
         sec_fetch_mode: req.sec_fetch_mode,
         sec_fetch_dest: req.sec_fetch_dest,
     };
-    let result = inspect::inspect(&meta, &raw);
-    if !result.relevant {
-        tracing::debug!(host = %meta.host, path = %meta.path, reason = %result.skip_reason, "not a user action — not scanned");
+    let scanner = pipeline::Scanner {
+        org_id: &req.org_id,
+        policies: &policies,
+        on_unscannable: &on_unscannable,
+        cfg: &state.config,
+        ai: state.ai.as_deref(),
+    };
+    let outcome = pipeline::scan_upload(&meta, body, &scanner, &state.limits).await;
+
+    if let Some(v) = &outcome.verdict {
+        state.metrics.scans_total.fetch_add(1, Ordering::Relaxed);
+        match v.action.as_str() {
+            "block" => state.metrics.blocked_total.fetch_add(1, Ordering::Relaxed),
+            "alert" => state.metrics.alerted_total.fetch_add(1, Ordering::Relaxed),
+            _ => 0,
+        };
+    } else {
+        tracing::debug!(host = %meta.host, path = %meta.path, reason = %outcome.inspection.skip_reason, "not a user action — not scanned");
     }
-    (StatusCode::OK, Json(result)).into_response()
+    (StatusCode::OK, Json(outcome)).into_response()
+}
+
+async fn spool_field(mut field: axum::extract::multipart::Field<'_>) -> std::io::Result<std::fs::File> {
+    use tokio::io::AsyncWriteExt;
+    let file = tempfile::tempfile()?;
+    let mut w = tokio::fs::File::from_std(file.try_clone()?);
+    while let Some(chunk) = field.chunk().await.map_err(std::io::Error::other)? {
+        w.write_all(&chunk).await?;
+    }
+    w.flush().await?;
+    Ok(file)
 }

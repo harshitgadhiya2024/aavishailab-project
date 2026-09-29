@@ -1,4 +1,4 @@
-use dlp_service::{build_router, config::Config, AppState, Metrics};
+use dlp_service::{ai, build_router, config::Config, extract, AppState, Metrics};
 use std::sync::Arc;
 
 #[tokio::main]
@@ -20,7 +20,14 @@ async fn main() {
         );
     }
 
-    let state = Arc::new(AppState { config, metrics: Metrics::default() });
+    let ai = ai::AiConfig::from_env().map(|c| Arc::new(ai::Ai::new(c)));
+    if ai.is_none() {
+        eprintln!("NOTE: no LLM provider key set — the AI tier (ai_text/ai_visual/ai_audio) is off.");
+    }
+    if !extract::pdf::available() {
+        eprintln!("WARNING: pdfium library not found — PDFs will be reported unscannable.");
+    }
+    let state = Arc::new(AppState { config, metrics: Metrics::default(), limits: extract::Limits::from_env(), ai });
     let app = build_router(state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:6200").await.unwrap();

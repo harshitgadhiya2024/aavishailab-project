@@ -57,6 +57,9 @@ pub struct PolicyIn {
     pub alert_threshold: Option<i64>,
     #[serde(default = "default_priority")]
     pub priority: i64,
+    /// Reason a part couldn't be inspected → "alert" | "block" | "allow".
+    #[serde(default, deserialize_with = "null_as_default")]
+    pub on_unscannable: HashMap<String, String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -86,9 +89,10 @@ pub struct ScanRequest {
     pub external_matches: Vec<ExternalMatchIn>,
 }
 
-/// One intercepted outbound request, as the endpoint agent saw it.
+/// One intercepted outbound request, as the endpoint agent saw it, plus the
+/// org's applicable DLP policies. The body travels as its own multipart part.
 #[derive(Debug, Deserialize)]
-pub struct InspectRequest {
+pub struct UploadRequest {
     pub org_id: String,
     #[serde(default)]
     pub host: String,
@@ -109,8 +113,8 @@ pub struct InspectRequest {
     pub sec_fetch_mode: String,
     #[serde(default)]
     pub sec_fetch_dest: String,
-    #[serde(default)]
-    pub content_b64: String,
+    #[serde(default, deserialize_with = "null_as_default")]
+    pub policies: Vec<PolicyIn>,
 }
 
 #[derive(Debug, Deserialize)]

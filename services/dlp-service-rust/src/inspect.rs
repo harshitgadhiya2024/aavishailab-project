@@ -70,7 +70,9 @@ pub struct Inspection {
     pub operation: String,
     /// The attached file's real name, when there is one.
     pub filename: String,
-    /// Only for Kind::Text: the human-written text to scan.
+    /// Only for Kind::Text: the human-written text to scan. Never sent back
+    /// to the caller — it is scanned here and goes no further.
+    #[serde(skip)]
     pub user_text: String,
     /// "browser" or "app".
     pub request_source: String,
@@ -588,6 +590,14 @@ pub fn user_text(ct: &str, raw_ct: &str, body: &[u8]) -> String {
             out.push_str(&s);
         }
     }
+    cap(out)
+}
+
+/// What a person wrote in one form field of an uploaded multipart body —
+/// nothing when the field is request plumbing (a csrf token, an id).
+pub fn user_text_of_field(name: &str, value: &str) -> String {
+    let mut out = String::new();
+    collect_value(value, Some(name), false, &mut out);
     cap(out)
 }
 
