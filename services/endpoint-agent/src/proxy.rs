@@ -227,10 +227,6 @@ async fn forward_plain_http(req: Request<Incoming>, host: &str, port: u16, path_
     let (parts, body) = req.into_parts();
     let method = parts.method.clone();
     let path = parts.uri.path().to_string();
-    let content_type = parts.headers.get(hyper::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
-    let content_disposition = parts.headers.get(hyper::header::CONTENT_DISPOSITION).and_then(|v| v.to_str().ok());
-    let filename = crate::scan::upload_filename(content_disposition, &path);
-    let user_agent = parts.headers.get(hyper::header::USER_AGENT).and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
 
     let body_bytes = body.collect().await.map_err(std::io::Error::other)?.to_bytes();
 
@@ -244,12 +240,7 @@ async fn forward_plain_http(req: Request<Incoming>, host: &str, port: u16, path_
     if matches!(method.as_str(), "POST" | "PUT" | "PATCH") && body_bytes.len() <= crate::scan::MAX_SCAN_BODY {
         crate::scan::spawn_upload_verdict(
             deps.clone(),
-            host.to_string(),
-            path.clone(),
-            method.as_str().to_string(),
-            content_type.clone(),
-            filename.clone(),
-            user_agent.clone(),
+            crate::scan::UploadMeta::from_request(host, &method, &path_and_query, &parts.headers),
             body_bytes.clone(),
         );
     }

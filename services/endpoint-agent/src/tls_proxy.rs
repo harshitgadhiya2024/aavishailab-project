@@ -239,10 +239,6 @@ async fn relay_one(
     // sent, so every `?…` was silently dropped — search, pagination and
     // filters on every inspected site ("/get?foo=bar" arrived as "/get").
     let path_and_query = parts.uri.path_and_query().map(|pq| pq.as_str().to_string()).unwrap_or_else(|| path.clone());
-    let content_type = parts.headers.get(hyper::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
-    let content_disposition = parts.headers.get(hyper::header::CONTENT_DISPOSITION).and_then(|v| v.to_str().ok());
-    let filename = crate::scan::upload_filename(content_disposition, &path);
-    let user_agent = parts.headers.get(hyper::header::USER_AGENT).and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
 
     // Upload scanning (CASB app-control, then DLP content): buffer the body
     // (bounded — see MAX_SCAN_BODY) and scan it. The verdict is recorded,
@@ -263,12 +259,7 @@ async fn relay_one(
     if matches!(method.as_str(), "POST" | "PUT" | "PATCH") && body_bytes.len() <= MAX_SCAN_BODY {
         crate::scan::spawn_upload_verdict(
             deps.clone(),
-            host.clone(),
-            path.clone(),
-            method.as_str().to_string(),
-            content_type.clone(),
-            filename.clone(),
-            user_agent.clone(),
+            crate::scan::UploadMeta::from_request(&host, &method, &path_and_query, &parts.headers),
             body_bytes.clone(),
         );
     }

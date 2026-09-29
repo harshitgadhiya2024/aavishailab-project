@@ -77,6 +77,43 @@ pub fn upload_filename(content_disposition: Option<&str>, path: &str) -> String 
     path.rsplit('/').next().unwrap_or("").to_string()
 }
 
+/// What the proxy knows about one outbound upload, forwarded with its body so
+/// the server can tell a person sending something from background traffic.
+#[derive(Clone, Debug, Default)]
+pub struct UploadMeta {
+    pub host: String,
+    /// Path *and* query: several send endpoints are only recognisable by
+    /// their query (Gmail's `?act=sm`).
+    pub path: String,
+    pub method: String,
+    pub content_type: String,
+    pub filename: String,
+    pub user_agent: String,
+    /// `Sec-Fetch-Mode` / `Sec-Fetch-Dest`: "navigate"/"document" is a form
+    /// the person submitted; a script's background POST says "cors"/"empty".
+    pub sec_fetch_mode: String,
+    pub sec_fetch_dest: String,
+}
+
+impl UploadMeta {
+    /// Reads everything but the host from the request's own line and headers.
+    pub fn from_request(host: &str, method: &hyper::Method, path_and_query: &str, headers: &hyper::HeaderMap) -> Self {
+        let header = |name: &str| headers.get(name).and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+        let path = path_and_query.split('?').next().unwrap_or("");
+        let content_disposition = headers.get(hyper::header::CONTENT_DISPOSITION).and_then(|v| v.to_str().ok());
+        UploadMeta {
+            host: host.to_string(),
+            path: path_and_query.to_string(),
+            method: method.as_str().to_string(),
+            content_type: header("content-type"),
+            filename: upload_filename(content_disposition, path),
+            user_agent: header("user-agent"),
+            sec_fetch_mode: header("sec-fetch-mode"),
+            sec_fetch_dest: header("sec-fetch-dest"),
+        }
+    }
+}
+
 /// Records an outbound upload. **Always returns allow.**
 ///
 /// Data-loss protection here is visibility, not interception: the company
@@ -118,35 +155,21 @@ pub fn upload_filename(content_disposition: Option<&str>, path: &str) -> String 
 /// actual upstream request: `Bytes::clone` bumps a refcount, it does not
 /// copy the data, so scanning in the background costs no extra allocation
 /// on the hot path it no longer blocks.
-#[allow(clippy::too_many_arguments)]
-pub fn spawn_upload_verdict(
-    deps: Arc<Deps>,
-    host: String,
-    path: String,
-    method: String,
-    content_type: String,
-    filename: String,
-    user_agent: String,
-    body: Bytes,
-) {
+pub fn spawn_upload_verdict(deps: Arc<Deps>, meta: UploadMeta, body: Bytes) {
     tokio::spawn(async move {
-        upload_verdict(&deps.client, &deps.casb, &deps.gate, &host, &path, &method, &content_type, &filename, &user_agent, &body).await;
+        upload_verdict(&deps.client, &deps.casb, &deps.gate, &meta, &body).await;
     });
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn upload_verdict(
     client: &AgentClient,
     casb: &CASBControlCache,
     gate: &EnforcementGate,
-    host: &str,
-    path: &str,
-    method: &str,
-    content_type: &str,
-    filename: &str,
-    user_agent: &str,
+    meta: &UploadMeta,
     body: &[u8],
 ) -> ScanVerdict {
+    let host = meta.host.as_str();
+    let path = meta.path.as_str();
     if !gate.enforces_dlp() {
         return ScanVerdict::allow();
     }
@@ -160,7 +183,7 @@ pub async fn upload_verdict(
     if body.is_empty() {
         return ScanVerdict::allow();
     }
-    if let Some(verdict) = scan_dlp(client, host, path, method, content_type, filename, user_agent, body).await {
+    if let Some(verdict) = scan_dlp(client, meta, body).await {
         if verdict.action == "block" || verdict.action == "alert" {
             let reason = if verdict.reason.is_empty() { "Sensitive company data detected".to_string() } else { verdict.reason };
             tracing::info!(%host, %path, %reason, "DLP recorded — allowed through");
@@ -315,19 +338,20 @@ pub fn is_file_download(content_type: &str, content_disposition: &str, path: &st
 /// the upload proceed rather than block on a scanner hiccup, exactly as
 /// the server side (admin-api/dlp-service) also fails open on its own
 /// errors.
-#[allow(clippy::too_many_arguments)]
-async fn scan_dlp(client: &AgentClient, destination: &str, path: &str, method: &str, content_type: &str, filename: &str, user_agent: &str, body: &[u8]) -> Option<DlpVerdict> {
+async fn scan_dlp(client: &AgentClient, meta: &UploadMeta, body: &[u8]) -> Option<DlpVerdict> {
     let query = format!(
-        "destination={}&path={}&method={}&content_type={}&filename={}&user_agent={}",
-        urlencode(destination),
-        urlencode(path),
-        urlencode(method),
-        urlencode(content_type),
-        urlencode(filename),
+        "destination={}&path={}&method={}&content_type={}&filename={}&user_agent={}&sec_fetch_mode={}&sec_fetch_dest={}",
+        urlencode(&meta.host),
+        urlencode(&meta.path),
+        urlencode(&meta.method),
+        urlencode(&meta.content_type),
+        urlencode(&meta.filename),
         // Lets the server label the incident "app" or "browser" — the
         // requesting client's own User-Agent is the only signal at this
         // layer that separates a native app's upload from a browser tab's.
-        urlencode(user_agent),
+        urlencode(&meta.user_agent),
+        urlencode(&meta.sec_fetch_mode),
+        urlencode(&meta.sec_fetch_dest),
     );
     let resp = client.post_bytes(&format!("/internal/agent/scan-dlp?{query}"), "application/octet-stream", body.to_vec()).await.ok()?;
     if !resp.status().is_success() {
@@ -463,7 +487,7 @@ mod tests {
             Some(Verdict { action: "block".to_string(), category: "CASB App Control".to_string(), reason: "Personal cloud storage blocked".to_string(), matched_rule: "".to_string() }),
         );
 
-        let verdict = upload_verdict(&client, &casb, &gate, "drive.google.com", "/upload", "POST", "", "", "", &[]).await;
+        let verdict = upload_verdict(&client, &casb, &gate, &UploadMeta { host: "drive.google.com".into(), path: "/upload".into(), method: "POST".into(), content_type: "".into(), filename: "".into(), user_agent: "".into(), ..Default::default() }, &[]).await;
         assert!(!verdict.blocked, "DLP/CASB must record an upload, never stop it");
         assert!(verdict.reason.is_empty());
     }
@@ -480,7 +504,7 @@ mod tests {
         // this proves the code path *reached* the DLP scan (didn't block
         // or short-circuit on CASB alone) rather than proving a real DLP
         // verdict, which is covered end-to-end by live_integration_test.sh.
-        let verdict = upload_verdict(&client, &casb, &gate, "uploads.example.com", "/upload", "POST", "text/plain", "notes.txt", "Mozilla/5.0", b"hello").await;
+        let verdict = upload_verdict(&client, &casb, &gate, &UploadMeta { host: "uploads.example.com".into(), path: "/upload".into(), method: "POST".into(), content_type: "text/plain".into(), filename: "notes.txt".into(), user_agent: "Mozilla/5.0".into(), ..Default::default() }, b"hello").await;
         assert!(!verdict.blocked);
     }
 
@@ -497,7 +521,28 @@ mod tests {
             Some(Verdict { action: "block".to_string(), category: "CASB App Control".to_string(), reason: "Personal cloud storage blocked".to_string(), matched_rule: "".to_string() }),
         );
 
-        let verdict = upload_verdict(&client, &casb, &gate, "drive.google.com", "/upload", "POST", "", "", "", b"data").await;
+        let verdict = upload_verdict(&client, &casb, &gate, &UploadMeta { host: "drive.google.com".into(), path: "/upload".into(), method: "POST".into(), content_type: "".into(), filename: "".into(), user_agent: "".into(), ..Default::default() }, b"data").await;
         assert!(!verdict.blocked, "paused mode must not enforce CASB either");
+    }
+}
+
+#[cfg(test)]
+mod upload_meta_tests {
+    use super::*;
+
+    #[test]
+    fn upload_meta_keeps_query_and_fetch_metadata() {
+        let mut h = hyper::HeaderMap::new();
+        h.insert("content-type", "application/x-www-form-urlencoded".parse().unwrap());
+        h.insert("sec-fetch-mode", "navigate".parse().unwrap());
+        h.insert("sec-fetch-dest", "document".parse().unwrap());
+        h.insert("user-agent", "Mozilla/5.0 Chrome/128.0".parse().unwrap());
+        let m = UploadMeta::from_request("mail.google.com", &hyper::Method::POST, "/mail/u/0/?ik=x&act=sm", &h);
+        assert_eq!(m.path, "/mail/u/0/?ik=x&act=sm");
+        assert_eq!(m.sec_fetch_mode, "navigate");
+        assert_eq!(m.sec_fetch_dest, "document");
+        assert_eq!(m.content_type, "application/x-www-form-urlencoded");
+        // The filename guess comes from the path, never the query.
+        assert_eq!(m.filename, "");
     }
 }
