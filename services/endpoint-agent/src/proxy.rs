@@ -240,7 +240,7 @@ async fn forward_plain_http(req: Request<Incoming>, host: &str, port: u16, path_
     if matches!(method.as_str(), "POST" | "PUT" | "PATCH") && body_bytes.len() <= crate::scan::MAX_SCAN_BODY {
         crate::scan::spawn_upload_verdict(
             deps.clone(),
-            crate::scan::UploadMeta::from_request(host, &method, &path_and_query, &parts.headers),
+            crate::scan::UploadMeta::from_request(host, &method, path_and_query, &parts.headers),
             body_bytes.clone(),
         );
     }
