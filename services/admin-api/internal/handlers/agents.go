@@ -1073,6 +1073,7 @@ func (h *AgentHandler) ScanDLP(c *gin.Context) {
 			"request_source": insp.RequestSource,
 			"app_name":       insp.AppName,
 			"site":           insp.Site,
+			"service":        insp.Service,
 			"destination":    insp.Destination,
 			"content_kind":   contentKind,
 			"user_agent":     truncateRunes(c.Query("user_agent"), 300),

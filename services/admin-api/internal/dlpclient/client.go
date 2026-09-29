@@ -181,7 +181,9 @@ type Inspection struct {
 	RequestSource string `json:"request_source"`
 	AppName       string `json:"app_name"`
 	Site          string `json:"site"`
-	Destination   string `json:"destination"`
+	// The product the site is ("Google Sheets", "Microsoft Teams").
+	Service     string `json:"service"`
+	Destination string `json:"destination"`
 }
 
 // UploadVerdict is the single verdict for everything the upload contained.

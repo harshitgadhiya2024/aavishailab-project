@@ -36,6 +36,7 @@ type DLPEvent = {
     content_kind?: string;
     app_name?: string;
     site?: string;
+    service?: string;
   };
   employee?: { first_name?: string; last_name?: string; email?: string } | null;
 };
@@ -72,7 +73,7 @@ function contentKind(ev: DLPEvent) {
 function destinationText(ev: DLPEvent) {
   const m = ev.metadata;
   if (m?.request_source === "app") return m.app_name || m.destination || "Desktop app";
-  return m?.site || m?.destination || ev.target_domain || "—";
+  return m?.service || m?.site || m?.destination || ev.target_domain || "—";
 }
 
 /** What was found, in words — the detector names are the reason. */

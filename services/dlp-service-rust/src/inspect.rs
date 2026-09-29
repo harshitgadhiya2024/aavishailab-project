@@ -78,10 +78,13 @@ pub struct Inspection {
     pub request_source: String,
     /// The desktop app's name when request_source == "app".
     pub app_name: String,
-    /// The site as a person would name it ("canva.com", "docs.google.com").
+    /// The site's registrable domain ("canva.com", "docs.google.com").
     pub site: String,
-    /// What the dashboard shows as the destination: the site for a browser,
-    /// the app's name for a desktop app — never a raw telemetry subdomain.
+    /// The product the site is, as people call it ("Google Sheets",
+    /// "Microsoft Teams", "OneDrive", "Stylic AI").
+    pub service: String,
+    /// What the dashboard shows as the destination: the service's name for
+    /// a browser, the app's name for a desktop app — never a raw subdomain.
     pub destination: String,
 }
 
@@ -89,8 +92,9 @@ pub fn inspect(meta: &RequestMeta, body: &[u8]) -> Inspection {
     let host = normalize_host(&meta.host);
     let request_source = request_source(&meta.user_agent, &meta.source).to_string();
     let site = site_label(&host);
-    let app_name = if request_source == "app" { app_name(&meta.user_agent, &host) } else { String::new() };
-    let destination = if request_source == "app" { app_name.clone() } else { site.clone() };
+    let service = service_name(&host, &meta.path);
+    let app_name = if request_source == "app" { app_name(&meta.user_agent, &host, &meta.path) } else { String::new() };
+    let destination = if request_source == "app" { app_name.clone() } else { service.clone() };
 
     let mut out = Inspection {
         relevant: false,
@@ -102,6 +106,7 @@ pub fn inspect(meta: &RequestMeta, body: &[u8]) -> Inspection {
         request_source,
         app_name,
         site,
+        service,
         destination,
     };
 
@@ -794,40 +799,173 @@ const GENERIC_UA_TOKENS: &[&str] = &[
     "apache-httpclient", "httpclient", "aiohttp", "httpx", "ktor-client", "alamofire", "urlsession",
 ];
 
-/// Well-known desktop apps by the host they talk to — the fallback when the
-/// User-Agent names only an engine or an HTTP library.
-const APP_BY_HOST: &[(&str, &str)] = &[
-    ("figma.com", "Figma"), ("canva.com", "Canva"), ("slack.com", "Slack"), ("slack-edge.com", "Slack"),
-    ("teams.microsoft.com", "Microsoft Teams"), ("teams.live.com", "Microsoft Teams"), ("skype.com", "Microsoft Teams"),
-    ("outlook.office.com", "Microsoft Outlook"), ("outlook.office365.com", "Microsoft Outlook"),
-    ("onedrive.live.com", "OneDrive"), ("sharepoint.com", "OneDrive"), ("notion.so", "Notion"),
-    ("notion.com", "Notion"), ("discord.com", "Discord"), ("zoom.us", "Zoom"), ("whatsapp.net", "WhatsApp"),
-    ("whatsapp.com", "WhatsApp"), ("telegram.org", "Telegram"), ("dropbox.com", "Dropbox"),
-    ("dropboxapi.com", "Dropbox"), ("postman.com", "Postman"), ("getpostman.com", "Postman"),
-    ("github.com", "GitHub"), ("githubusercontent.com", "GitHub"), ("chatgpt.com", "ChatGPT"),
-    ("openai.com", "ChatGPT"), ("claude.ai", "Claude"), ("anthropic.com", "Claude"), ("webflow.com", "Webflow"),
-    ("spotify.com", "Spotify"), ("atlassian.net", "Jira"), ("linear.app", "Linear"), ("miro.com", "Miro"),
-    ("google.com", "Google"), ("googleapis.com", "Google"),
+/// Products by the host (and, where one domain serves several products,
+/// the path) they live on. Hosts match exactly or as a parent domain; a
+/// leading '-' matches a hostname suffix ("-my.sharepoint.com" is every
+/// company's OneDrive). First match wins, so specific entries come first.
+const SERVICES: &[(&str, &str, &str)] = &[
+    // Google — one domain, many products.
+    ("docs.google.com", "/document", "Google Docs"),
+    ("docs.google.com", "/spreadsheets", "Google Sheets"),
+    ("docs.google.com", "/presentation", "Google Slides"),
+    ("docs.google.com", "/forms", "Google Forms"),
+    ("docs.google.com", "/drawings", "Google Drawings"),
+    ("docs.google.com", "", "Google Docs"),
+    ("sheets.google.com", "", "Google Sheets"),
+    ("slides.google.com", "", "Google Slides"),
+    ("drive.google.com", "", "Google Drive"),
+    ("googleapis.com", "/upload/drive", "Google Drive"),
+    ("mail.google.com", "", "Gmail"),
+    ("chat.google.com", "", "Google Chat"),
+    ("meet.google.com", "", "Google Meet"),
+    ("calendar.google.com", "", "Google Calendar"),
+    ("keep.google.com", "", "Google Keep"),
+    ("photos.google.com", "", "Google Photos"),
+    ("gemini.google.com", "", "Gemini"),
+    ("bard.google.com", "", "Gemini"),
+    ("play.google.com", "", "Google Play"),
+    ("google.com", "", "Google"),
+    ("googleapis.com", "", "Google"),
+    ("youtube.com", "", "YouTube"),
+    // Microsoft
+    ("teams.microsoft.com", "", "Microsoft Teams"),
+    ("teams.cloud.microsoft", "", "Microsoft Teams"),
+    ("teams.live.com", "", "Microsoft Teams"),
+    ("outlook.office.com", "", "Outlook"),
+    ("outlook.office365.com", "", "Outlook"),
+    ("outlook.live.com", "", "Outlook"),
+    ("outlook.cloud.microsoft", "", "Outlook"),
+    ("-my.sharepoint.com", "", "OneDrive"),
+    ("onedrive.live.com", "", "OneDrive"),
+    ("api.onedrive.com", "", "OneDrive"),
+    ("sharepoint.com", "", "SharePoint"),
+    ("copilot.microsoft.com", "", "Microsoft Copilot"),
+    ("m365.cloud.microsoft", "", "Microsoft 365"),
+    ("office.com", "", "Microsoft 365"),
+    ("graph.microsoft.com", "", "Microsoft 365"),
+    ("skype.com", "", "Skype"),
+    ("bing.com", "", "Bing"),
+    // AI assistants
+    ("chatgpt.com", "", "ChatGPT"),
+    ("chat.openai.com", "", "ChatGPT"),
+    ("oaiusercontent.com", "", "ChatGPT"),
+    ("openai.com", "", "OpenAI"),
+    ("claude.ai", "", "Claude"),
+    ("anthropic.com", "", "Claude"),
+    ("perplexity.ai", "", "Perplexity"),
+    ("chat.deepseek.com", "", "DeepSeek"),
+    // Chat, mail, storage, work tools
+    ("slack.com", "", "Slack"),
+    ("slack-edge.com", "", "Slack"),
+    ("discord.com", "", "Discord"),
+    ("web.whatsapp.com", "", "WhatsApp"),
+    ("whatsapp.com", "", "WhatsApp"),
+    ("whatsapp.net", "", "WhatsApp"),
+    ("telegram.org", "", "Telegram"),
+    ("zoom.us", "", "Zoom"),
+    ("mail.yahoo.com", "", "Yahoo Mail"),
+    ("mail.zoho.com", "", "Zoho Mail"),
+    ("mail.zoho.in", "", "Zoho Mail"),
+    ("mail.proton.me", "", "Proton Mail"),
+    ("dropbox.com", "", "Dropbox"),
+    ("dropboxapi.com", "", "Dropbox"),
+    ("box.com", "", "Box"),
+    ("wetransfer.com", "", "WeTransfer"),
+    ("mega.nz", "", "MEGA"),
+    ("github.com", "", "GitHub"),
+    ("githubusercontent.com", "", "GitHub"),
+    ("gitlab.com", "", "GitLab"),
+    ("bitbucket.org", "", "Bitbucket"),
+    ("atlassian.net", "/wiki", "Confluence"),
+    ("atlassian.net", "", "Jira"),
+    ("notion.so", "", "Notion"),
+    ("notion.com", "", "Notion"),
+    ("figma.com", "", "Figma"),
+    ("canva.com", "", "Canva"),
+    ("webflow.com", "", "Webflow"),
+    ("linear.app", "", "Linear"),
+    ("miro.com", "", "Miro"),
+    ("trello.com", "", "Trello"),
+    ("postman.com", "", "Postman"),
+    ("getpostman.com", "", "Postman"),
+    ("linkedin.com", "", "LinkedIn"),
+    ("x.com", "", "X"),
+    ("twitter.com", "", "X"),
+    ("facebook.com", "", "Facebook"),
+    ("instagram.com", "", "Instagram"),
+    ("reddit.com", "", "Reddit"),
+    ("spotify.com", "", "Spotify"),
+    ("salesforce.com", "", "Salesforce"),
+    ("hubspot.com", "", "HubSpot"),
+    ("zoho.com", "", "Zoho"),
+    ("zoho.in", "", "Zoho"),
+    ("amazonaws.com", "", "AWS"),
 ];
 
-pub fn app_name(user_agent: &str, host: &str) -> String {
-    if let Some(name) = app_name_from_ua(user_agent) {
-        return name;
+fn host_matches(host: &str, pattern: &str) -> bool {
+    if pattern.starts_with('-') {
+        host.ends_with(pattern)
+    } else {
+        host == pattern || host.ends_with(&format!(".{pattern}"))
     }
-    for (domain, name) in APP_BY_HOST {
-        if host == *domain || host.ends_with(&format!(".{domain}")) {
+}
+
+/// The product a host (and path) belongs to, as people call it. Unknown
+/// sites are named from their domain: "stylic.ai" → "Stylic AI",
+/// "acme-internal.io" → "Acme Internal".
+pub fn service_name(host: &str, path: &str) -> String {
+    let host = normalize_host(host);
+    let path = path.to_ascii_lowercase();
+    for (h, p, name) in SERVICES {
+        if host_matches(&host, h) && (p.is_empty() || path.starts_with(p) || path.contains(&format!("/{}", p.trim_start_matches('/')))) {
             return (*name).to_string();
         }
     }
+    name_from_domain(&host)
+}
+
+fn name_from_domain(host: &str) -> String {
     let site = site_label(host);
-    let first = site.split('.').next().unwrap_or("");
-    if first.is_empty() {
-        return "Desktop app".to_string();
+    let domain = psl::domain_str(&site).unwrap_or(&site).to_string();
+    let (label, suffix) = domain.split_once('.').unwrap_or((domain.as_str(), ""));
+    if label.is_empty() || label.parse::<std::net::Ipv4Addr>().is_ok() || site.parse::<std::net::Ipv4Addr>().is_ok() {
+        return site;
     }
-    let mut c = first.chars();
-    match c.next() {
-        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-        None => "Desktop app".to_string(),
+    let mut words: Vec<String> = label
+        .split(['-', '_'])
+        .filter(|w| !w.is_empty())
+        .map(|w| {
+            let mut c = w.chars();
+            c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default()
+        })
+        .collect();
+    if suffix == "ai" {
+        words.push("AI".into());
+    }
+    words.join(" ")
+}
+
+/// The names desktop apps give themselves in their User-Agent, mapped to
+/// what people call them.
+const APP_ALIASES: &[(&str, &str)] = &[
+    ("teams", "Microsoft Teams"),
+    ("msteams", "Microsoft Teams"),
+    ("outlook", "Outlook"),
+    ("onedrive", "OneDrive"),
+    ("whatsapp", "WhatsApp"),
+    ("chatgpt", "ChatGPT"),
+];
+
+pub fn app_name(user_agent: &str, host: &str, path: &str) -> String {
+    if let Some(name) = app_name_from_ua(user_agent) {
+        let lower = name.to_ascii_lowercase();
+        return APP_ALIASES.iter().find(|(k, _)| *k == lower).map(|(_, v)| (*v).to_string()).unwrap_or(name);
+    }
+    let name = service_name(host, path);
+    if name.is_empty() {
+        "Desktop app".to_string()
+    } else {
+        name
     }
 }
 
@@ -1089,7 +1227,8 @@ mod tests {
     fn browser_shows_the_site_and_app_shows_its_name() {
         let r = inspect(&meta("www.canva.com", "/_ajax/upload", "image/png"), b"\x89PNG\r\n\x1a\n....");
         assert_eq!(r.request_source, "browser");
-        assert_eq!(r.destination, "canva.com");
+        assert_eq!(r.site, "canva.com");
+        assert_eq!(r.destination, "Canva");
         assert_eq!(r.app_name, "");
 
         let mut m = meta("www.figma.com", "/api/upload", "image/png");
@@ -1102,11 +1241,41 @@ mod tests {
 
     #[test]
     fn app_names() {
-        assert_eq!(app_name("Slack_SSB/4.35.131", "slack.com"), "Slack");
-        assert_eq!(app_name("com.canva.desktop/1.93 CFNetwork/1498 Darwin/23.6.0", "www.canva.com"), "Canva");
-        assert_eq!(app_name("okhttp/4.9.0", "api.notion.com"), "Notion");
-        assert_eq!(app_name("", "sdk.iad-01.braze.com"), "Braze");
-        assert_eq!(app_name("python-requests/2.31", "files.acme-internal.io"), "Acme-internal");
+        assert_eq!(app_name("Slack_SSB/4.35.131", "slack.com", "/"), "Slack");
+        assert_eq!(app_name("com.canva.desktop/1.93 CFNetwork/1498 Darwin/23.6.0", "www.canva.com", "/"), "Canva");
+        assert_eq!(app_name("okhttp/4.9.0", "api.notion.com", "/"), "Notion");
+        assert_eq!(app_name("", "sdk.iad-01.braze.com", "/"), "Braze");
+        assert_eq!(app_name("python-requests/2.31", "files.acme-internal.io", "/"), "Acme Internal");
+        // Teams' desktop client calls itself "Teams".
+        assert_eq!(app_name("Mozilla/5.0 (Macintosh) AppleWebKit/537.36 Teams/25212.1 Chrome/128.0 Safari/537.36", "teams.microsoft.com", "/"), "Microsoft Teams");
+    }
+
+    /// What a browser incident shows instead of a hostname.
+    #[test]
+    fn service_names() {
+        let cases = [
+            ("docs.google.com", "/spreadsheets/d/1abc/edit", "Google Sheets"),
+            ("docs.google.com", "/document/d/1abc/save", "Google Docs"),
+            ("docs.google.com", "/presentation/d/1abc/edit", "Google Slides"),
+            ("docs.google.com", "/u/0/", "Google Docs"),
+            ("www.googleapis.com", "/upload/drive/v3/files", "Google Drive"),
+            ("mail.google.com", "/mail/u/0/", "Gmail"),
+            ("in-prod.asyncgw.teams.microsoft.com", "/v1/objects/x/content/imgpsh", "Microsoft Teams"),
+            ("teams.cloud.microsoft", "/api/chatsvc/in/v1/users/ME/conversations/x/messages", "Microsoft Teams"),
+            ("outlook.cloud.microsoft", "/owa/service.svc", "Outlook"),
+            ("cozzera-my.sharepoint.com", "/personal/x/_api/v2.0/drive/root:/a.docx:/content", "OneDrive"),
+            ("cozzera.sharepoint.com", "/sites/hr", "SharePoint"),
+            ("chatgpt.com", "/backend-api/f/conversation", "ChatGPT"),
+            ("files.oaiusercontent.com", "/file-abc", "ChatGPT"),
+            ("acme.atlassian.net", "/wiki/spaces/HR", "Confluence"),
+            ("acme.atlassian.net", "/rest/api/3/issue", "Jira"),
+            ("app.stylic.ai", "/api/upload", "Stylic AI"),
+            ("httpbin.org", "/post", "Httpbin"),
+            ("files.example.co.uk", "/", "Example"),
+        ];
+        for (host, path, want) in cases {
+            assert_eq!(service_name(host, path), want, "{host}{path}");
+        }
     }
 
     #[test]

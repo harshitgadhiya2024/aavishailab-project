@@ -53,6 +53,8 @@ type ActivityEvent = {
     request_source?: string;
     app_name?: string;
     site?: string;
+    /** The product the site is — "Google Sheets", "Microsoft Teams". */
+    service?: string;
     destination?: string;
   };
 };
@@ -70,8 +72,8 @@ function dlpDestination(ev: ActivityEvent) {
     return { source: "App" as const, primary: ev.metadata?.app_name || ev.process_name || "Desktop app", secondary: "" };
   }
   if (src === "browser") {
-    const site = ev.metadata?.site || ev.target_domain || "—";
-    const primary = ev.target_app || site;
+    const site = ev.target_domain || ev.metadata?.site || "—";
+    const primary = ev.metadata?.service || ev.target_app || site;
     return { source: "Browser" as const, primary, secondary: primary !== site ? site : "" };
   }
   return null;
