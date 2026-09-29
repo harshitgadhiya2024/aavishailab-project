@@ -34,6 +34,8 @@ type DLPEvent = {
     request_source?: string;
     destination?: string;
     content_kind?: string;
+    app_name?: string;
+    site?: string;
   };
   employee?: { first_name?: string; last_name?: string; email?: string } | null;
 };
@@ -61,6 +63,16 @@ function contentKind(ev: DLPEvent) {
   if (kind === "file-upload") return { label: "File upload", icon: FileUp };
   if (kind === "text") return { label: "Text", icon: Type };
   return null;
+}
+
+/**
+ * An app's own name when the data left from a desktop app — never the host
+ * it called — and the site when it left from a browser.
+ */
+function destinationText(ev: DLPEvent) {
+  const m = ev.metadata;
+  if (m?.request_source === "app") return m.app_name || m.destination || "Desktop app";
+  return m?.site || m?.destination || ev.target_domain || "—";
 }
 
 /** What was found, in words — the detector names are the reason. */
@@ -188,7 +200,7 @@ export default function DLPPage() {
                       ) : <span className="text-subtle">—</span>}
                     </td>
                     <td className="px-4 py-3 text-foreground">
-                      {ev.metadata?.destination || ev.target_domain || "—"}
+                      {destinationText(ev)}
                       {ev.target && (
                         <p className="text-xs text-muted-foreground mt-0.5 truncate max-w-[220px]" title={ev.target}>
                           {ev.target}

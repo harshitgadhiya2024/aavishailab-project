@@ -173,3 +173,76 @@ func ScanExt(ctx context.Context, orgID, filename, contentType, destination stri
 	}
 	return &v, nil
 }
+
+// RequestMeta is one intercepted outbound request as the endpoint agent saw
+// it — everything dlp-service needs to decide whether a person sent it.
+type RequestMeta struct {
+	Host         string `json:"host"`
+	Path         string `json:"path"`
+	Method       string `json:"method"`
+	ContentType  string `json:"content_type"`
+	Filename     string `json:"filename"`
+	UserAgent    string `json:"user_agent"`
+	Source       string `json:"source"`
+	SecFetchMode string `json:"sec_fetch_mode"`
+	SecFetchDest string `json:"sec_fetch_dest"`
+}
+
+// Inspection is dlp-service's answer to "is this a user action, and what
+// was it". When Relevant is false nothing is scanned or recorded.
+type Inspection struct {
+	Relevant   bool   `json:"relevant"`
+	SkipReason string `json:"skip_reason"`
+	// "file" or "text"; empty when not relevant.
+	Kind      string `json:"kind"`
+	Operation string `json:"operation"`
+	// The attached file's real name, when there is one.
+	Filename string `json:"filename"`
+	// For Kind "text": only what the person wrote.
+	UserText      string `json:"user_text"`
+	RequestSource string `json:"request_source"`
+	AppName       string `json:"app_name"`
+	Site          string `json:"site"`
+	Destination   string `json:"destination"`
+}
+
+type inspectRequest struct {
+	OrgID string `json:"org_id"`
+	RequestMeta
+	ContentB64 string `json:"content_b64"`
+}
+
+// Inspect asks dlp-service whether an intercepted request is something a
+// person sent — a file, a message, a prompt, a form — rather than the
+// background telemetry that makes up most outbound traffic.
+func Inspect(ctx context.Context, orgID string, meta RequestMeta, content []byte) (*Inspection, error) {
+	reqBody, err := json.Marshal(inspectRequest{
+		OrgID:       orgID,
+		RequestMeta: meta,
+		ContentB64:  base64.StdEncoding.EncodeToString(content),
+	})
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, serviceURL()+"/v1/inspect", bytes.NewReader(reqBody))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+MintToken(orgID, 5*time.Minute))
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		detail, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return nil, fmt.Errorf("dlp-service inspect returned %d: %s", resp.StatusCode, strings.TrimSpace(string(detail)))
+	}
+	var out Inspection
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}

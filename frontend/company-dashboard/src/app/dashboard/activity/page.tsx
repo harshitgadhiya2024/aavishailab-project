@@ -6,7 +6,7 @@ import { useSession } from "next-auth/react";
 import { activityApi } from "@/lib/api";
 import {
   Shield, Search, Wifi, WifiOff, Bug, FileWarning, Mail, MessageSquare,
-  Upload, Download, Share2, FileText, Sparkles, Globe, Activity as ActivityIcon
+  Upload, Download, Share2, FileText, Sparkles, Globe, AppWindow, Activity as ActivityIcon
 } from "lucide-react";
 import { formatDateTime, cn } from "@/lib/utils";
 import { Pagination } from "@/components/ui/Pagination";
@@ -48,7 +48,34 @@ type ActivityEvent = {
   timestamp?: string;
   created_at?: string;
   employee?: { first_name?: string; last_name?: string; email?: string } | null;
+  process_name?: string;
+  metadata?: {
+    request_source?: string;
+    app_name?: string;
+    site?: string;
+    destination?: string;
+  };
 };
+
+/**
+ * Where a DLP incident's data went, as the company would name it: the
+ * desktop app's own name when it came from an app (never the telemetry host
+ * the app happened to call), and the site when it came from a browser.
+ * Returns null for everything else, which keeps the generic rendering.
+ */
+function dlpDestination(ev: ActivityEvent) {
+  if (ev.category !== "dlp") return null;
+  const src = ev.metadata?.request_source;
+  if (src === "app") {
+    return { source: "App" as const, primary: ev.metadata?.app_name || ev.process_name || "Desktop app", secondary: "" };
+  }
+  if (src === "browser") {
+    const site = ev.metadata?.site || ev.target_domain || "—";
+    const primary = ev.target_app || site;
+    return { source: "Browser" as const, primary, secondary: primary !== site ? site : "" };
+  }
+  return null;
+}
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:6000";
 const RANGES = [
@@ -307,6 +334,7 @@ export default function ActivityPage() {
                 displayEvents.map((ev: ActivityEvent, idx: number) => {
                   const isMalware = ev.category === "malware_detection";
                   const isDLP = ev.category === "dlp";
+                  const dlp = dlpDestination(ev);
                   return (
                   <tr key={ev.id}
                     className={cn("hover:bg-elevated transition-colors", idx < liveEvents.length && "bg-brand-500/5")}>
@@ -314,6 +342,22 @@ export default function ActivityPage() {
                       {ev.employee ? `${ev.employee.first_name ?? ""} ${ev.employee.last_name ?? ""}`.trim() || ev.employee.email : "—"}
                     </td>
                     <td className="px-5 py-3">
+                      {dlp ? (
+                        <div className="flex items-center gap-2">
+                          {dlp.source === "App"
+                            ? <AppWindow className="w-3.5 h-3.5 text-danger flex-shrink-0" />
+                            : <Globe className="w-3.5 h-3.5 text-danger flex-shrink-0" />}
+                          <div className="flex flex-col gap-0.5 min-w-0">
+                            <span className="text-body truncate max-w-[220px] text-xs">{dlp.primary}</span>
+                            {dlp.secondary && (
+                              <span className="font-mono text-[11px] text-subtle truncate max-w-[220px]">{dlp.secondary}</span>
+                            )}
+                            {ev.target && (
+                              <span className="text-[11px] text-subtle truncate max-w-[220px]" title={ev.target}>{ev.target}</span>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
                       <div className="flex items-center gap-2">
                         <Shield className="w-3.5 h-3.5 text-danger flex-shrink-0" />
                         <div className="flex flex-col gap-0.5 min-w-0">
@@ -327,6 +371,7 @@ export default function ActivityPage() {
                           )}
                         </div>
                       </div>
+                      )}
                     </td>
                     <td className="px-5 py-3">
                       {ev.operation ? (
@@ -345,8 +390,14 @@ export default function ActivityPage() {
                           <Bug className="w-3 h-3" /> Malware Detection
                         </span>
                       ) : isDLP ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-500/10 text-warning">
-                          <FileWarning className="w-3 h-3" /> Data Loss Prevention
+                        <span
+                          title="Data Loss Prevention"
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-500/10 text-warning"
+                        >
+                          {dlp?.source === "App" ? <AppWindow className="w-3 h-3" />
+                            : dlp?.source === "Browser" ? <Globe className="w-3 h-3" />
+                            : <FileWarning className="w-3 h-3" />}
+                          {dlp?.source ?? "Data Loss Prevention"}
                         </span>
                       ) : (
                         <span className="text-muted-foreground text-xs capitalize">{ev.category?.replace(/_/g, " ") || "—"}</span>

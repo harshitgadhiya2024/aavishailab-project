@@ -56,7 +56,7 @@ TEXT_DAILY_CAP = int(os.getenv("DLP_TEXT_DAILY_CAP", "20000"))
 MAX_TEXT_CHARS = int(os.getenv("DLP_TEXT_MAX_CHARS", "24000"))
 # Bump when _SYSTEM_PROMPT changes meaning so stale cache entries scored
 # under a different prompt aren't served as if they used this one.
-PROMPT_VERSION = "v1"
+PROMPT_VERSION = "v2"
 
 _SYSTEM_PROMPT = (
     "You are a data-loss-prevention text classifier for a company's outbound "
@@ -74,6 +74,14 @@ _SYSTEM_PROMPT = (
     "code, trade secrets, health data, internal security findings, or "
     "M&A / deal information. Ordinary public marketing copy, documentation, "
     "or a single person's own contact details are NOT sensitive.\n\n"
+    "Also NOT sensitive: machine-generated values an app or website adds to "
+    "its own requests — session ids, CSRF/XSRF tokens, OAuth client ids, "
+    "request/trace/device ids, analytics or telemetry fields, base64 or "
+    "otherwise encoded blobs, binary or compressed bytes, and minified or "
+    "serialized application data. Only mark credentials when a human-readable "
+    "secret (a password, API key, private key, connection string) appears as "
+    "content a person wrote or attached, and only mark source_code when the "
+    "text is readable program source a person is sharing.\n\n"
     "Respond with ONLY a single JSON object and nothing else, matching "
     "exactly this shape:\n"
     '{"sensitive": <true or false>, '

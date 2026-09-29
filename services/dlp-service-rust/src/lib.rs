@@ -17,6 +17,7 @@
 pub mod auth;
 pub mod config;
 pub mod detectors;
+pub mod inspect;
 pub mod scoring;
 pub mod schemas;
 pub mod trace_middleware;
@@ -34,7 +35,7 @@ use axum::{
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine;
 use config::Config;
-use schemas::{ErrorResponse, MatchOut, ScanRequest, ScanResponse};
+use schemas::{ErrorResponse, InspectRequest, MatchOut, ScanRequest, ScanResponse};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -61,6 +62,7 @@ pub fn build_router(state: SharedState) -> Router {
         .route("/healthz", get(healthz))
         .route("/metrics", get(metrics))
         .route("/v1/scan", post(scan))
+        .route("/v1/inspect", post(inspect_upload))
         .with_state(state)
         // axum applies a 2MB request body cap by default; Starlette/FastAPI
         // has no such framework-level default, and app/config.py's
@@ -237,4 +239,52 @@ async fn scan(State(state): State<SharedState>, headers: HeaderMap, body: Bytes)
     };
 
     (StatusCode::OK, Json(resp)).into_response()
+}
+
+/// POST /v1/inspect — is this intercepted request something a person sent,
+/// and if so what (a file, or text they wrote), where to, and from a browser
+/// or a desktop app. admin-api calls this before any scan and records
+/// nothing when `relevant` is false. See inspect.rs.
+async fn inspect_upload(State(state): State<SharedState>, headers: HeaderMap, body: Bytes) -> Response {
+    let req: InspectRequest = match serde_json::from_slice(&body) {
+        Ok(r) => r,
+        Err(e) => return ScanError::BadRequest(format!("invalid request body: {e}")).into_response(),
+    };
+
+    let auth_header = headers.get("authorization").and_then(|v| v.to_str().ok());
+    if let Err(e) = auth::verify_token(
+        auth_header,
+        &req.org_id,
+        &state.config.service_secret,
+        state.config.service_secret_previous.as_deref(),
+        state.config.require_auth,
+    ) {
+        state.metrics.auth_failures_total.fetch_add(1, Ordering::Relaxed);
+        return ScanError::Unauthorized(e.message().to_string()).into_response();
+    }
+
+    let raw = match BASE64_STANDARD.decode(&req.content_b64) {
+        Ok(r) => r,
+        Err(_) => return ScanError::BadRequest("content_b64 is not valid base64".to_string()).into_response(),
+    };
+    if raw.len() > state.config.max_scan_size {
+        return ScanError::TooLarge.into_response();
+    }
+
+    let meta = inspect::RequestMeta {
+        host: req.host,
+        path: req.path,
+        method: req.method,
+        content_type: req.content_type,
+        filename_hint: req.filename,
+        user_agent: req.user_agent,
+        source: req.source,
+        sec_fetch_mode: req.sec_fetch_mode,
+        sec_fetch_dest: req.sec_fetch_dest,
+    };
+    let result = inspect::inspect(&meta, &raw);
+    if !result.relevant {
+        tracing::debug!(host = %meta.host, path = %meta.path, reason = %result.skip_reason, "not a user action — not scanned");
+    }
+    (StatusCode::OK, Json(result)).into_response()
 }

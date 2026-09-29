@@ -86,6 +86,33 @@ pub struct ScanRequest {
     pub external_matches: Vec<ExternalMatchIn>,
 }
 
+/// One intercepted outbound request, as the endpoint agent saw it.
+#[derive(Debug, Deserialize)]
+pub struct InspectRequest {
+    pub org_id: String,
+    #[serde(default)]
+    pub host: String,
+    #[serde(default)]
+    pub path: String,
+    #[serde(default)]
+    pub method: String,
+    #[serde(default)]
+    pub content_type: String,
+    /// The agent's filename guess — see inspect::RequestMeta::filename_hint.
+    #[serde(default)]
+    pub filename: String,
+    #[serde(default)]
+    pub user_agent: String,
+    #[serde(default)]
+    pub source: String,
+    #[serde(default)]
+    pub sec_fetch_mode: String,
+    #[serde(default)]
+    pub sec_fetch_dest: String,
+    #[serde(default)]
+    pub content_b64: String,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct ExternalMatchIn {
     pub detector: String,

@@ -97,6 +97,10 @@ pub struct Match {
     #[serde(rename = "masked_preview")]
     pub preview: String,
     pub weight: i64,
+    /// The unmasked value that matched, used only to tell a repeated value
+    /// from a different one when deduplicating. Never serialized.
+    #[serde(skip)]
+    pub key: String,
 }
 
 #[derive(Clone, Debug)]
@@ -227,40 +231,110 @@ pub fn shannon_entropy(s: &str) -> f64 {
 
 // ─── Detectors ───────────────────────────────────────────────────────────────
 
+/// Whether a digit run issued by a real card network, by its leading digits
+/// (IIN) and length. Luhn alone passes one random number in ten, which is
+/// how 13-digit millisecond timestamps and 16-digit record ids were being
+/// reported as cards; none of those start with a network's prefix at the
+/// network's length.
+pub fn card_network_valid(digits: &str) -> bool {
+    let len = digits.len();
+    let prefix = |n: usize| digits.get(..n).and_then(|p| p.parse::<u32>().ok()).unwrap_or(0);
+    let p1 = prefix(1);
+    let p2 = prefix(2);
+    let p3 = prefix(3);
+    let p4 = prefix(4);
+    let p6 = prefix(6);
+    // Visa
+    (p1 == 4 && matches!(len, 13 | 16 | 19))
+        // Mastercard
+        || ((51..=55).contains(&p2) || (2221..=2720).contains(&p4)) && len == 16
+        // American Express
+        || (p2 == 34 || p2 == 37) && len == 15
+        // Discover
+        || (p4 == 6011 || (644..=649).contains(&p3) || p2 == 65 || (622126..=622925).contains(&p6)) && (16..=19).contains(&len)
+        // JCB
+        || (3528..=3589).contains(&p4) && (16..=19).contains(&len)
+        // Diners Club
+        || ((300..=305).contains(&p3) || p2 == 36 || p2 == 38 || p2 == 39) && (14..=19).contains(&len)
+        // UnionPay
+        || p2 == 62 && (16..=19).contains(&len)
+        // RuPay
+        || (p2 == 60 || p2 == 81 || p2 == 82 || p3 == 508 || p3 == 353 || p3 == 356) && len == 16
+        // Maestro
+        || (p2 == 50 || (56..=58).contains(&p2) || p4 == 6304 || p4 == 6759 || p4 == 6761 || p4 == 6762 || p4 == 6763) && (12..=19).contains(&len)
+}
+
+/// A digit run that is really the fractional or integer part of a decimal
+/// number ("0.4242424242424242", "1790578814.123") — floats in telemetry and
+/// coordinates, never an identifier someone typed.
+fn part_of_decimal(text: &str, start: usize, end: usize) -> bool {
+    let bytes = text.as_bytes();
+    let before = start.checked_sub(1).map(|i| bytes[i]);
+    let after = bytes.get(end).copied();
+    let after2 = bytes.get(end + 1).copied();
+    before == Some(b'.') || before == Some(b',') && start >= 2 && bytes[start - 2].is_ascii_digit()
+        || (after == Some(b'.') && after2.is_some_and(|c| c.is_ascii_digit()))
+}
+
 pub fn detect_credit_card(text: &str, weight: i64) -> Vec<Match> {
     let mut out = Vec::new();
     for m in CREDIT_CARD_CANDIDATE.find_iter(text) {
-        let digits = strip_separators(m.as_str());
+        let candidate = m.as_str().trim_end_matches([' ', '-']);
+        let digits = strip_separators(candidate);
         let len = digits.chars().count();
         if !(13..=19).contains(&len) {
             continue;
         }
-        if !luhn_valid(&digits) {
+        if part_of_decimal(text, m.start(), m.start() + candidate.len()) {
+            continue;
+        }
+        if !luhn_valid(&digits) || !card_network_valid(&digits) {
             continue;
         }
         out.push(Match {
             detector: CREDIT_CARD.to_string(),
             label: builtin_label(CREDIT_CARD).to_string(),
             preview: redact_digits(&digits),
+            key: digits.clone(),
             weight,
         });
     }
     out
 }
 
+/// The fourth character of a PAN is the holder type (P person, C company, H
+/// HUF, F firm, A AOP, T trust, B BOI, L local authority, J juridical, G
+/// government). Requiring it rejects most random alphanumeric tokens that
+/// otherwise fit five-letters-four-digits-one-letter.
+const PAN_HOLDER_TYPES: &[u8] = b"PCHFATBLJG";
+
 pub fn detect_pan(text: &str, weight: i64) -> Vec<Match> {
     let upper = text.to_uppercase();
     PAN_RE
         .find_iter(&upper)
+        .filter(|m| PAN_HOLDER_TYPES.contains(&m.as_str().as_bytes()[3]))
         .map(|m| Match {
             detector: PAN_INDIA.to_string(),
             label: builtin_label(PAN_INDIA).to_string(),
             preview: redact_alnum(m.as_str()),
+            key: m.as_str().to_string(),
             weight,
         })
         .collect()
 }
 
+static AADHAAR_CONTEXT_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)aadhaa?r|uidai|\buid\b|आधार|enrol?ment\s*no").unwrap());
+
+/// How far before a bare 12-digit number to look for a word saying it is an
+/// Aadhaar number.
+const AADHAAR_CONTEXT_WINDOW: usize = 120;
+
+/// Aadhaar numbers never start with 0 or 1, and are printed and typed in
+/// 4-4-4 groups. A bare, ungrouped 12-digit run is far more often an order
+/// number, a phone number with country code, or a record id — one in ten of
+/// which passes Verhoeff by chance — so it counts only when the text around
+/// it says it is an Aadhaar number.
 pub fn detect_aadhaar(text: &str, weight: i64) -> Vec<Match> {
     let mut out = Vec::new();
     for m in AADHAAR_RE.find_iter(text) {
@@ -268,10 +342,24 @@ pub fn detect_aadhaar(text: &str, weight: i64) -> Vec<Match> {
         if digits.chars().count() != 12 || !verhoeff_valid(&digits) {
             continue;
         }
+        if digits.starts_with(['0', '1']) || part_of_decimal(text, m.start(), m.end()) {
+            continue;
+        }
+        let grouped = m.as_str().contains([' ', '-']);
+        if !grouped {
+            let mut from = m.start().saturating_sub(AADHAAR_CONTEXT_WINDOW);
+            while !text.is_char_boundary(from) {
+                from -= 1;
+            }
+            if !AADHAAR_CONTEXT_RE.is_match(&text[from..m.start()]) {
+                continue;
+            }
+        }
         out.push(Match {
             detector: AADHAAR.to_string(),
             label: builtin_label(AADHAAR).to_string(),
             preview: redact_digits(&digits),
+            key: digits.clone(),
             weight,
         });
     }
@@ -291,6 +379,7 @@ pub fn detect_aws_key(text: &str, weight: i64) -> Vec<Match> {
             detector: AWS_KEY.to_string(),
             label: builtin_label(AWS_KEY).to_string(),
             preview: redact_alnum(token),
+            key: token.to_string(),
             weight,
         });
     }
@@ -304,6 +393,7 @@ pub fn detect_github_token(text: &str, weight: i64) -> Vec<Match> {
             detector: GITHUB_TOKEN.to_string(),
             label: builtin_label(GITHUB_TOKEN).to_string(),
             preview: redact_alnum(m.as_str()),
+            key: m.as_str().to_string(),
             weight,
         })
         .collect()
@@ -321,6 +411,7 @@ pub fn detect_generic_api_key(text: &str, weight: i64) -> Vec<Match> {
             detector: GENERIC_API_KEY.to_string(),
             label: builtin_label(GENERIC_API_KEY).to_string(),
             preview: format!("{key_name}={}", redact_alnum(value)),
+            key: value.to_string(),
             weight,
         });
     }
@@ -335,6 +426,7 @@ pub fn detect_source_code(filename: &str, weight: i64) -> Vec<Match> {
                 detector: SOURCE_CODE.to_string(),
                 label: builtin_label(SOURCE_CODE).to_string(),
                 preview: filename.to_string(),
+                key: filename.to_string(),
                 weight,
             }];
         }
@@ -352,6 +444,7 @@ pub fn detect_keywords(text: &str, keywords: &[String], weight: i64) -> Vec<Matc
                 detector: KEYWORD.to_string(),
                 label: format!("Keyword: {kw}"),
                 preview: kw.to_string(),
+                key: kw.to_string(),
                 weight,
             });
         }
@@ -378,6 +471,7 @@ pub fn detect_custom_patterns(text: &str, patterns: &[CustomPattern], weight: i6
                 detector: CUSTOM_REGEX.to_string(),
                 label: format!("Custom: {}", p.name),
                 preview: p.name.clone(),
+                key: p.name.clone(),
                 weight,
             });
         }
@@ -464,6 +558,50 @@ mod tests {
         let base = "23412341234";
         let valid_count = ('0'..='9').filter(|&d| verhoeff_valid(&format!("{base}{d}"))).count();
         assert_eq!(valid_count, 1); // Verhoeff has exactly one valid check digit
+    }
+
+    #[test]
+    fn test_luhn_valid_ids_and_timestamps_are_not_cards() {
+        // Luhn-valid, but no card network issues numbers starting with 1/9
+        // or at these lengths.
+        for s in ["1727500012344", "17275000123456785", "9999999999999995", "3000000000000004000"] {
+            if luhn_valid(s) {
+                assert!(detect_credit_card(&format!("x {s} y"), W).is_empty(), "{s}");
+            }
+        }
+        // Fraction digits of a float.
+        assert!(detect_credit_card("ratio 0.4242424242424242", W).is_empty());
+        // Real test PANs of each major network still match.
+        for s in ["4111111111111111", "5555555555554444", "378282246310005", "6011111111111117", "3530111333300000"] {
+            assert!(!detect_credit_card(s, W).is_empty(), "{s}");
+        }
+    }
+
+    #[test]
+    fn test_aadhaar_bare_digits_need_context() {
+        let good = valid_aadhaar();
+        assert!(detect_aadhaar(&format!("order {good} shipped"), W).is_empty());
+        assert!(!detect_aadhaar(&format!("Aadhaar No: {good}"), W).is_empty());
+        let grouped = format!("{} {} {}", &good[..4], &good[4..8], &good[8..]);
+        assert!(!detect_aadhaar(&format!("id {grouped}"), W).is_empty());
+    }
+
+    #[test]
+    fn test_aadhaar_never_starts_with_0_or_1() {
+        for base in ["03412341234", "13412341234"] {
+            for dg in '0'..='9' {
+                let c = format!("{base}{dg}");
+                if verhoeff_valid(&c) {
+                    assert!(detect_aadhaar(&format!("aadhaar {c}"), W).is_empty(), "{c}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_pan_requires_holder_type() {
+        assert!(!detect_pan("PAN ABCPD1234E", W).is_empty());
+        assert!(detect_pan("token abcxd1234e", W).is_empty());
     }
 
     #[test]

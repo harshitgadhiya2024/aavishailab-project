@@ -189,9 +189,13 @@ fn run_detectors(policy: &Policy, text: &str, filename: &str, external: &[Extern
             continue;
         }
         let label = if em.label.is_empty() { d::builtin_label(&em.detector).to_string() } else { em.label.clone() };
-        matches.push(d::Match { detector: em.detector.clone(), label, preview: em.preview.clone(), weight: scaled });
+        matches.push(d::Match { detector: em.detector.clone(), label, preview: em.preview.clone(), weight: scaled, key: em.preview.clone() });
     }
 
+    // The same value found again is the same finding, not a bigger leak: one
+    // card number repeated six times in a payload was scoring 100.
+    let mut seen = HashSet::new();
+    matches.retain(|m| seen.insert((m.detector.clone(), m.key.clone())));
     matches
 }
 

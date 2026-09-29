@@ -18,6 +18,7 @@ import (
 	"github.com/aavishield/admin-api/internal/casbclient"
 	"github.com/aavishield/admin-api/internal/dlp"
 	"github.com/aavishield/admin-api/internal/dlpclient"
+	"github.com/aavishield/admin-api/internal/extractclient"
 	"github.com/aavishield/admin-api/internal/mailer"
 	"github.com/aavishield/admin-api/internal/malwareclient"
 	"github.com/aavishield/admin-api/internal/middleware"
@@ -964,13 +965,53 @@ func (h *AgentHandler) ScanDLP(c *gin.Context) {
 	}
 	defer spool.Close()
 
-	filename := c.Query("filename")
 	contentType := c.Query("content_type")
 	destination := c.Query("destination")
-	// Request context, so an incident can report what the person was doing
-	// ("Email sent", "Message sent") and not just which host it went to.
 	requestPath := c.Query("path")
 	requestMethod := c.Query("method")
+
+	// Most of what the agent forwards is not a person sending anything —
+	// analytics beacons, error reporters, a doc polling for changes. Only a
+	// real file, a known send (email, chat, AI prompt, comment) or a form the
+	// person submitted is scanned; everything else is dropped here, before a
+	// detector or an LLM ever sees it. dlp-service owns that decision (see
+	// its inspect.rs), and when it can't be asked nothing is recorded:
+	// scanning raw background bodies is exactly what filled the DLP log with
+	// false incidents.
+	if !dlpclient.Enabled() {
+		c.JSON(http.StatusOK, gin.H{"scanned": false, "action": "allow"})
+		return
+	}
+	head, err := readInspectBody(spool, size)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"scanned": false, "action": "allow"})
+		return
+	}
+	insp, err := dlpclient.Inspect(c.Request.Context(), orgID.String(), dlpclient.RequestMeta{
+		Host:         destination,
+		Path:         requestPath,
+		Method:       requestMethod,
+		ContentType:  contentType,
+		Filename:     c.Query("filename"),
+		UserAgent:    c.Query("user_agent"),
+		Source:       c.Query("source"),
+		SecFetchMode: c.Query("sec_fetch_mode"),
+		SecFetchDest: c.Query("sec_fetch_dest"),
+	}, head)
+	if err != nil {
+		log.Printf("dlp-service inspect failed (%v) — not recording %s%s", err, destination, requestPath)
+		c.JSON(http.StatusOK, gin.H{"scanned": false, "action": "allow"})
+		return
+	}
+	if !insp.Relevant {
+		c.JSON(http.StatusOK, gin.H{"scanned": false, "action": "allow", "skipped": insp.SkipReason})
+		return
+	}
+	if _, err := spool.Seek(0, io.SeekStart); err != nil {
+		c.JSON(http.StatusOK, gin.H{"scanned": false, "action": "allow"})
+		return
+	}
+	filename := insp.Filename
 
 	var policies []models.Policy
 	h.db.Where("org_id = ? AND enabled = true AND type = ?", orgID, models.PolicyTypeDLP).
@@ -991,7 +1032,15 @@ func (h *AgentHandler) ScanDLP(c *gin.Context) {
 	// (possibly empty) list — see effectiveDLPPolicies's doc comment.
 	policies = effectiveDLPPolicies(policies)
 
-	v := scanDLPStream(c.Request.Context(), orgID.String(), filename, contentType, destination, spool, size, policies)
+	var v dlpVerdict
+	if insp.Kind == "file" {
+		v = scanDLPStream(c.Request.Context(), orgID.String(), filename, contentType, destination, spool, size, policies)
+	} else {
+		// Only the text the person wrote — never the request's ids, tokens
+		// and timestamps, which is what the checksum detectors used to match.
+		v = scanDLPSegmentWindowed(c.Request.Context(), orgID.String(),
+			extractclient.Item{Text: insp.UserText, Mime: "text/plain"}, destination, policies)
+	}
 
 	resp := gin.H{"scanned": true, "action": "allow", "score": v.score, "band": v.band}
 	if !v.matched {
@@ -1015,6 +1064,10 @@ func (h *AgentHandler) ScanDLP(c *gin.Context) {
 		eventAction = models.EventActionAlerted
 	}
 
+	contentKind := "text"
+	if insp.Kind == "file" {
+		contentKind = "file-upload"
+	}
 	event := models.ActivityEvent{
 		OrgID:        orgID,
 		EmployeeID:   empID,
@@ -1023,24 +1076,31 @@ func (h *AgentHandler) ScanDLP(c *gin.Context) {
 		Action:       eventAction,
 		Target:       filename,
 		TargetDomain: destination,
-		Operation:    classifyOperation(destination, requestPath, requestMethod, contentType, filename),
+		Operation:    insp.Operation,
 		Category:     "dlp",
-		PolicyID:     v.policyID,
-		PolicyName:   v.policyName,
-		RiskScore:    float64(v.score),
+		// The desktop app's name, when it came from one — the dashboard shows
+		// that instead of the host it happened to talk to.
+		ProcessName: insp.AppName,
+		PolicyID:    v.policyID,
+		PolicyName:  v.policyName,
+		RiskScore:   float64(v.score),
 		Metadata: map[string]any{
 			"detectors": v.detectors,
 			"matches":   v.previews,
 			"score":     v.score,
 			"band":      v.band,
 			"method":    requestMethod,
-			"path":      requestPath,
-			// The three fields the DLP log is required to show beyond the
-			// generic activity columns. Derived here, at capture time, because
-			// the request that produced them is gone afterwards.
-			"request_source": classifyDLPRequestSource(c.Query("user_agent"), c.Query("source")),
-			"destination":    dlpDestinationLabel(destination),
-			"content_kind":   dlpContentKind(filename, contentType),
+			// Path only: newer agents send the query too (it's how a send
+			// endpoint is recognised), and queries carry session tokens.
+			"path": strings.SplitN(requestPath, "?", 2)[0],
+			// Derived by dlp-service at capture time, because the request
+			// that produced them is gone afterwards.
+			"request_source": insp.RequestSource,
+			"app_name":       insp.AppName,
+			"site":           insp.Site,
+			"destination":    insp.Destination,
+			"content_kind":   contentKind,
+			"user_agent":     truncateRunes(c.Query("user_agent"), 300),
 		},
 		Timestamp: time.Now(),
 	}
@@ -1048,7 +1108,7 @@ func (h *AgentHandler) ScanDLP(c *gin.Context) {
 	events := []models.ActivityEvent{event}
 	attachEmployees(h.db, events)
 	h.hub.BroadcastActivityEvent(events[0])
-	h.alertAdmins(orgID, empID, "Sensitive data left the company", destination,
+	h.alertAdmins(orgID, empID, "Sensitive data left the company", insp.Destination,
 		strings.Join(v.detectors, ", "), v.score, v.action)
 
 	// Always "allow": see the monitor-only note above. The agent keys its
@@ -1062,91 +1122,34 @@ func (h *AgentHandler) ScanDLP(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-// ─── DLP log classification ──────────────────────────────────────────────────
-// Three small derivations that turn one scanned request into the columns the
-// DLP log is required to show. All three run once, at capture time, because
-// the originating request is not available again afterwards.
+// inspectMaxBytes is how much of a request body dlp-service's inspect call
+// sees. Bodies up to this size go whole (a text payload must be seen whole to
+// extract what the person wrote); anything larger is a file, and its first
+// megabyte carries everything that identifies one — multipart part headers
+// and magic bytes.
+const inspectMaxBytes = 16 << 20
 
-// browserUAMarkers are the product tokens every mainstream browser puts in its
-// User-Agent. A native app's UA is either its own product string ("Slack/4.35",
-// "PostmanRuntime/7.x", "Electron/…") or absent entirely.
-//
-// Order matters only in that "mozilla" is last: it is the widest net (every
-// browser still sends it for historical reasons) and some Electron apps
-// inherit it too, so the specific tokens get to answer first.
-var browserUAMarkers = []string{"chrome/", "safari/", "firefox/", "edg/", "edge/", "opr/", "gecko/", "mozilla/"}
-
-// classifyDLPRequestSource answers "app or browser" for the DLP log.
-//
-// explicit wins when the agent could determine it directly (it knows which
-// local process owns the connection in some paths); otherwise this falls back
-// to the User-Agent. An unknown or missing UA is reported as "app", not
-// "browser": a request with no recognisable browser signature came from
-// something that is not a browser, and guessing "browser" would quietly
-// mislabel exactly the native-app traffic this column exists to surface.
-func classifyDLPRequestSource(userAgent, explicit string) string {
-	switch strings.ToLower(strings.TrimSpace(explicit)) {
-	case "browser", "app":
-		return strings.ToLower(strings.TrimSpace(explicit))
+func readInspectBody(spool *os.File, size int64) ([]byte, error) {
+	n := size
+	if n > inspectMaxBytes {
+		n = 1 << 20
 	}
-
-	ua := strings.ToLower(strings.TrimSpace(userAgent))
-	if ua == "" {
-		return "app"
+	if _, err := spool.Seek(0, io.SeekStart); err != nil {
+		return nil, err
 	}
-	// Electron apps ship a full Chrome UA *plus* their own token, so an
-	// explicit Electron marker outranks the browser markers below.
-	if strings.Contains(ua, "electron/") {
-		return "app"
+	buf := make([]byte, n)
+	if _, err := io.ReadFull(spool, buf); err != nil && err != io.ErrUnexpectedEOF {
+		return nil, err
 	}
-	for _, marker := range browserUAMarkers {
-		if strings.Contains(ua, marker) {
-			return "browser"
-		}
-	}
-	return "app"
+	return buf, nil
 }
 
-// dlpDestinationLabel is where the data was going, as a person would name it.
-// The agent already sends the request host; this only strips the noise ("www.",
-// a port) so the log reads "slack.com" and not "www.slack.com:443".
-func dlpDestinationLabel(destination string) string {
-	d := normalizePolicyDomain(destination)
-	if d == "" {
-		return strings.TrimSpace(destination)
+func truncateRunes(s string, max int) string {
+	r := []rune(s)
+	if len(r) <= max {
+		return s
 	}
-	return d
-}
-
-// dlpContentKind splits an incident into the two categories the log shows:
-// a file the person attached, or text they typed/pasted.
-//
-// A filename is the strongest signal and is checked first — a multipart body
-// carrying one is a file upload whatever its outer content type says. Absent
-// that, only an explicitly textual or form-encoded body counts as text; an
-// unrecognised binary type is treated as a file, because that is what it is.
-func dlpContentKind(filename, contentType string) string {
-	if strings.TrimSpace(filename) != "" {
-		return "file-upload"
-	}
-	ct := strings.ToLower(strings.TrimSpace(contentType))
-	if i := strings.Index(ct, ";"); i >= 0 {
-		ct = strings.TrimSpace(ct[:i])
-	}
-	switch {
-	case ct == "":
-		return "text"
-	case strings.HasPrefix(ct, "text/"),
-		ct == "application/json",
-		ct == "application/x-www-form-urlencoded",
-		ct == "application/xml",
-		ct == "application/graphql":
-		return "text"
-	case strings.HasPrefix(ct, "multipart/"):
-		return "file-upload"
-	default:
-		return "file-upload"
-	}
+	return string(r[:max])
 }
 
 // dlpVerdict is the handler's unified DLP result, whether it came from the
