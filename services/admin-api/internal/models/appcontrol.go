@@ -1,6 +1,10 @@
 package models
 
-import "github.com/google/uuid"
+import (
+	"encoding/json"
+
+	"github.com/google/uuid"
+)
 
 // Application control closes the gap between "the website is blocked" and "the
 // app is blocked". Blocking chatgpt.com in a policy stops the browser, but a
@@ -99,4 +103,25 @@ type AppControlMatcher struct {
 	ProcessNames []string `json:"process_names"`
 	BundleIDs    []string `json:"bundle_ids"`
 	PathPatterns []string `json:"path_patterns"`
+}
+
+// MarshalJSON always writes the three lists as arrays. A nil slice would
+// otherwise marshal to null — which an application added from the installed-
+// software inventory has for process_names (a macOS .app is matched by bundle
+// and path instead) — and the agent (2.8.8 and earlier) rejects the whole
+// response on a null list, keeping whatever rules it last parsed. One such app
+// froze Application Control on that device: every later block was never
+// enforced.
+func (m AppControlMatcher) MarshalJSON() ([]byte, error) {
+	type plain AppControlMatcher
+	orEmpty := func(v []string) []string {
+		if v == nil {
+			return []string{}
+		}
+		return v
+	}
+	m.ProcessNames = orEmpty(m.ProcessNames)
+	m.BundleIDs = orEmpty(m.BundleIDs)
+	m.PathPatterns = orEmpty(m.PathPatterns)
+	return json.Marshal(plain(m))
 }

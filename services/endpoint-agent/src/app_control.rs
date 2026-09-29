@@ -95,12 +95,20 @@ pub struct Matcher {
     /// `block` terminates; `alert` only reports.
     #[serde(default)]
     pub action: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_empty")]
     pub process_names: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_empty")]
     pub bundle_ids: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_empty")]
     pub path_patterns: Vec<String>,
+}
+
+/// A list the server sent as JSON null reads as empty. Before this, one null
+/// (an app added from the installed-software inventory has no process names)
+/// failed the whole response, and the watcher silently kept its old rules:
+/// every block set after that app was never enforced.
+fn null_as_empty<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {
+    Ok(Option::<Vec<String>>::deserialize(d)?.unwrap_or_default())
 }
 
 impl Matcher {
@@ -200,7 +208,9 @@ impl AppControlWatcher {
         let body: AppControlResponse = match resp.json().await {
             Ok(b) => b,
             Err(e) => {
-                tracing::debug!(error = %e, "app-control refresh returned an unparseable body");
+                // Loud: the previous rules stay in force, so a new block the
+                // admin just set is not being enforced.
+                tracing::warn!(error = %e, "app-control rules could not be read — keeping the previous rules");
                 return;
             }
         };
@@ -1049,6 +1059,22 @@ mod tests {
     }
 
     #[cfg(not(target_os = "windows"))]
+    /// Found on a real device: blocking MongoDB Compass (added from the
+    /// inventory, no process names, sent as null) froze every later block.
+    #[test]
+    fn test_null_lists_in_the_rules_response_are_read_as_empty() {
+        let body = r#"{"applications":[
+            {"app_id":"1","name":"MongoDB Compass","action":"block","process_names":null,
+             "bundle_ids":["com.mongodb.compass"],"path_patterns":["/applications/mongodb compass.app"]},
+            {"app_id":"2","name":"Telegram","action":"block","process_names":["Telegram"],"bundle_ids":null,"path_patterns":null}
+        ],"poll_interval_sec":5}"#;
+        let r: AppControlResponse = serde_json::from_str(body).expect("null lists must not fail the response");
+        assert_eq!(r.applications.len(), 2);
+        assert!(r.applications[0].process_names.is_empty());
+        assert!(matches(&r.applications[0], "/Applications/MongoDB Compass.app/Contents/MacOS/MongoDB Compass"));
+        assert!(matches(&r.applications[1], "/Applications/Telegram.app/Contents/MacOS/Telegram"));
+    }
+
     #[test]
     fn test_browsers_are_recognised_by_their_main_executable_only() {
         assert_eq!(browser_name("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"), Some("Google Chrome"));
