@@ -122,7 +122,8 @@ pub fn inspect(meta: &RequestMeta, body: &[u8]) -> Inspection {
     }
 
     let ct = mime_of(&meta.content_type);
-    let file = find_file(&ct, &meta.content_type, &meta.filename_hint, body);
+    let file = find_file(&ct, &meta.content_type, &meta.filename_hint, body)
+        .map(|name| if name.is_empty() { filename_from_path(&meta.path).unwrap_or_default() } else { name });
     let op = known_operation(&host, &path).or_else(|| outlook_send(&host, &path, body));
 
     if let Some(name) = file {
@@ -442,6 +443,39 @@ fn find_file(ct: &str, raw_ct: &str, hint: &str, body: &[u8]) -> Option<String> 
         return Some(name.to_string());
     }
     None
+}
+
+/// The document name a storage API carries in its URL, when the body
+/// itself doesn't name the file — OneDrive/SharePoint upload to
+/// ".../root:/Folder/salary.docx:/content", S3 to ".../bucket/report.pdf".
+/// The last path piece with a real file extension wins.
+fn filename_from_path(path_and_query: &str) -> Option<String> {
+    let path = path_and_query.split(['?', '#']).next().unwrap_or("");
+    let decoded = percent_decode(path);
+    decoded
+        .split(['/', ':'])
+        .rev()
+        .map(str::trim)
+        .find(|seg| has_file_extension(seg))
+        .map(str::to_string)
+}
+
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' && i + 2 < b.len() {
+            if let Some(v) = std::str::from_utf8(&b[i + 1..i + 3]).ok().and_then(|h| u8::from_str_radix(h, 16).ok()) {
+                out.push(v);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 /// Extensions of documents a person uploads, as opposed to the image/script
@@ -952,6 +986,19 @@ mod tests {
         assert_eq!(r.filename, "");
         let r = inspect(&meta("s3.amazonaws.com", "/bucket/report.pdf", "application/octet-stream"), b"%PDF-1.7");
         assert_eq!(r.filename, "report.pdf");
+    }
+
+    /// Found on a real device: a DOCX sent in Teams is uploaded to
+    /// SharePoint, and the incident showed no file name.
+    #[test]
+    fn file_name_is_taken_from_a_storage_url_when_the_body_has_none() {
+        let path = "/personal/harshit_gadhiya_delphic_in/_api/v2.0/drive/root:/Microsoft%20Teams%20Chat%20Files/3-sensitive-salary.docx:/content";
+        let r = inspect(&meta("cozzera-my.sharepoint.com", path, "application/octet-stream"), b"PK\x03\x04rest");
+        assert_eq!(r.filename, "3-sensitive-salary.docx");
+        assert_eq!(filename_from_path("/bucket/Q3%20report.pdf?X-Amz-Signature=abc"), Some("Q3 report.pdf".into()));
+        assert_eq!(filename_from_path("/upload/drive/v3/files?uploadType=resumable"), None);
+        // A '%' before multi-byte UTF-8 must not panic.
+        assert_eq!(filename_from_path("/a/%é/%/r%C3%A9sum%C3%A9.pdf"), Some("résumé.pdf".into()));
     }
 
     #[test]
