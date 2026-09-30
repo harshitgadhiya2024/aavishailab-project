@@ -6,14 +6,17 @@ import {
   Shield, LayoutDashboard, Building2, Activity,
   Settings, ChevronLeft, ChevronRight, Globe, Download, AppWindow,
   HeartPulse, ClipboardList, Users2, CreditCard, ShieldAlert, Megaphone,
-  Flag, LifeBuoy
+  Flag, LifeBuoy, Inbox
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { demoRequestApi } from "@/lib/api";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
   { href: "/dashboard/organizations", icon: Building2, label: "Organizations" },
+  { href: "/dashboard/demo-requests", icon: Inbox, label: "Demo Requests" },
   { href: "/dashboard/billing", icon: CreditCard, label: "Billing & Revenue" },
   { href: "/dashboard/agent-versions", icon: Download, label: "Agent Versions" },
   { href: "/dashboard/applications", icon: AppWindow, label: "Application Catalog" },
@@ -31,6 +34,13 @@ const navItems = [
 export function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  // Unhandled website demo requests, shown as a badge on the nav item.
+  const { data: demoData } = useQuery({
+    queryKey: ["demo-requests", "new-count"],
+    queryFn: () => demoRequestApi.list({ status: "new" }),
+    refetchInterval: 60_000,
+  });
+  const newDemos: number = demoData?.data?.counts?.new ?? 0;
 
   return (
     <aside
@@ -69,7 +79,12 @@ export function Sidebar() {
               )}
             >
               <item.icon className="w-5 h-5 flex-shrink-0" />
-              {!collapsed && <span>{item.label}</span>}
+              {!collapsed && <span className="flex-1">{item.label}</span>}
+              {!collapsed && item.href === "/dashboard/demo-requests" && newDemos > 0 && (
+                <span className="min-w-5 rounded-full bg-brand-500 px-1.5 py-0.5 text-center text-[11px] font-semibold text-[#0A0A0A]">
+                  {newDemos}
+                </span>
+              )}
             </Link>
           );
         })}

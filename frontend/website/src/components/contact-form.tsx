@@ -23,6 +23,7 @@ function validate(data: FormData): Errors {
 export function ContactForm() {
   const [status, setStatus] = useState<Status>("idle");
   const [errors, setErrors] = useState<Errors>({});
+  const [serverError, setServerError] = useState("");
 
   async function onSubmit(ev: React.FormEvent<HTMLFormElement>) {
     ev.preventDefault();
@@ -31,14 +32,27 @@ export function ContactForm() {
     setErrors(found);
     if (Object.keys(found).length) return;
     setStatus("sending");
+    // Which page sent them here, so the team knows what they were reading.
+    let source = "/contact";
+    try {
+      const ref = new URL(document.referrer);
+      if (ref.origin === window.location.origin && ref.pathname !== "/contact") source = `/contact (from ${ref.pathname})`;
+    } catch {}
     try {
       const res = await fetch("/api/contact", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(Object.fromEntries(data)),
+        body: JSON.stringify({ ...Object.fromEntries(data), source }),
       });
-      setStatus(res.ok ? "sent" : "error");
+      if (res.ok) {
+        setStatus("sent");
+      } else {
+        const j = await res.json().catch(() => ({}));
+        setServerError(res.status === 429 && j.error ? j.error : "");
+        setStatus("error");
+      }
     } catch {
+      setServerError("");
       setStatus("error");
     }
   }
@@ -95,9 +109,15 @@ export function ContactForm() {
               <textarea id="message" name="message" rows={4} className={`${field} h-auto resize-none py-3`} aria-describedby="message-hint" />
             </Field>
 
+            {/* Honeypot: hidden from people and assistive tech, filled only by bots. */}
+            <div aria-hidden className="absolute -left-[9999px] h-px w-px overflow-hidden">
+              <label htmlFor="website">Website</label>
+              <input id="website" name="website" tabIndex={-1} autoComplete="off" />
+            </div>
+
             {status === "error" && (
               <p role="alert" className="rounded-xl border border-danger/40 px-4 py-3 text-sm text-danger">
-                Something went wrong sending your request. Please try again.
+                {serverError || "Something went wrong sending your request. Please try again."}
               </p>
             )}
 

@@ -38,6 +38,7 @@ type Config struct {
 	SuperadminEmail string
 	AppURL          string
 	PortalURL       string
+	SuperadminURL   string
 }
 
 var (
@@ -66,6 +67,7 @@ func Init() {
 			SuperadminEmail: os.Getenv("SUPERADMIN_MAIL"),
 			AppURL:          envOr("COMPANY_APP_URL", envOr("NEXTAUTH_URL_COMPANY", "http://localhost:5002")),
 			PortalURL:       envOr("EMPLOYEE_PORTAL_URL", envOr("NEXTAUTH_URL_EMPLOYEE", "http://localhost:5003")),
+			SuperadminURL:   envOr("SUPERADMIN_URL", envOr("NEXTAUTH_URL_SUPERADMIN", "http://localhost:5001")),
 		}
 
 		enabled = cfg.Host != "" && cfg.Username != "" && cfg.Password != ""

@@ -570,3 +570,54 @@ func DeviceConnected(admins []string, orgName, employeeName, hostname, when stri
 			body, "View devices", cfg.AppURL+"/dashboard/devices", ""),
 	})
 }
+
+// ─── Website demo requests ────────────────────────────────────────────────────
+
+// DemoRequestReceived tells the team a new "Book a demo" form came in from
+// the marketing site. Reply-worthy details are in the body so it can be
+// actioned straight from the inbox.
+func DemoRequestReceived(to []string, name, email, company, devices, message, source string) {
+	if devices == "" {
+		devices = "Not given"
+	}
+	if message == "" {
+		message = "No message"
+	}
+	body := statTable(
+		statRow("Name", name, ""),
+		statRow("Work email", email, ""),
+		statRow("Company", company, ""),
+		statRow("Devices", devices, ""),
+		statRow("Submitted from", source, ""),
+	) + fmt.Sprintf(`<p style="margin:16px 0 4px 0;font-weight:600;color:#111827;">What they want to see</p>
+	<p style="margin:0;white-space:pre-wrap;">%s</p>
+	<p style="margin:16px 0 0 0;">Reply to <a href="mailto:%s" style="color:#FF7000;">%s</a> to schedule the demo.</p>`,
+		html.EscapeString(message), html.EscapeString(email), html.EscapeString(email))
+
+	Send(Message{
+		To:      to,
+		Subject: "New demo request: " + company + " (" + name + ")",
+		HTML: layout(
+			"New demo request",
+			html.EscapeString(name)+" from "+html.EscapeString(company)+" booked a demo on the website.",
+			body, "Open in superadmin", cfg.SuperadminURL+"/dashboard/demo-requests",
+			"Sent to the Delsecure team for every demo request from the website."),
+	})
+}
+
+// DemoRequestConfirmation acknowledges the request to the person who sent it.
+func DemoRequestConfirmation(to, name string) {
+	body := `<p style="margin:0;">Someone from our team will reply within one business day to find a time
+	that suits you. The demo takes about thirty minutes and runs on real devices, not slides.</p>
+	<p style="margin:16px 0 0 0;">If you have anything to add in the meantime, just reply to this email.</p>`
+
+	Send(Message{
+		To:      []string{to},
+		Subject: "We received your Delsecure demo request",
+		HTML: layout(
+			"Thanks, "+html.EscapeString(name),
+			"Your demo request reached the Delsecure team.",
+			body, "", "",
+			"You're receiving this because you booked a demo on delsecure.aavishailab.com."),
+	})
+}

@@ -471,8 +471,8 @@ services:
       - aavishield-net
 
   # Public marketing site (delsecure.aavishailab.com). Static pages plus one
-  # /api/contact route; demo requests are logged and, if CONTACT_WEBHOOK_URL
-  # is set, forwarded to that webhook.
+  # /api/contact route, which forwards demo requests to admin-api
+  # (stored, emailed to the team, listed in superadmin > Demo Requests).
   website:
     build:
       context: ./frontend/website
@@ -485,7 +485,8 @@ services:
     restart: unless-stopped
     environment:
       PORT: "1005"
-      CONTACT_WEBHOOK_URL: ${CONTACT_WEBHOOK_URL:-}
+      ADMIN_API_INTERNAL_URL: http://admin-api:6000
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:-}
     ports:
       - "127.0.0.1:5005:1005"
     healthcheck:

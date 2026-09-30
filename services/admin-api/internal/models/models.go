@@ -820,3 +820,33 @@ type SupportTicketMessage struct {
 	Body      string    `gorm:"not null" json:"body"`
 	CreatedAt time.Time `json:"created_at"`
 }
+
+// ─── Demo Requests ───────────────────────────────────────────────────────────
+// A "Book a demo" submission from the public marketing website. The website
+// posts it server-to-server (see handlers.DemoRequestHandler.Submit); the
+// superadmin panel is where the team works through them.
+
+type DemoRequestStatus string
+
+const (
+	DemoRequestNew       DemoRequestStatus = "new"
+	DemoRequestContacted DemoRequestStatus = "contacted"
+	DemoRequestQualified DemoRequestStatus = "qualified"
+	DemoRequestClosed    DemoRequestStatus = "closed"
+)
+
+type DemoRequest struct {
+	Base
+	Name      string            `gorm:"not null" json:"name"`
+	Email     string            `gorm:"not null;index" json:"email"`
+	Company   string            `gorm:"not null" json:"company"`
+	Devices   string            `json:"devices"`
+	Message   string            `gorm:"type:text" json:"message"`
+	Source    string            `json:"source"`
+	IPAddress string            `json:"ip_address"`
+	UserAgent string            `json:"user_agent"`
+	Status    DemoRequestStatus `gorm:"type:varchar(20);default:'new';index" json:"status"`
+	Notes     string            `gorm:"type:text" json:"notes"`
+	// Set by whichever superadmin last changed the status or notes.
+	UpdatedBy *uuid.UUID `gorm:"type:uuid" json:"updated_by"`
+}

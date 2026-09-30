@@ -76,6 +76,7 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	impersonateH := handlers.NewImpersonationHandler(db)
 	blocklistH := handlers.NewGlobalBlocklistHandler(db)
 	announceH := handlers.NewAnnouncementHandler(db)
+	demoH := handlers.NewDemoRequestHandler(db)
 	flagH := handlers.NewFeatureFlagHandler(db)
 	complianceH := handlers.NewComplianceHandler(db)
 	revenueH := handlers.NewRevenueAnalyticsHandler(db)
@@ -99,6 +100,10 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	// shared-bearer-token shape as the agent-packages upload just above —
 	// see handlers.UploadDBBackup for why this exists instead of rclone.
 	r.POST("/internal/admin/backup-upload", handlers.UploadDBBackup)
+
+	// "Book a demo" submissions from the marketing website's server
+	// (frontend/website). Gated on X-Internal-Secret inside the handler.
+	r.POST("/internal/website/demo-requests", demoH.Submit)
 
 	// Razorpay calls this directly — no session, gated entirely on the
 	// X-Razorpay-Signature header verified inside the handler.
@@ -270,6 +275,12 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 			catalog.PATCH("/:id", middleware.SuperAdminFullOnly(), appCatalogH.Update)
 			catalog.DELETE("/:id", middleware.SuperAdminFullOnly(), appCatalogH.Delete)
 			catalog.POST("/:id/icon", middleware.SuperAdminFullOnly(), appCatalogH.UploadIcon)
+		}
+
+		demos := superadmin.Group("/demo-requests")
+		{
+			demos.GET("", demoH.List)
+			demos.PATCH("/:id", demoH.Update)
 		}
 
 		saTeam := superadmin.Group("/team")

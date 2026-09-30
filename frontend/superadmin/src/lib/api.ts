@@ -109,6 +109,11 @@ export const announcementApi = {
   delete: (id: string) => api.delete(`/superadmin/announcements/${id}`),
 };
 
+export const demoRequestApi = {
+  list: (params?: Record<string, any>) => api.get("/superadmin/demo-requests", { params }),
+  update: (id: string, data: { status?: string; notes?: string }) => api.patch(`/superadmin/demo-requests/${id}`, data),
+};
+
 export const featureFlagApi = {
   list: () => api.get("/superadmin/feature-flags"),
   create: (data: any) => api.post("/superadmin/feature-flags", data),
