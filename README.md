@@ -38,6 +38,8 @@ policy it pulls from a central control plane, and streams uploads and
 downloads to dedicated scanning services for DLP and malware detection.
 Three web dashboards sit on top: one for company admins, one for the
 employee enrolling their own device, and one for the platform operator.
+The public marketing site lives in `frontend/website` (Next.js,
+served at delsecure.aavishailab.com).
 
 See [`docs/`](docs/) for architecture detail, how each feature works, the
 history of bugs found and fixed, and current verification status per

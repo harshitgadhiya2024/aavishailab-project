@@ -20,4 +20,7 @@ ingress:
   # Documentation site
   - hostname: aavishield-docs.aavishailab.com
     service: http://docs:1004
+  # Public marketing website
+  - hostname: delsecure.aavishailab.com
+    service: http://website:1005
   - service: http_status:404

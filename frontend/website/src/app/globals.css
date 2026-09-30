@@ -1,0 +1,164 @@
+@import "tailwindcss";
+
+/* Theme is driven by next-themes toggling `.dark` on <html>. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * DelSecure tokens. Monochrome by design: the only colour on the site is
+ * --signal, reserved for real state (live, allowed, flagged).
+ * Radius system: interactive = pill, surfaces = 20px, inputs = 12px.
+ */
+:root {
+  --bg: #fafafa;
+  --bg-2: #f1f1f2;
+  --surface: #ffffff;
+  --fg: #0b0b0d;
+  --fg-2: #3f3f46;
+  --muted: #5d5d66;
+  --line: rgb(11 11 13 / 0.09);
+  --line-strong: rgb(11 11 13 / 0.18);
+  --invert-bg: #0b0b0d;
+  --invert-fg: #fafafa;
+  --ink: #0b0b0d;
+  --ink-fg: #fafafa;
+  --signal: #15803d;
+  --danger: #b42318;
+  --shadow: 0 1px 0 rgb(255 255 255 / 0.8) inset, 0 24px 60px -24px rgb(24 24 27 / 0.22);
+  --grid-dot: rgb(11 11 13 / 0.13);
+}
+
+.dark {
+  --bg: #09090b;
+  --bg-2: #111114;
+  --surface: #121215;
+  --fg: #f4f4f5;
+  --fg-2: #d4d4d8;
+  --muted: #a1a1aa;
+  --line: rgb(255 255 255 / 0.08);
+  --line-strong: rgb(255 255 255 / 0.17);
+  --invert-bg: #f4f4f5;
+  --invert-fg: #09090b;
+  --ink: #17171b;
+  --ink-fg: #f4f4f5;
+  --signal: #4ade80;
+  --danger: #f97066;
+  --shadow: 0 1px 0 rgb(255 255 255 / 0.06) inset, 0 24px 60px -24px rgb(0 0 0 / 0.7);
+  --grid-dot: rgb(255 255 255 / 0.12);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-2: var(--bg-2);
+  --color-surface: var(--surface);
+  --color-fg: var(--fg);
+  --color-fg-2: var(--fg-2);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-invert-bg: var(--invert-bg);
+  --color-invert-fg: var(--invert-fg);
+  --color-ink: var(--ink);
+  --color-ink-fg: var(--ink-fg);
+  --color-signal: var(--signal);
+  --color-danger: var(--danger);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --animate-marquee: marquee 38s linear infinite;
+  --animate-pulse-ring: pulse-ring 2.4s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+  --animate-scan: scan 5s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+
+  @keyframes marquee {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+  }
+  @keyframes pulse-ring {
+    0% { transform: scale(0.9); opacity: 0.55; }
+    100% { transform: scale(1.9); opacity: 0; }
+  }
+  @keyframes scan {
+    0%, 100% { transform: translateY(-10%); opacity: 0; }
+    15%, 85% { opacity: 1; }
+    50% { transform: translateY(1000%); }
+  }
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: "ss01", "cv11";
+  transition: background-color 0.4s var(--ease-out-expo), color 0.4s var(--ease-out-expo);
+}
+
+::selection {
+  background: var(--fg);
+  color: var(--bg);
+}
+
+:focus-visible {
+  outline: 2px solid var(--fg);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+/* Dot field used behind heroes; masked so it fades toward the edges. */
+.dot-field {
+  background-image: radial-gradient(var(--grid-dot) 1px, transparent 1px);
+  background-size: 22px 22px;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 30%, transparent 75%);
+}
+
+/* Dot field for ink panels: always light dots, in both themes. */
+.dot-field-ink {
+  background-image: radial-gradient(rgb(255 255 255 / 0.13) 1px, transparent 1px);
+  background-size: 22px 22px;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 30%, transparent 75%);
+}
+.dark .ink-edge {
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.08);
+}
+
+/* Fixed film grain; lives on a pointer-events-none fixed layer only. */
+.grain {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E");
+  opacity: 0.035;
+}
+.dark .grain {
+  opacity: 0.06;
+}
+
+/* Frosted panel (web approximation of glass, not an Apple material). */
+.glass {
+  background: color-mix(in oklab, var(--surface) 72%, transparent);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .glass {
+    background: var(--surface);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
