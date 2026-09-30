@@ -227,3 +227,28 @@ and four employees (30/30 checks). The tests covered:
 - a company admin getting 404 on another company's rows
 - Web Gateway policies scoped to the company, a team, one employee, and
   an employee list with no scope
+
+### 16. SSL Inspection broke WhatsApp file uploads and macOS Software Update
+**What happened:**
+- **WhatsApp desktop:** text messages sent, but every photo and document
+  failed to send.
+- **System Settings › Software Update:** the check failed with
+  `NSURLErrorDomain error -1012`.
+
+**Cause:** both apps reject any certificate except the real one
+(certificate pinning). Their hosts were not on the SSL Inspection bypass
+list, so the agent intercepted the traffic and the apps dropped the
+connection:
+- WhatsApp: `mmg.whatsapp.net` and `media.*.whatsapp.net`
+- Software Update: `swscan.apple.com`
+
+**Fix (admin-api only; no agent update needed):** added `whatsapp.net`
+and the Software Update hosts to `defaultMITMBypassDomains`. Agents pick up
+the new list within 5 minutes.
+- **WhatsApp:** bypassing loses no DLP coverage, because media is
+  end-to-end encrypted before upload.
+- **Application Control:** blocking WhatsApp by host still works.
+
+**Verified:** `softwareupdate -l` returned `-1012` until the enrolled Mac
+refreshed its bypass list, then listed the available updates.
+**Commits:** `4b30d04`, `fd6edbd`.
