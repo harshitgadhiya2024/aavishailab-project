@@ -1,10 +1,12 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -162,13 +164,13 @@ func readAttachments(files []*multipart.FileHeader) ([]pendingFile, string) {
 	return out, ""
 }
 
-func (h *TicketHandler) saveAttachments(c *gin.Context, ticketID, messageID uuid.UUID, files []pendingFile) {
+func (h *TicketHandler) saveAttachments(ctx context.Context, ticketID, messageID uuid.UUID, files []pendingFile) {
 	for _, f := range files {
 		att := models.SupportTicketAttachment{ID: uuid.New(), TicketID: ticketID, MessageID: messageID, FileName: f.name, ContentType: f.contentType, Size: int64(len(f.data))}
 		// The key ends in the vetted extension, which is what the media
 		// route derives the served Content-Type from.
 		att.StorageKey = fmt.Sprintf("support/%s/%s%s", ticketID, att.ID, f.ext)
-		if err := h.store.Put(c.Request.Context(), att.StorageKey, f.contentType, f.data); err != nil {
+		if err := h.store.Put(ctx, att.StorageKey, f.contentType, f.data); err != nil {
 			continue
 		}
 		h.db.Create(&att)
@@ -277,13 +279,17 @@ func (h *TicketHandler) customerRecipients(t *models.SupportTicket) []string {
 	return emails
 }
 
-func (h *TicketHandler) teamRecipients(t *models.SupportTicket) []string {
-	if t.AssignedToID != nil {
-		if _, email := h.userName(*t.AssignedToID); email != "" {
-			return []string{email}
-		}
+// teamRecipients is the whole Delsecure team: every active superadmin, plus
+// any extra addresses in SUPPORT_NOTIFY_EMAIL (e.g. a shared support inbox).
+func (h *TicketHandler) teamRecipients(_ *models.SupportTicket) []string {
+	var emails []string
+	h.db.Model(&models.User{}).
+		Where("role = ? AND status = ?", models.RoleSuperAdmin, models.StatusActive).
+		Pluck("email", &emails)
+	if extra := os.Getenv("SUPPORT_NOTIFY_EMAIL"); extra != "" {
+		emails = append(emails, strings.Split(extra, ",")...)
 	}
-	return teamRecipients(h.db, "SUPPORT_NOTIFY_EMAIL")
+	return emails
 }
 
 func (h *TicketHandler) systemNote(ticketID, author uuid.UUID, body string) {
@@ -521,7 +527,7 @@ func (h *TicketHandler) create(c *gin.Context, orgID *uuid.UUID) {
 		return
 	}
 	h.db.First(&t, "id = ?", t.ID) // pick up the sequence-assigned number
-	h.saveAttachments(c, t.ID, msg.ID, in.Files)
+	h.saveAttachments(c.Request.Context(), t.ID, msg.ID, in.Files)
 
 	if orgID != nil {
 		name, _ := h.userName(*uid)
@@ -545,6 +551,7 @@ type threadMessage struct {
 	ID          uuid.UUID          `json:"id"`
 	Side        string             `json:"side"`
 	Internal    bool               `json:"internal"`
+	Source      string             `json:"source"`
 	Body        string             `json:"body"`
 	CreatedAt   time.Time          `json:"created_at"`
 	AuthorName  string             `json:"author_name"`
@@ -580,7 +587,7 @@ func (h *TicketHandler) detail(c *gin.Context, scopedOrgID string, forSupport bo
 			n = [2]string{name, email}
 			names[m.AuthorID] = n
 		}
-		tm := threadMessage{ID: m.ID, Side: m.Side, Internal: m.Internal, Body: m.Body, CreatedAt: m.CreatedAt,
+		tm := threadMessage{ID: m.ID, Side: m.Side, Internal: m.Internal, Source: m.Source, Body: m.Body, CreatedAt: m.CreatedAt,
 			AuthorName: n[0], Attachments: byMsg[m.ID]}
 		if tm.Attachments == nil {
 			tm.Attachments = []threadAttachment{}
@@ -634,28 +641,37 @@ func (h *TicketHandler) AddMessage(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": errMsg})
 		return
 	}
-	name, _ := h.userName(*uid)
-	if isDone(t.Status) {
-		h.systemNote(t.ID, *uid, "Reopened by "+name)
-		h.db.Model(t).Updates(map[string]any{"status": models.TicketStatusOpen, "resolved_at": nil})
-		t.Status = models.TicketStatusOpen
-	}
-	msg := models.SupportTicketMessage{TicketID: t.ID, AuthorID: *uid, Side: models.TicketSideCustomer, Body: in.Body}
-	if err := h.db.Create(&msg).Error; err != nil {
+	msg, err := h.customerReply(c.Request.Context(), t, *uid, in, "web")
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send"})
 		return
 	}
-	h.saveAttachments(c, t.ID, msg.ID, in.Files)
+	c.JSON(http.StatusCreated, gin.H{"id": msg.ID})
+}
+
+// customerReply adds an org user's message (from the dashboard or by email),
+// reopening a resolved ticket and emailing the team.
+func (h *TicketHandler) customerReply(ctx context.Context, t *models.SupportTicket, uid uuid.UUID, in messageInput, source string) (*models.SupportTicketMessage, error) {
+	name, _ := h.userName(uid)
+	if isDone(t.Status) {
+		h.systemNote(t.ID, uid, "Reopened by "+name)
+		h.db.Model(t).Updates(map[string]any{"status": models.TicketStatusOpen, "resolved_at": nil})
+		t.Status = models.TicketStatusOpen
+	}
+	msg := models.SupportTicketMessage{TicketID: t.ID, AuthorID: uid, Side: models.TicketSideCustomer, Source: source, Body: in.Body}
+	if err := h.db.Create(&msg).Error; err != nil {
+		return nil, err
+	}
+	h.saveAttachments(ctx, t.ID, msg.ID, in.Files)
 	now := time.Now()
 	h.db.Model(t).Updates(map[string]any{"last_message_at": now, "last_message_side": models.TicketSideCustomer, "customer_read_at": now})
-
 	mailer.TicketReplyToTeam(h.teamRecipients(t), h.mailInfo(t, false), name, in.Body, len(in.Files))
-	c.JSON(http.StatusCreated, gin.H{"id": msg.ID})
+	return &msg, nil
 }
 
 // AddMessageAny handles POST /superadmin/tickets/:id/messages — a support
 // reply (emailed to the customer) or an internal note (never shown to them).
-// ?status / form "status" optionally moves the ticket in the same step.
+// Form field "status" optionally moves the ticket in the same step.
 func (h *TicketHandler) AddMessageAny(c *gin.Context) {
 	t, ok := h.loadTicket(c, "")
 	if !ok {
@@ -674,34 +690,44 @@ func (h *TicketHandler) AddMessageAny(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": errMsg})
 		return
 	}
-	msg := models.SupportTicketMessage{TicketID: t.ID, AuthorID: *uid, Side: models.TicketSideSupport, Internal: in.Internal, Body: in.Body}
-	if err := h.db.Create(&msg).Error; err != nil {
+	msg, err := h.supportReply(c.Request.Context(), t, *uid, in, "web")
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send"})
 		return
 	}
-	h.saveAttachments(c, t.ID, msg.ID, in.Files)
+	c.JSON(http.StatusCreated, gin.H{"id": msg.ID})
+}
+
+// supportReply adds a superadmin's reply or internal note (from the console
+// or by email). A reply moves an open ticket to in progress, takes ownership
+// if nobody has it, and is emailed to the customer.
+func (h *TicketHandler) supportReply(ctx context.Context, t *models.SupportTicket, uid uuid.UUID, in messageInput, source string) (*models.SupportTicketMessage, error) {
+	msg := models.SupportTicketMessage{TicketID: t.ID, AuthorID: uid, Side: models.TicketSideSupport, Internal: in.Internal, Source: source, Body: in.Body}
+	if err := h.db.Create(&msg).Error; err != nil {
+		return nil, err
+	}
+	h.saveAttachments(ctx, t.ID, msg.ID, in.Files)
 	now := time.Now()
 	updates := map[string]any{"support_read_at": now}
 	if !in.Internal {
 		updates["last_message_at"] = now
 		updates["last_message_side"] = models.TicketSideSupport
-		// Answering an open request means someone is on it.
 		if t.Status == models.TicketStatusOpen && in.Status == "" {
 			in.Status = string(models.TicketStatusInProgress)
 		}
 		if t.AssignedToID == nil {
-			updates["assigned_to_id"] = *uid
+			updates["assigned_to_id"] = uid
 		}
 	}
 	h.db.Model(t).Updates(updates)
 	if !in.Internal && t.OrgID != nil {
-		name, _ := h.userName(*uid)
+		name, _ := h.userName(uid)
 		mailer.TicketReplyToCustomer(h.customerRecipients(t), h.mailInfo(t, true), firstName(name)+" from Delsecure Support", in.Body, len(in.Files))
 	}
 	if in.Status != "" {
-		h.setStatus(t, *uid, models.TicketStatus(in.Status))
+		h.setStatus(t, uid, models.TicketStatus(in.Status))
 	}
-	c.JSON(http.StatusCreated, gin.H{"id": msg.ID})
+	return &msg, nil
 }
 
 // setStatus changes status, records it in the thread and, on resolve, tells

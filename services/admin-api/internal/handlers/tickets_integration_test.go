@@ -8,15 +8,18 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/aavishield/admin-api/internal/database"
+	"github.com/aavishield/admin-api/internal/mailer"
 	"github.com/aavishield/admin-api/internal/middleware"
 	"github.com/aavishield/admin-api/internal/models"
 	"github.com/gin-gonic/gin"
@@ -243,4 +246,115 @@ func TestTicketsIntegration(t *testing.T) {
 		t.Fatalf("system entries = %d", system)
 	}
 	_ = http.StatusOK
+}
+
+// TestTicketMailIntegration covers replies arriving by email (same opt-in DSN).
+func TestTicketMailIntegration(t *testing.T) {
+	dsn := os.Getenv("TICKETS_IT_DSN")
+	if dsn == "" {
+		t.Skip("TICKETS_IT_DSN not set")
+	}
+	t.Setenv("SCREENSHOT_R2_ENDPOINT", "")
+	t.Setenv("SCREENSHOT_LOCAL_DIR", t.TempDir())
+	t.Setenv("TICKET_MAIL_SECRET", "it-secret")
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(db.Exec(`DROP SCHEMA public CASCADE; CREATE SCHEMA public;`).Error)
+	enums, _ := os.ReadFile("../../../../infra/postgres/init-enums.sql")
+	must(db.Exec(string(enums)).Error)
+	must(db.AutoMigrate(&models.Organization{}, &models.User{}, &models.AuditLog{}, &models.SupportTicket{},
+		&models.SupportTicketMessage{}, &models.SupportTicketAttachment{}, &models.InboundEmail{}))
+	must(database.MigrateSupportTickets(db))
+
+	org := models.Organization{Name: "Delphic", Slug: "delphic"}
+	other := models.Organization{Name: "Other", Slug: "other"}
+	must(db.Create(&org).Error)
+	must(db.Create(&other).Error)
+	cust := models.User{OrgID: &org.ID, Email: "utsavi@delphic.in", FirstName: "Utsavi", PasswordHash: "x", Role: "org_admin"}
+	colleague := models.User{OrgID: &org.ID, Email: "riya@delphic.in", FirstName: "Riya", PasswordHash: "x", Role: "analyst"}
+	stranger := models.User{OrgID: &other.ID, Email: "x@other.com", FirstName: "X", PasswordHash: "x", Role: "org_admin"}
+	agent := models.User{Email: "harshit@aavishailab.com", FirstName: "Harshit", PasswordHash: "x", Role: models.RoleSuperAdmin}
+	for _, u := range []*models.User{&cust, &colleague, &stranger, &agent} {
+		must(db.Create(u).Error)
+	}
+	h := NewTicketHandler(db)
+	now := time.Now()
+	tk := models.SupportTicket{OrgID: &org.ID, Subject: "Firewall", Status: models.TicketStatusResolved, CreatedByID: cust.ID,
+		LastMessageAt: &now, LastMessageSide: models.TicketSideSupport}
+	must(db.Create(&tk).Error)
+	id := tk.ID.String()
+	custThread := mailer.ThreadMessageID(id, "customer")
+	teamThread := mailer.ThreadMessageID(id, "team")
+	ctx := context.Background()
+
+	in := func(msgID, from, refs, body string) inboundMail {
+		return inboundMail{MessageID: msgID, From: from, References: "<x@gmail.com> " + refs, Text: body}
+	}
+	check := func(name string, m inboundMail, want string) {
+		t.Helper()
+		if got, _ := h.ingestEmail(ctx, m); got != want {
+			t.Errorf("%s: got %q, want %q", name, got, want)
+		}
+	}
+
+	// Ordinary mail in the shared inbox is untouched and not recorded.
+	if res, ticket := h.ingestEmail(ctx, in("<n1@x>", "boss@delphic.in", "", "Lunch?")); ticket || res != "not a ticket reply" {
+		t.Fatalf("plain mail: %q %v", res, ticket)
+	}
+
+	// Customer replies by email: added, ticket reopens.
+	check("customer reply", in("<c1@gmail.com>", "utsavi@delphic.in", custThread,
+		"It came back after a restart.\n\nOn Wed, Delsecure wrote:\n> Turn the firewall on"), "added")
+	var got models.SupportTicket
+	must(db.First(&got, "id = ?", id).Error)
+	if got.Status != models.TicketStatusOpen || got.LastMessageSide != models.TicketSideCustomer {
+		t.Fatalf("after customer email: status=%s side=%s", got.Status, got.LastMessageSide)
+	}
+	var last models.SupportTicketMessage
+	must(db.Where("ticket_id = ? AND side = 'customer'", id).Order("created_at DESC").First(&last).Error)
+	if last.Body != "It came back after a restart." || last.Source != "email" {
+		t.Fatalf("stored reply: %q source=%s", last.Body, last.Source)
+	}
+
+	// Same email again (another poll, or it sat in two folders): once only.
+	check("duplicate", in("<c1@gmail.com>", "utsavi@delphic.in", custThread, "It came back after a restart."), "already processed")
+	// A colleague in the same company may join the thread.
+	check("colleague", in("<c2@gmail.com>", "riya@delphic.in", custThread, "Same on my laptop."), "added")
+	// Someone from another company can't write into it, even with the thread id.
+	check("other org", in("<c3@x>", "x@other.com", custThread, "hi"), "ignored: sender is not in this ticket's organization")
+	// An unknown address is refused.
+	check("unknown", in("<c4@x>", "attacker@evil.com", custThread, "hi"), "ignored: sender is not a Delsecure user")
+	// A customer can't post into the team thread.
+	check("customer on team thread", in("<c5@x>", "utsavi@delphic.in", teamThread, "hi"), "ignored: sender is not on the Delsecure team")
+	// A forged thread id is not a ticket reply at all.
+	forged := strings.Replace(custThread, id, uuid.NewString(), 1)
+	if res, ticket := h.ingestEmail(ctx, in("<c6@x>", "utsavi@delphic.in", forged, "hi")); ticket {
+		t.Fatalf("forged id treated as ticket mail: %q", res)
+	}
+	// Out-of-office replies and our own mailbox are ignored.
+	auto := in("<c7@x>", "utsavi@delphic.in", custThread, "I'm away")
+	auto.AutoReply = true
+	check("auto reply", auto, "ignored: automatic reply")
+	check("quote only", in("<c8@x>", "utsavi@delphic.in", custThread, "On Wed, X wrote:\n> old"), "ignored: empty reply")
+
+	// Support answers from their inbox: becomes a support reply, moves to in progress.
+	check("support reply", in("<s1@x>", "harshit@aavishailab.com", teamThread, "Looking into it now."), "added")
+	must(db.First(&got, "id = ?", id).Error)
+	if got.LastMessageSide != models.TicketSideSupport || got.Status != models.TicketStatusInProgress || got.AssignedToID == nil {
+		t.Fatalf("after support email: side=%s status=%s assigned=%v", got.LastMessageSide, got.Status, got.AssignedToID)
+	}
+
+	var recorded int64
+	db.Model(&models.InboundEmail{}).Count(&recorded)
+	if recorded != 8 { // each distinct email with a valid thread id; not plain, forged or repeat mail
+		t.Fatalf("inbound_emails rows = %d", recorded)
+	}
 }

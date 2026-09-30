@@ -840,9 +840,24 @@ type SupportTicketMessage struct {
 	AuthorID uuid.UUID `gorm:"type:uuid;not null" json:"author_id"`
 	Side     string    `gorm:"type:varchar(10);default:'customer'" json:"side"`
 	// Internal notes are support-only and never shown or emailed to the org.
-	Internal  bool      `gorm:"default:false" json:"internal"`
+	Internal bool `gorm:"default:false" json:"internal"`
+	// Source is how the message arrived: "web" (dashboard) or "email" (a
+	// reply to a ticket email, see handlers.TicketMailPoller).
+	Source    string    `gorm:"type:varchar(10);default:'web'" json:"source"`
 	Body      string    `gorm:"not null" json:"body"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+// InboundEmail records every email the ticket mailbox poller has looked at,
+// keyed by its Message-ID, so a message is never added to a ticket twice and
+// ignored mail stays explainable.
+type InboundEmail struct {
+	ID        uuid.UUID  `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()" json:"id"`
+	MessageID string     `gorm:"uniqueIndex;not null" json:"message_id"`
+	FromAddr  string     `json:"from_addr"`
+	TicketID  *uuid.UUID `gorm:"type:uuid;index" json:"ticket_id"`
+	Result    string     `json:"result"` // added | ignored: <reason>
+	CreatedAt time.Time  `json:"created_at"`
 }
 
 // SupportTicketAttachment is a file attached to one message.

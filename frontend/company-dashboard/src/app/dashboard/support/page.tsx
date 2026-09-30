@@ -152,7 +152,7 @@ export default function SupportCenterPage() {
             <ol className="mt-3 space-y-3 text-sm text-muted-foreground">
               <li className="flex gap-3"><MessageSquareText className="mt-0.5 h-4 w-4 flex-shrink-0 text-brand-500" />Describe the problem and attach screenshots if you can.</li>
               <li className="flex gap-3"><Clock3 className="mt-0.5 h-4 w-4 flex-shrink-0 text-brand-500" />We reply here and by email, usually within one business day.</li>
-              <li className="flex gap-3"><Inbox className="mt-0.5 h-4 w-4 flex-shrink-0 text-brand-500" />Reply to keep the conversation going. We'll close it once it's fixed.</li>
+              <li className="flex gap-3"><Inbox className="mt-0.5 h-4 w-4 flex-shrink-0 text-brand-500" />Reply here or simply reply to our email. We'll close it once it's fixed.</li>
             </ol>
           </div>
           <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-5">

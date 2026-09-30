@@ -9,6 +9,7 @@ export type ThreadMessage = {
   id: string;
   side: "customer" | "support" | "system";
   internal: boolean;
+  source?: string;
   body: string;
   created_at: string;
   author_name: string;
@@ -86,6 +87,7 @@ export function Thread({
                   <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-foreground">
                     {you ? "You" : m.author_name}
                     {support && <span className="rounded-md bg-brand-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-500">Delsecure Support</span>}
+                    {m.source === "email" && <span className="rounded-md bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-500">via email</span>}
                     {m.internal && <span className="rounded-md bg-yellow-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-yellow-500">Internal note</span>}
                   </p>
                   {!support && m.author_email && !you && <p className="truncate text-xs text-muted-foreground">{m.author_email}</p>}

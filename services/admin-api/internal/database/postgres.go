@@ -111,6 +111,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&models.SupportTicket{},
 		&models.SupportTicketMessage{},
 		&models.SupportTicketAttachment{},
+		&models.InboundEmail{},
 		&models.DemoRequest{},
 	)
 }

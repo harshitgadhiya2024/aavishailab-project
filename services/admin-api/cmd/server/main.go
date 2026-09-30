@@ -91,6 +91,9 @@ func main() {
 	// the scheduled ones (incident digests, inactivity notices, weekly summary).
 	mailer.Init()
 	notifier.New(db).Start(1 * time.Hour)
+	// Replies to ticket emails come back into the support mailbox; this reads
+	// them over IMAP and adds them to the right ticket.
+	handlers.StartTicketMailPoller(db)
 
 	r := router.Setup(db, rdb)
 

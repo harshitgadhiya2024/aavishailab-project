@@ -39,7 +39,7 @@ function Stepper({ status }: { status: string }) {
 }
 
 const NEXT: Record<string, string> = {
-  open: "Your request is in our queue. A member of the team will reply here and by email.",
+  open: "Your request is in our queue. A member of the team will reply here and by email. You can answer from either.",
   in_progress: "Someone from our team is working on this. Reply any time to add detail.",
   resolved: "We think this is fixed. Reply if it isn't, and the request reopens.",
   closed: "This request is closed. Reply to reopen it.",
