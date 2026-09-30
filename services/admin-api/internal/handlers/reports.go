@@ -11,6 +11,7 @@ import (
 
 	"github.com/aavishield/admin-api/internal/models"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -38,6 +39,18 @@ type reportWindow struct {
 	// Hourly is true for spans of two days or less, where a per-day chart
 	// would be one or two bars.
 	Hourly bool
+	// EmployeeID narrows a report to one person (?employee_id=). It is a
+	// parsed UUID, so emp can put it straight into SQL.
+	EmployeeID   string
+	EmployeeName string
+}
+
+// emp returns " AND <col> = '<uuid>'" when the report is for one employee.
+func (w reportWindow) emp(col string) string {
+	if w.EmployeeID == "" {
+		return ""
+	}
+	return " AND " + col + " = '" + w.EmployeeID + "'"
 }
 
 const maxReportSpan = 366 * 24 * time.Hour
@@ -100,12 +113,25 @@ func (h *ReportHandler) parseWindow(c *gin.Context, orgID string) reportWindow {
 		start = end.Add(-maxReportSpan)
 	}
 	span := end.Sub(start)
-	return reportWindow{
+	w := reportWindow{
 		Start: start, End: end,
 		PrevStart: start.Add(-span), PrevEnd: start,
 		Loc:    loc,
 		Hourly: span <= 48*time.Hour,
 	}
+	if id, err := uuid.Parse(c.Query("employee_id")); err == nil {
+		// The filter applies even for an id from another org: that report is
+		// then empty, never silently org-wide.
+		w.EmployeeID = id.String()
+		var e models.Employee
+		if h.db.Select("first_name", "last_name", "email").First(&e, "id = ? AND org_id = ?", id, orgID).Error == nil {
+			w.EmployeeName = strings.TrimSpace(strings.TrimSpace(e.FirstName) + " " + strings.TrimSpace(e.LastName))
+			if w.EmployeeName == "" {
+				w.EmployeeName = e.Email
+			}
+		}
+	}
+	return w
 }
 
 func (w reportWindow) meta() gin.H {
@@ -113,7 +139,11 @@ func (w reportWindow) meta() gin.H {
 	if w.Hourly {
 		bucket = "hour"
 	}
-	return gin.H{"start": w.Start, "end": w.End, "tz": w.Loc.String(), "bucket": bucket}
+	m := gin.H{"start": w.Start, "end": w.End, "tz": w.Loc.String(), "bucket": bucket}
+	if w.EmployeeID != "" {
+		m["employee_id"], m["employee_name"] = w.EmployeeID, w.EmployeeName
+	}
+	return m
 }
 
 // fmtTime renders a timestamp the way a person reads it in an export.
@@ -251,7 +281,7 @@ func (h *ReportHandler) trend(orgID string, w reportWindow, where string, args .
 	var rows []row
 	q := `SELECT date_trunc('` + unit + `', ae.timestamp AT TIME ZONE ?) AS bucket, ` + controlSQL + ` AS control, COUNT(*) AS n
 		FROM activity_events ae
-		WHERE ae.org_id = ? AND ae.timestamp >= ? AND ae.timestamp < ? AND ` + incidentSQL
+		WHERE ae.org_id = ? AND ae.timestamp >= ? AND ae.timestamp < ?` + w.emp("ae.employee_id") + ` AND ` + incidentSQL
 	params := []any{w.Loc.String(), orgID, w.Start, w.End}
 	if where != "" {
 		q += " AND " + where
@@ -532,7 +562,7 @@ func (h *ReportHandler) topApps(orgID string, w reportWindow, limit int) []appRo
 	h.db.Raw(`SELECT ae.target AS name, `+controlSQL+` AS control, COUNT(*) AS count,
 		COUNT(DISTINCT ae.employee_id) AS employees, MAX(ae.timestamp) AS last
 		FROM activity_events ae
-		WHERE ae.org_id = ? AND ae.timestamp >= ? AND ae.timestamp < ? AND `+incidentSQL+`
+		WHERE ae.org_id = ? AND ae.timestamp >= ? AND ae.timestamp < ?`+w.emp("ae.employee_id")+` AND `+incidentSQL+`
 		  AND ae.category = 'application_control' AND ae.target <> ''
 		GROUP BY 1, 2 ORDER BY count DESC LIMIT ?`, orgID, w.Start, w.End, limit).Scan(&rows)
 	return rows
@@ -555,7 +585,7 @@ func (h *ReportHandler) topSites(orgID string, w reportWindow, limit int) []site
 	h.db.Raw(`SELECT ae.target_domain AS domain, `+siteCategorySQL+` AS category, COUNT(*) AS count,
 		COUNT(DISTINCT ae.employee_id) AS employees, MAX(ae.timestamp) AS last
 		FROM activity_events ae
-		WHERE ae.org_id = ? AND ae.timestamp >= ? AND ae.timestamp < ? AND `+incidentSQL+`
+		WHERE ae.org_id = ? AND ae.timestamp >= ? AND ae.timestamp < ?`+w.emp("ae.employee_id")+` AND `+incidentSQL+`
 		  AND `+controlSQL+` = 'web' AND ae.target_domain <> ''
 		GROUP BY ae.target_domain ORDER BY count DESC LIMIT ?`, orgID, w.Start, w.End, limit).Scan(&rows)
 	return rows
@@ -576,7 +606,7 @@ func (h *ReportHandler) dlpServices(orgID string, w reportWindow, limit int) []s
 	h.db.Raw(`SELECT `+dlpServiceSQL+` AS service, COUNT(*) AS count,
 		COUNT(*) FILTER (WHERE ae.metadata->>'band' = 'block' OR ae.risk_score >= 80) AS high
 		FROM activity_events ae
-		WHERE ae.org_id = ? AND ae.timestamp >= ? AND ae.timestamp < ? AND ae.category = 'dlp'
+		WHERE ae.org_id = ? AND ae.timestamp >= ? AND ae.timestamp < ?`+w.emp("ae.employee_id")+` AND ae.category = 'dlp'
 		GROUP BY 1 ORDER BY count DESC LIMIT ?`, orgID, w.Start, w.End, limit).Scan(&rows)
 	return rows
 }
@@ -591,7 +621,7 @@ func (h *ReportHandler) dlpTypes(orgID string, w reportWindow, limit int) []labe
 	h.db.Raw(`SELECT d AS label, COUNT(*) AS count
 		FROM activity_events ae, LATERAL jsonb_array_elements_text(
 			CASE WHEN jsonb_typeof(ae.metadata->'detectors') = 'array' THEN ae.metadata->'detectors' ELSE '[]'::jsonb END) AS d
-		WHERE ae.org_id = ? AND ae.timestamp >= ? AND ae.timestamp < ? AND ae.category = 'dlp'
+		WHERE ae.org_id = ? AND ae.timestamp >= ? AND ae.timestamp < ?`+w.emp("ae.employee_id")+` AND ae.category = 'dlp'
 		GROUP BY 1 ORDER BY count DESC LIMIT ?`, orgID, w.Start, w.End, limit).Scan(&rows)
 	for i := range rows {
 		rows[i].Label = detectorLabel(rows[i].Label)
@@ -654,7 +684,7 @@ func (h *ReportHandler) topUsers(orgID string, w reportWindow, limit int) []user
 		MAX(ae.timestamp) AS last_seen
 		FROM activity_events ae
 		JOIN employees e ON e.id = ae.employee_id
-		WHERE ae.org_id = ? AND ae.timestamp >= ? AND ae.timestamp < ? AND `+incidentSQL+`
+		WHERE ae.org_id = ? AND ae.timestamp >= ? AND ae.timestamp < ?`+w.emp("ae.employee_id")+` AND `+incidentSQL+`
 		GROUP BY e.id, e.first_name, e.last_name, e.email, e.department
 		ORDER BY high_dlp DESC, incidents DESC LIMIT ?`,
 		orgID, w.Start, w.End, limit).Scan(&rows)

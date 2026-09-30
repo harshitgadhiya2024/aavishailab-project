@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Shield, LayoutDashboard, Users, UsersRound,
-  Activity, Globe, Bot, Monitor, ChevronLeft, ChevronRight, ChevronDown,
+  Activity, Globe, Monitor, ChevronLeft, ChevronRight, ChevronDown,
   BarChart3, FileWarning, Inbox, Tags, UserCog, AppWindow, Camera,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -51,7 +51,6 @@ const navGroups: NavGroup[] = [
       { href: "/dashboard/screenshots", icon: Camera, label: "Screenshots", permission: PERMISSIONS.monitoringRead },
       { href: "/dashboard/access-requests", icon: Inbox, label: "Access Requests", permission: PERMISSIONS.accessRequestsRead },
       { href: "/dashboard/reports", icon: BarChart3, label: "Reports", permission: PERMISSIONS.reportsRead },
-      { href: "/dashboard/ai-assistant", icon: Bot, label: "AI Assistant", permission: PERMISSIONS.aiUse },
     ],
   },
 ];

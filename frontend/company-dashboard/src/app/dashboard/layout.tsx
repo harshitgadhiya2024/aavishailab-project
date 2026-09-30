@@ -4,6 +4,7 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { Header } from "@/components/layout/Header";
 import { AnnouncementBanner } from "@/components/layout/AnnouncementBanner";
 import { authOptions } from "@/lib/auth";
+import { AssistantWidget } from "@/components/assistant/AssistantWidget";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await getServerSession(authOptions);
@@ -19,6 +20,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
           {children}
         </main>
       </div>
+      {/* The AI assistant floats over every page (bottom right). */}
+      <AssistantWidget />
     </div>
   );
 }

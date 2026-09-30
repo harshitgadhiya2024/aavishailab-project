@@ -148,3 +148,25 @@ func TestSettingWording(t *testing.T) {
 		t.Errorf("joinNames = %q", got)
 	}
 }
+
+func TestWindowEmployeeFilter(t *testing.T) {
+	if got := (reportWindow{}).emp("ae.employee_id"); got != "" {
+		t.Fatalf("no employee should add nothing, got %q", got)
+	}
+	w := reportWindow{EmployeeID: "0b8f5a3e-1c2d-4e5f-8a9b-0c1d2e3f4a5b"}
+	if got := w.emp("ae.employee_id"); got != " AND ae.employee_id = '0b8f5a3e-1c2d-4e5f-8a9b-0c1d2e3f4a5b'" {
+		t.Fatalf("emp = %q", got)
+	}
+	// A value that isn't a UUID is never put into SQL.
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest("GET", "/x?employee_id=1'%20OR%20'1'='1&tz=UTC", nil)
+	h := &ReportHandler{}
+	if w := h.parseWindow(c, "org"); w.EmployeeID != "" {
+		t.Fatalf("non-uuid employee_id accepted: %q", w.EmployeeID)
+	}
+	w.EmployeeName = "Riya Patel"
+	w.Loc = time.UTC
+	if got := exportFilename("dlp", w, "csv"); !strings.Contains(got, "dlp_riya-patel_") {
+		t.Fatalf("filename = %q", got)
+	}
+}

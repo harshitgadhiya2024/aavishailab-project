@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -158,10 +159,15 @@ func (h *ReportHandler) Report(c *gin.Context) {
 	})
 }
 
+var nonFileChars = regexp.MustCompile(`[^a-z0-9]+`)
+
 // ─── Export ───────────────────────────────────────────────────────────────────
 
 func exportFilename(reportType string, w reportWindow, ext string) string {
 	end := w.End.Add(-time.Second) // end is exclusive; name the last day covered
+	if w.EmployeeName != "" {
+		reportType += "_" + strings.Trim(nonFileChars.ReplaceAllString(strings.ToLower(w.EmployeeName), "-"), "-")
+	}
 	return fmt.Sprintf("delsecure_%s_%s_to_%s.%s", reportType,
 		w.Start.In(w.Loc).Format("2006-01-02"), end.In(w.Loc).Format("2006-01-02"), ext)
 }
@@ -177,8 +183,11 @@ func (w reportWindow) preamble(reportType string, t reportTable) [][]string {
 	rows := [][]string{
 		{"DelSecure report", reportName(reportType)},
 		{"Period", w.periodText()},
-		{"Generated", time.Now().In(w.Loc).Format("2 Jan 2006 15:04")},
 	}
+	if w.EmployeeID != "" {
+		rows = append(rows, []string{"Employee", w.EmployeeName})
+	}
+	rows = append(rows, []string{"Generated", time.Now().In(w.Loc).Format("2 Jan 2006 15:04")})
 	for _, s := range t.Summary {
 		rows = append(rows, []string{s.Label, fmt.Sprintf("%v", s.Value)})
 	}
@@ -400,7 +409,7 @@ func (h *ReportHandler) incidentRows(orgID string, w reportWindow, where string,
 		FROM activity_events ae
 		LEFT JOIN employees e ON e.id = ae.employee_id
 		LEFT JOIN devices d ON d.id = ae.device_id
-		WHERE ae.org_id = ? AND ae.timestamp >= ? AND ae.timestamp < ? AND ` + incidentSQL
+		WHERE ae.org_id = ? AND ae.timestamp >= ? AND ae.timestamp < ?` + w.emp("ae.employee_id") + ` AND ` + incidentSQL
 	params := []any{orgID, w.Start, w.End}
 	if where != "" {
 		q += " AND " + where
@@ -631,7 +640,7 @@ func (h *ReportHandler) employeeActivityReport(orgID string, w reportWindow) rep
 		COUNT(DISTINCT DATE(ws.started_at AT TIME ZONE ?)) AS days,
 		MIN(ws.started_at) AS first, MAX(COALESCE(ws.ended_at, ws.started_at)) AS last
 		FROM work_sessions ws JOIN employees e ON e.id = ws.employee_id
-		WHERE ws.org_id = ? AND ws.started_at >= ? AND ws.started_at < ? AND ws.deleted_at IS NULL
+		WHERE ws.org_id = ? AND ws.started_at >= ? AND ws.started_at < ? AND ws.deleted_at IS NULL`+w.emp("ws.employee_id")+`
 		GROUP BY e.id, e.first_name, e.last_name, e.email, e.department
 		ORDER BY tracked DESC`, w.Loc.String(), orgID, w.Start, w.End).Scan(&rows)
 
@@ -694,7 +703,7 @@ func (h *ReportHandler) devicesReport(orgID string, w reportWindow) reportTable 
 		COALESCE((SELECT string_agg(f, ',') FROM jsonb_array_elements_text(`+postureFailedSQL+`) f), '') AS failed,
 		d.last_seen_at, d.enrolled_at
 		FROM devices d LEFT JOIN employees e ON e.id = d.employee_id
-		WHERE d.org_id = ? AND d.deleted_at IS NULL
+		WHERE d.org_id = ? AND d.deleted_at IS NULL`+w.emp("d.employee_id")+`
 		ORDER BY d.last_seen_at ASC NULLS FIRST`, orgID).Scan(&rows)
 
 	staleBefore := time.Now().Add(-staleAfter)
@@ -815,7 +824,7 @@ func (h *ReportHandler) accessRequestsReport(orgID string, w reportWindow, limit
 		TRIM(TRIM(COALESCE(e.first_name,'')) || ' ' || TRIM(COALESCE(e.last_name,''))) AS name,
 		COALESCE(e.email,'') AS email, ar.domain, ar.reason, ar.status::text AS status, ar.reviewed_at
 		FROM access_requests ar LEFT JOIN employees e ON e.id = ar.employee_id
-		WHERE ar.org_id = ? AND ar.created_at >= ? AND ar.created_at < ?
+		WHERE ar.org_id = ? AND ar.created_at >= ? AND ar.created_at < ?`+w.emp("ar.employee_id")+`
 		ORDER BY ar.created_at DESC LIMIT ?`, orgID, w.Start, w.End, limit).Scan(&rows)
 
 	out := make([][]any, 0, len(rows))

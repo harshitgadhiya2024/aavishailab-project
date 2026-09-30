@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse, StreamingResponse
 from pydantic import BaseModel
 
-from app.core.agent import AavishieldAgent
+from app.core.agent import AssistantAgent
 from app.llm.providers import Message, get_router
 from app.tracing import setup_tracing
 
@@ -87,9 +87,11 @@ class ChatRequest(BaseModel):
     temperature: float = 0.7
     max_tokens: int = 2048
     stream: bool = False
-    # Agent mode (with tools)
+    # Agent mode: the read-only assistant with live data tools.
     agent_mode: bool = True
     org_name: str = "Your Organization"
+    # IANA zone of the viewer, so "today" and "last month" mean their days.
+    tz: str = "UTC"
 
 
 class ModelInfo(BaseModel):
@@ -124,17 +126,23 @@ async def chat(
     messages = [m.model_dump(exclude_none=True) for m in req.messages]
 
     if req.agent_mode:
-        agent = AavishieldAgent(
+        agent = AssistantAgent(
             org_id=x_org_id,
             org_name=req.org_name,
             access_token=token,
             admin_api_url=ADMIN_API_URL,
+            tz=req.tz,
         )
         try:
-            events = []
+            events, answer = [], ""
             async for event in agent.run(messages, model=req.model):
-                events.append(event)
-            return {"events": events}
+                if event["type"] == "chunk":
+                    answer += event["content"]
+                elif event["type"] == "reset":
+                    answer = ""
+                else:
+                    events.append(event)
+            return {"answer": answer, "events": events}
         except Exception as exc:
             logger.exception("Agent run failed")
             raise HTTPException(status_code=502, detail=_provider_error_message(exc))
@@ -172,11 +180,12 @@ async def chat_stream(
     messages = [m.model_dump(exclude_none=True) for m in req.messages]
 
     async def agent_stream():
-        agent = AavishieldAgent(
+        agent = AssistantAgent(
             org_id=x_org_id,
             org_name=req.org_name,
             access_token=token,
             admin_api_url=ADMIN_API_URL,
+            tz=req.tz,
         )
         try:
             async for event in agent.run(messages, model=req.model):
@@ -208,7 +217,10 @@ async def chat_stream(
         yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
     gen = agent_stream() if req.agent_mode else simple_stream_guarded()
-    return StreamingResponse(gen, media_type="text/event-stream")
+    # No buffering anywhere on the way (nginx/cloudflare honour this), so
+    # tokens reach the browser as they are generated.
+    return StreamingResponse(gen, media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 # ─── Models ───────────────────────────────────────────────────────────────────

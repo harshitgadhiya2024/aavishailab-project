@@ -162,6 +162,70 @@ class LLMProvider:
                     except Exception:
                         continue
 
+    async def stream_chat_tools(
+        self,
+        messages: list[Message],
+        tools: list,
+        model: str | None = None,
+        temperature: float = 0.2,
+        max_tokens: int = 2048,
+    ) -> AsyncIterator[dict]:
+        """Streams a tool-enabled completion.
+
+        Yields {"type": "content", "text"} as text arrives, then, if the model
+        decided to call tools, one {"type": "tool_calls", "tool_calls"} with the
+        calls reassembled from their streamed fragments (OpenAI delta format).
+        """
+        import json
+
+        payload = {
+            "model": model or self.config.default_model,
+            "messages": [m.to_dict() for m in messages],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": True,
+            "tools": tools,
+            "tool_choice": "auto",
+        }
+        calls: dict[int, dict] = {}
+        async with self._client.stream("POST", self._completions_url(payload["model"]), json=payload) as resp:
+            if resp.status_code >= 400:
+                body = (await resp.aread()).decode(errors="replace")[:300]
+                raise httpx.HTTPStatusError(f"{resp.status_code}: {body}", request=resp.request, response=resp)
+            async for line in resp.aiter_lines():
+                if not line.startswith("data: "):
+                    continue
+                chunk = line[6:].strip()
+                if chunk == "[DONE]":
+                    break
+                try:
+                    data = json.loads(chunk)
+                except json.JSONDecodeError:
+                    continue
+                if data.get("error"):
+                    raise RuntimeError(str(data["error"])[:300])
+                for choice in data.get("choices") or []:
+                    delta = choice.get("delta") or {}
+                    if delta.get("content"):
+                        yield {"type": "content", "text": delta["content"]}
+                    for tc in delta.get("tool_calls") or []:
+                        c = calls.setdefault(tc.get("index", 0), {"id": "", "type": "function",
+                                                                  "function": {"name": "", "arguments": ""}})
+                        if tc.get("id"):
+                            c["id"] = tc["id"]
+                        fn = tc.get("function") or {}
+                        if fn.get("name"):
+                            c["function"]["name"] += fn["name"]
+                        if fn.get("arguments"):
+                            c["function"]["arguments"] += fn["arguments"]
+        if calls:
+            out = []
+            for i, c in sorted(calls.items()):
+                if not c["id"]:
+                    c["id"] = f"call_{i}"
+                out.append(c)
+            yield {"type": "tool_calls", "tool_calls": out}
+
     async def close(self):
         await self._client.aclose()
 
@@ -280,6 +344,26 @@ class MultiLLMRouter:
             except Exception as e:
                 logger.warning(f"Stream provider {provider.config.name} failed: {e}")
                 continue
+
+    async def stream_chat_tools(self, messages: list[Message], tools: list, model: str | None = None,
+                                temperature: float = 0.2, max_tokens: int = 2048) -> AsyncIterator[dict]:
+        """Tool-enabled stream with provider fallback. Falls back only while
+        nothing has been sent yet; a failure mid-answer is raised."""
+        last_error: Exception | None = None
+        for provider in self.providers:
+            started = False
+            try:
+                async for ev in provider.stream_chat_tools(messages, tools, model=model,
+                                                           temperature=temperature, max_tokens=max_tokens):
+                    started = True
+                    yield ev
+                return
+            except Exception as e:
+                if started:
+                    raise
+                logger.warning(f"Stream provider {provider.config.name} failed: {e}")
+                last_error = e
+        raise RuntimeError(f"All LLM providers failed. Last error: {last_error}")
 
     def get_available_models(self) -> list[dict]:
         """List configured providers and their default models."""

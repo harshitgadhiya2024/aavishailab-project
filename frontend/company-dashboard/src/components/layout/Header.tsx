@@ -25,7 +25,6 @@ const TITLES: [string, string][] = [
   ["/dashboard/activity", "Activity"],
   ["/dashboard/screenshots", "Screenshots"],
   ["/dashboard/access-requests", "Access requests"],
-  ["/dashboard/ai-assistant", "AI assistant"],
   ["/dashboard/profile", "Company profile"],
   ["/dashboard/settings", "Settings"],
 ];

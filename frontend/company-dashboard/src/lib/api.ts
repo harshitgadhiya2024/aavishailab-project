@@ -276,7 +276,7 @@ export type ChatTurn = { role: "user" | "assistant"; content: string };
  */
 export async function* streamChat(
   messages: ChatTurn[],
-  opts: { accessToken: string; orgId: string; orgName?: string; signal?: AbortSignal }
+  opts: { accessToken: string; orgId: string; orgName?: string; tz?: string; signal?: AbortSignal }
 ) {
   const res = await fetch(`${AI_URL}/api/v1/chat/stream`, {
     method: "POST",
@@ -290,6 +290,7 @@ export async function* streamChat(
       messages,
       agent_mode: true,
       org_name: opts.orgName || "Your organization",
+      tz: opts.tz || "UTC",
     }),
   });
 
