@@ -300,15 +300,19 @@ func (h *ReportHandler) trend(orgID string, w reportWindow, where string, args .
 // ─── Overview (dashboard) ─────────────────────────────────────────────────────
 
 type health struct {
-	Devices               int64 `json:"devices"`
-	Online                int64 `json:"online"`
-	Stale                 int64 `json:"stale"`
-	PostureIssues         int64 `json:"posture_issues"`
-	Employees             int64 `json:"employees"`
-	EmployeesWithoutAgent int64 `json:"employees_without_agent"`
-	PendingRequests       int64 `json:"pending_requests"`
-	Policies              int64 `json:"policies"`
-	PoliciesEnabled       int64 `json:"policies_enabled"`
+	Devices       int64 `json:"devices"`
+	Online        int64 `json:"online"`
+	Stale         int64 `json:"stale"`
+	PostureIssues int64 `json:"posture_issues"`
+	// SettingsIssues names each laptop with a security setting switched off,
+	// so the dashboard can say "Firewall is off on Utsavi's laptop" rather
+	// than an abstract "1 failing".
+	SettingsIssues        []settingIssue `json:"settings_issues"`
+	Employees             int64          `json:"employees"`
+	EmployeesWithoutAgent int64          `json:"employees_without_agent"`
+	PendingRequests       int64          `json:"pending_requests"`
+	Policies              int64          `json:"policies"`
+	PoliciesEnabled       int64          `json:"policies_enabled"`
 }
 
 // staleAfter is how long a device can go without checking in before it
@@ -329,7 +333,99 @@ func (h *ReportHandler) health(orgID string) health {
 	h.db.Model(&models.AccessRequest{}).Where("org_id = ? AND status = ?", orgID, "pending").Count(&r.PendingRequests)
 	h.db.Model(&models.Policy{}).Where("org_id = ?", orgID).Count(&r.Policies)
 	h.db.Model(&models.Policy{}).Where("org_id = ? AND enabled = true", orgID).Count(&r.PoliciesEnabled)
+	r.SettingsIssues = h.settingIssues(orgID, 20)
 	return r
+}
+
+// postureFailedSQL is the device's list of settings found switched off
+// (guarded: metadata may hold a null or a non-array there).
+const postureFailedSQL = `(CASE WHEN jsonb_typeof(d.metadata->'posture_failed') = 'array' THEN d.metadata->'posture_failed' ELSE '[]'::jsonb END)`
+
+type settingIssue struct {
+	Device   string   `json:"device"`
+	Employee string   `json:"employee"`
+	OS       string   `json:"os"`
+	Off      []string `json:"off"` // human names of the settings that are off
+	Fix      []string `json:"fix"` // one instruction per setting, for this OS
+	Summary  string   `json:"summary"`
+}
+
+type settingText struct{ name, mac, windows, linux string }
+
+// securitySettings describes each posture check the way an admin says it,
+// with where to switch it on per operating system.
+var securitySettings = map[string]settingText{
+	"firewall":        {"Firewall", "System Settings > Network > Firewall, then turn it on", "Windows Security > Firewall & network protection, then turn it on", "Run: sudo ufw enable"},
+	"disk_encryption": {"Disk encryption", "System Settings > Privacy & Security > FileVault, then Turn On", "Settings > Privacy & security > Device encryption (or BitLocker), then turn it on", "Encrypt the disk with LUKS (usually needs a reinstall)"},
+	"os_up_to_date":   {"OS updates", "System Settings > General > Software Update, then install updates", "Settings > Windows Update, then install updates", "Install pending updates, e.g. sudo apt upgrade"},
+	"screen_lock":     {"Screen lock", "System Settings > Lock Screen, then require a password after sleep", "Settings > Accounts > Sign-in options, then require sign-in after sleep", "Settings > Privacy > Screen Lock, then turn it on"},
+	"antivirus":       {"Antivirus", "Install or re-enable the company's antivirus", "Windows Security > Virus & threat protection, then turn it on", "Install or re-enable the company's antivirus"},
+}
+
+func settingFor(key, osType string) (name, fix string) {
+	t, ok := securitySettings[key]
+	if !ok {
+		n := strings.ReplaceAll(key, "_", " ")
+		return strings.ToUpper(n[:1]) + n[1:], "Turn it back on"
+	}
+	switch strings.ToLower(osType) {
+	case "windows":
+		return t.name, t.windows
+	case "linux":
+		return t.name, t.linux
+	default:
+		return t.name, t.mac
+	}
+}
+
+func joinNames(n []string) string {
+	switch len(n) {
+	case 0:
+		return ""
+	case 1:
+		return n[0]
+	default:
+		return strings.Join(n[:len(n)-1], ", ") + " and " + n[len(n)-1]
+	}
+}
+
+func (h *ReportHandler) settingIssues(orgID string, limit int) []settingIssue {
+	var rows []struct {
+		Hostname string
+		Employee string
+		OSType   string
+		Failed   string
+	}
+	h.db.Raw(`SELECT d.hostname, TRIM(TRIM(COALESCE(e.first_name,'')) || ' ' || TRIM(COALESCE(e.last_name,''))) AS employee,
+		COALESCE(d.os_type,'') AS os_type,
+		(SELECT string_agg(f, ',') FROM jsonb_array_elements_text(`+postureFailedSQL+`) f) AS failed
+		FROM devices d LEFT JOIN employees e ON e.id = d.employee_id
+		WHERE d.org_id = ? AND d.deleted_at IS NULL AND jsonb_array_length(`+postureFailedSQL+`) > 0
+		ORDER BY d.hostname LIMIT ?`, orgID, limit).Scan(&rows)
+
+	out := make([]settingIssue, 0, len(rows))
+	for _, r := range rows {
+		is := settingIssue{Device: r.Hostname, Employee: r.Employee, OS: r.OSType}
+		for _, k := range strings.Split(r.Failed, ",") {
+			if k == "" {
+				continue
+			}
+			name, fix := settingFor(k, r.OSType)
+			is.Off = append(is.Off, name)
+			is.Fix = append(is.Fix, name+": "+fix)
+		}
+		verb := "is"
+		if len(is.Off) > 1 {
+			verb = "are"
+		}
+		who := r.Hostname
+		if r.Employee != "" {
+			who = r.Employee + "'s laptop"
+		}
+		is.Summary = fmt.Sprintf("%s %s off on %s", joinNames(is.Off), verb, who)
+		out = append(out, is)
+	}
+	return out
 }
 
 type attentionItem struct {
@@ -354,21 +450,16 @@ func (h *ReportHandler) attention(orgID string, w reportWindow, hl health, stats
 		items = append(items, attentionItem{"high", "No policy is switched on", "Devices are enrolled but nothing is being enforced.", "/dashboard/swg"})
 	}
 
-	type failing struct {
-		Hostname string
-		Failed   string
-	}
-	var fails []failing
-	h.db.Raw(`SELECT hostname, COALESCE((SELECT string_agg(f, ', ') FROM jsonb_array_elements_text((CASE WHEN jsonb_typeof(metadata->'posture_failed') = 'array' THEN metadata->'posture_failed' ELSE '[]'::jsonb END)) f), '') AS failed
-		FROM devices WHERE org_id = ? AND deleted_at IS NULL
-		AND jsonb_array_length((CASE WHEN jsonb_typeof(metadata->'posture_failed') = 'array' THEN metadata->'posture_failed' ELSE '[]'::jsonb END)) > 0
-		ORDER BY hostname LIMIT 3`, orgID).Scan(&fails)
-	if len(fails) > 0 {
-		parts := make([]string, 0, len(fails))
-		for _, f := range fails {
-			parts = append(parts, fmt.Sprintf("%s: %s", f.Hostname, strings.ReplaceAll(f.Failed, "_", " ")))
+	for i, is := range hl.SettingsIssues {
+		if i == 3 {
+			break
 		}
-		items = append(items, attentionItem{"high", plural(hl.PostureIssues, "device fails a security check", "devices fail a security check"), strings.Join(parts, "; "), "/dashboard/devices"})
+		items = append(items, attentionItem{"high", is.Summary,
+			is.Device + ". To fix: " + strings.Join(is.Fix, "; ") + ". The warning clears by itself once the laptop reports the setting is on.",
+			"/dashboard/devices"})
+	}
+	if n := len(hl.SettingsIssues); n > 3 {
+		items = append(items, attentionItem{"high", fmt.Sprintf("%d more laptops have a security setting turned off", n-3), "See the Device compliance report for the full list.", "/dashboard/reports?report=devices"})
 	}
 
 	var highDLP int64

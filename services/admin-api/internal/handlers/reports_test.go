@@ -136,3 +136,15 @@ func TestDetectorLabel(t *testing.T) {
 		}
 	}
 }
+
+func TestSettingWording(t *testing.T) {
+	if n, fix := settingFor("firewall", "darwin"); n != "Firewall" || !strings.Contains(fix, "System Settings") {
+		t.Errorf("mac firewall = %q / %q", n, fix)
+	}
+	if _, fix := settingFor("firewall", "windows"); !strings.Contains(fix, "Windows Security") {
+		t.Errorf("windows firewall fix = %q", fix)
+	}
+	if got := joinNames([]string{"Firewall", "Disk encryption", "Screen lock"}); got != "Firewall, Disk encryption and Screen lock" {
+		t.Errorf("joinNames = %q", got)
+	}
+}

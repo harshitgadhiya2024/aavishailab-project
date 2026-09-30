@@ -19,6 +19,7 @@ type Health = {
   devices: number; online: number; stale: number; posture_issues: number;
   employees: number; employees_without_agent: number; pending_requests: number;
   policies: number; policies_enabled: number;
+  settings_issues?: { device: string; employee: string; summary: string; fix: string[] }[];
 };
 
 function Card({ title, subtitle, action, children, className }: {
@@ -151,9 +152,9 @@ export default function DashboardPage() {
                 value={`${coveragePct}%`}
                 detail={h.employees_without_agent ? `${h.employees_without_agent} without a protected device` : `All ${h.employees} employees protected`}
                 tone={h.employees_without_agent ? "warn" : "good"} />
-              <StatusItem icon={ShieldCheck} label="Security checks" href="/dashboard/devices"
-                value={h.posture_issues ? `${h.posture_issues} failing` : "All passing"}
-                detail="Firewall, disk encryption, OS updates"
+              <StatusItem icon={ShieldCheck} label="Laptop security settings" href="/dashboard/reports?report=devices"
+                value={h.posture_issues ? `${h.posture_issues} ${h.posture_issues === 1 ? "laptop needs" : "laptops need"} a fix` : "All in order"}
+                detail={h.settings_issues?.[0]?.summary ?? "Firewall, disk encryption, updates and screen lock are on"}
                 tone={h.posture_issues ? "bad" : "good"} />
               <StatusItem icon={FileText} label="Policies on" href="/dashboard/swg"
                 value={`${h.policies_enabled} of ${h.policies}`}

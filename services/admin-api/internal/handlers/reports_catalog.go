@@ -32,7 +32,7 @@ var reportCatalog = []reportMeta{
 	{"apps", "Security", "Application control", "Blocked applications and VPN bypass attempts, by app and by employee.", "app-window"},
 	{"employee-risk", "People & devices", "Employee risk", "Incidents per employee, broken down by control, ranked by severity.", "users"},
 	{"employee-activity", "People & devices", "Employee activity", "Tracked and active hours, activity level and screenshots per employee.", "clock"},
-	{"devices", "People & devices", "Device compliance", "Every device with agent status, last check-in and failed security checks, plus employees with no device.", "monitor"},
+	{"devices", "People & devices", "Device compliance", "Every device with agent status, last check-in and security settings that are turned off, plus employees with no device.", "monitor"},
 	{"policies", "Governance", "Policy effectiveness", "Which policies fire and how often, so you can tune or retire them.", "file-text"},
 	{"access-requests", "Governance", "Access requests", "Exception requests from employees and how they were decided.", "inbox"},
 }
@@ -317,7 +317,7 @@ func (h *ReportHandler) executiveReport(orgID string, w reportWindow) reportTabl
 		[]any{"Protection", "Devices enrolled", hl.Devices, "", ""},
 		[]any{"Protection", "Devices online now", hl.Online, "", ""},
 		[]any{"Protection", "Devices not seen for 7+ days", hl.Stale, "", ""},
-		[]any{"Protection", "Devices failing a security check", hl.PostureIssues, "", ""},
+		[]any{"Protection", "Laptops with a security setting turned off", hl.PostureIssues, "", ""},
 		[]any{"Protection", "Employees without a protected device", hl.EmployeesWithoutAgent, "", ""},
 		[]any{"Protection", "Employee coverage", coverage, "", ""},
 		[]any{"Governance", "Policies enabled", fmt.Sprintf("%d of %d", hl.PoliciesEnabled, hl.Policies), "", ""},
@@ -691,8 +691,7 @@ func (h *ReportHandler) devicesReport(orgID string, w reportWindow) reportTable 
 	h.db.Raw(`SELECT d.hostname,
 		TRIM(TRIM(COALESCE(e.first_name,'')) || ' ' || TRIM(COALESCE(e.last_name,''))) AS name, COALESCE(e.email,'') AS email,
 		d.os_type, d.os_version, d.agent_version, d.status, d.posture_score,
-		COALESCE((SELECT string_agg(REPLACE(f, '_', ' '), ', ') FROM jsonb_array_elements_text(
-			CASE WHEN jsonb_typeof(d.metadata->'posture_failed') = 'array' THEN d.metadata->'posture_failed' ELSE '[]'::jsonb END) f), '') AS failed,
+		COALESCE((SELECT string_agg(f, ',') FROM jsonb_array_elements_text(`+postureFailedSQL+`) f), '') AS failed,
 		d.last_seen_at, d.enrolled_at
 		FROM devices d LEFT JOIN employees e ON e.id = d.employee_id
 		WHERE d.org_id = ? AND d.deleted_at IS NULL
@@ -712,8 +711,16 @@ func (h *ReportHandler) devicesReport(orgID string, w reportWindow) reportTable 
 			state = "Not checking in"
 			stale++
 		case r.Failed != "":
-			state = "Failing checks"
+			state = "Needs a fix"
 			failing++
+		}
+		if r.Failed != "" {
+			names := []string{}
+			for _, k := range strings.Split(r.Failed, ",") {
+				n, _ := settingFor(k, r.OSType)
+				names = append(names, n)
+			}
+			r.Failed = strings.Join(names, ", ") + " off"
 		}
 		out = append(out, []any{r.Hostname, r.Name, r.Email, state, r.Failed, r.PostureScore, r.OSType + " " + r.OSVersion, r.AgentVersion, r.Status, lastSeen, w.fmtTime(r.EnrolledAt)})
 	}
@@ -729,11 +736,11 @@ func (h *ReportHandler) devicesReport(orgID string, w reportWindow) reportTable 
 	}
 
 	return reportTable{
-		Columns: []string{"Device", "Employee", "Email", "State", "Failed checks", "Posture score", "OS", "Agent version", "Status", "Last check-in", "Enrolled"},
+		Columns: []string{"Device", "Employee", "Email", "State", "Settings turned off", "Security score", "OS", "Agent version", "Status", "Last check-in", "Enrolled"},
 		Rows:    out,
 		Summary: []summaryItem{
 			{"Devices", len(rows), ""},
-			{"Failing a security check", failing, ""},
+			{"Security setting turned off", failing, "firewall, encryption, updates, screen lock or antivirus"},
 			{"Not checking in (7+ days)", stale, ""},
 			{"Employees without a device", len(missing), ""},
 		},
