@@ -1,454 +1,315 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { reportApi } from "@/lib/api";
 import {
-  Users, FileText, Shield, Activity, AlertTriangle, FileWarning, Bug,
-  TrendingUp, TrendingDown, Minus, Monitor, Inbox, ArrowRight, Clock,
+  ArrowRight, CheckCircle2, CircleAlert, Clock, Monitor, Users, ShieldCheck, FileText,
+  TrendingUp, TrendingDown, Minus, UserPlus, Laptop, ToggleRight,
 } from "lucide-react";
 import { formatNumber, cn } from "@/lib/utils";
-import { useChartTheme } from "@/lib/chart-theme";
-import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart, Bar, Cell, PieChart, Pie, Legend, LabelList,
-} from "recharts";
+import { CONTROLS, type ControlId } from "@/lib/controls";
+import { periodFor, periodParams, periodText, type Period } from "@/lib/report-period";
+import { PeriodPicker } from "@/components/reports/PeriodPicker";
+import { ControlTrend } from "@/components/reports/ControlTrend";
+import { BarList } from "@/components/reports/BarList";
 
-const RANGES = [
-  { label: "7d", days: 7 },
-  { label: "30d", days: 30 },
-  { label: "90d", days: 90 },
-];
+type Health = {
+  devices: number; online: number; stale: number; posture_issues: number;
+  employees: number; employees_without_agent: number; pending_requests: number;
+  policies: number; policies_enabled: number;
+};
 
-function shortDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
-/** A headline number is a stat tile, never a one-bar chart. */
-function StatTile({
-  label, value, sub, icon: Icon, tone, delta,
-}: {
-  label: string; value: string; sub?: string; icon: React.ElementType;
-  tone: string; delta?: number | null;
+function Card({ title, subtitle, action, children, className }: {
+  title: string; subtitle?: string; action?: React.ReactNode; children: React.ReactNode; className?: string;
 }) {
-  // More blocks isn't automatically "bad" and fewer isn't "good", so the delta
-  // states direction and size without colouring it as a verdict.
-  const DeltaIcon = delta == null ? Minus : delta > 0 ? TrendingUp : delta < 0 ? TrendingDown : Minus;
   return (
-    <div className="bg-card rounded-xl p-5 border border-border shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs text-muted-foreground">{label}</p>
-          <p className="text-3xl font-bold text-foreground mt-1 tabular-nums">{value}</p>
-          {sub && <p className="text-xs text-subtle mt-1">{sub}</p>}
+    <section className={cn("bg-card rounded-xl border border-border shadow-sm p-5", className)}>
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h3 className="font-semibold text-foreground text-sm">{title}</h3>
+          {subtitle && <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>}
         </div>
-        <div className={cn("p-2 rounded-lg flex-shrink-0", tone)}>
-          <Icon className="w-4 h-4" />
-        </div>
-      </div>
-      <div className="flex items-center gap-1.5 mt-3 text-xs text-muted-foreground">
-        <DeltaIcon className="w-3.5 h-3.5" />
-        {delta == null ? "no prior period" : `${delta > 0 ? "+" : ""}${delta}% vs previous period`}
-      </div>
-    </div>
-  );
-}
-
-function ChartCard({
-  title, subtitle, children,
-}: { title: string; subtitle?: string; children: React.ReactNode }) {
-  return (
-    <div className="bg-card rounded-xl border border-border shadow-sm p-5">
-      <div className="mb-4">
-        <h3 className="font-semibold text-foreground text-sm">{title}</h3>
-        {subtitle && <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>}
+        {action}
       </div>
       {children}
-    </div>
+    </section>
   );
 }
 
-function EmptyPlot({ message, height = 240 }: { message: string; height?: number }) {
+function Delta({ value }: { value: number | null | undefined }) {
+  // More incidents isn't automatically "bad" (a new policy finds more), so the
+  // change is stated, not coloured as a verdict.
+  const Icon = value == null ? Minus : value > 0 ? TrendingUp : value < 0 ? TrendingDown : Minus;
   return (
-    <div style={{ height }} className="flex flex-col items-center justify-center text-subtle text-sm">
-      <Activity className="w-8 h-8 mb-2 opacity-30" />
-      {message}
-    </div>
+    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+      <Icon className="w-3.5 h-3.5" />
+      {value == null ? "no earlier data" : `${value > 0 ? "+" : ""}${value}% vs previous`}
+    </span>
+  );
+}
+
+type Tone = "good" | "warn" | "bad";
+const TONE_DOT: Record<Tone, string> = { good: "bg-green-500", warn: "bg-yellow-500", bad: "bg-red-500" };
+
+function StatusItem({ icon: Icon, label, value, detail, tone, href }: {
+  icon: React.ElementType; label: string; value: string; detail: string; tone: Tone; href: string;
+}) {
+  return (
+    <Link href={href} className="group flex items-start gap-3 rounded-lg p-3 hover:bg-elevated transition-colors">
+      <div className="p-2 rounded-lg bg-elevated text-muted-foreground flex-shrink-0">
+        <Icon className="w-4 h-4" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+          <span className={cn("w-1.5 h-1.5 rounded-full", TONE_DOT[tone])} />
+          {label}
+        </p>
+        <p className="text-lg font-semibold text-foreground tabular-nums">{value}</p>
+        <p className="text-[11px] text-subtle">{detail}</p>
+      </div>
+      <ArrowRight className="w-3.5 h-3.5 text-faint mt-1 opacity-0 group-hover:opacity-100 transition-opacity" />
+    </Link>
+  );
+}
+
+function Onboarding({ h }: { h: Health }) {
+  const steps = [
+    { done: h.employees > 0, icon: UserPlus, title: "Add your employees", body: "Import them from a CSV or add them one by one.", href: "/dashboard/employees", cta: "Add employees" },
+    { done: h.devices > 0, icon: Laptop, title: "Enroll the first device", body: "Send an employee the enrollment link, or install the agent yourself.", href: "/dashboard/devices", cta: "Enroll a device" },
+    { done: h.policies_enabled > 0, icon: ToggleRight, title: "Switch on a policy", body: "Pick what to block or watch: websites, apps, sensitive data.", href: "/dashboard/swg", cta: "Set up policy" },
+  ];
+  return (
+    <Card title="Get protected in three steps" subtitle="Figures appear here as soon as the first device reports in.">
+      <ol className="grid gap-3 md:grid-cols-3">
+        {steps.map((s, i) => (
+          <li key={s.title} className={cn("rounded-lg border p-4", s.done ? "border-green-500/30 bg-green-500/5" : "border-border")}>
+            <div className="flex items-center gap-2">
+              {s.done ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <span className="grid w-5 h-5 place-items-center rounded-full bg-brand-500/15 text-[11px] font-semibold text-brand-500">{i + 1}</span>}
+              <p className="text-sm font-medium text-foreground">{s.title}</p>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">{s.body}</p>
+            {!s.done && (
+              <Link href={s.href} className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-brand-500 hover:underline">
+                {s.cta} <ArrowRight className="w-3 h-3" />
+              </Link>
+            )}
+          </li>
+        ))}
+      </ol>
+    </Card>
   );
 }
 
 export default function DashboardPage() {
-  const chart = useChartTheme();
-  const [days, setDays] = useState(30);
+  const [period, setPeriod] = useState<Period>(() => periodFor("7d"));
 
   const { data, isLoading } = useQuery({
-    queryKey: ["dashboard-overview", days],
-    queryFn: () => reportApi.overview({ days }),
+    queryKey: ["dashboard-overview", period.start, period.end],
+    queryFn: () => reportApi.overview(periodParams(period)),
     refetchInterval: 60_000,
   });
 
   const d = data?.data ?? {};
-  const kpis = d.kpis ?? {};
-  const coverage = d.coverage ?? {};
-  const deltas = kpis.delta ?? {};
+  const h: Health = d.health ?? {};
+  const controls: any[] = d.controls ?? [];
+  const totals = d.totals ?? {};
+  const attention: any[] = d.attention ?? [];
+  const noDevices = !isLoading && (h.devices ?? 0) === 0;
+  const reportLink = (report: string, control?: ControlId) =>
+    `/dashboard/reports?report=${report}&period=${period.id}&start=${period.start}&end=${period.end}${control ? `&control=${control}` : ""}`;
 
-  const trend = useMemo(
-    () => (d.trend ?? []).map((p: any) => ({ ...p, label: shortDate(p.date) })),
-    [d.trend]
-  );
-
-  const byAction = useMemo(
-    () => (d.by_action ?? []).map((r: any) => ({
-      name: r.label,
-      value: r.count,
-      fill: chart.action[r.label] ?? chart.neutral,
-    })),
-    [d.by_action, chart]
-  );
-
-  const byCategory = useMemo(
-    () => (d.by_category ?? []).slice(0, 6).map((r: any) => ({
-      name: r.label.replace(/_/g, " "),
-      count: r.count,
-    })),
-    [d.by_category]
-  );
-
-  const byOperation = useMemo(
-    () => (d.by_operation ?? []).slice(0, 6).map((r: any) => ({ name: r.label, count: r.count })),
-    [d.by_operation]
-  );
-
-  const topDomains = useMemo(
-    () => (d.top_domains ?? []).slice(0, 8).map((r: any) => ({
-      name: r.domain.length > 26 ? r.domain.slice(0, 24) + "…" : r.domain,
-      count: r.count,
-    })),
-    [d.top_domains]
-  );
-
-  const detectors = useMemo(
-    () => (d.top_detectors ?? []).map((r: any) => ({
-      name: r.label.replace(/_/g, " "),
-      count: r.count,
-    })),
-    [d.top_detectors]
-  );
-
-  const hourly = useMemo(
-    () => (d.hourly ?? []).map((h: any) => ({
-      hour: `${String(h.hour).padStart(2, "0")}:00`,
-      incidents: h.incidents,
-    })),
-    [d.hourly]
-  );
-
-  const topUsers = d.top_users ?? [];
-  const hasEvents = (kpis.total_events ?? 0) > 0;
-
-  const tooltip = {
-    contentStyle: chart.tooltip as any,
-    labelStyle: { color: chart.axis, fontSize: 11 },
-    itemStyle: { fontSize: 11 },
-  };
-  const axis = { stroke: chart.axis, fontSize: 11, tickLine: false, axisLine: false };
+  const coveragePct = h.employees ? Math.round(((h.employees - h.employees_without_agent) / h.employees) * 100) : 0;
 
   return (
     <div className="space-y-6">
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-2xl font-bold text-foreground">Security Overview</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            {isLoading ? "Loading…" : `Last ${days} days across your organization`}
-          </p>
+          <p className="text-sm text-muted-foreground mt-1">{isLoading ? "Loading…" : periodText(period)}</p>
         </div>
-        <div className="flex items-center gap-1 bg-background border border-border rounded-lg p-1">
-          {RANGES.map(r => (
-            <button
-              key={r.days}
-              onClick={() => setDays(r.days)}
-              className={cn(
-                "px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
-                days === r.days ? "bg-brand-500 text-white" : "text-muted-foreground hover:text-foreground"
-              )}
+        <PeriodPicker value={period} onChange={setPeriod} options={["today", "7d", "30d", "this_month", "3m"]} />
+      </div>
+
+      {isLoading ? (
+        <div className="grid gap-4">
+          {[120, 220, 300].map((hgt, i) => <div key={i} style={{ height: hgt }} className="rounded-xl bg-card border border-border animate-pulse" />)}
+        </div>
+      ) : noDevices ? (
+        <Onboarding h={h} />
+      ) : (
+        <>
+          {/* Am I protected? */}
+          <Card title="Protection status" subtitle="Right now, across your organization">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-1">
+              <StatusItem icon={Monitor} label="Devices online" href="/dashboard/devices"
+                value={`${h.online} of ${h.devices}`}
+                detail={h.stale ? `${h.stale} not seen for 7+ days` : "All devices checking in"}
+                tone={h.stale ? "warn" : "good"} />
+              <StatusItem icon={Users} label="Employee coverage" href="/dashboard/employees"
+                value={`${coveragePct}%`}
+                detail={h.employees_without_agent ? `${h.employees_without_agent} without a protected device` : `All ${h.employees} employees protected`}
+                tone={h.employees_without_agent ? "warn" : "good"} />
+              <StatusItem icon={ShieldCheck} label="Security checks" href="/dashboard/devices"
+                value={h.posture_issues ? `${h.posture_issues} failing` : "All passing"}
+                detail="Firewall, disk encryption, OS updates"
+                tone={h.posture_issues ? "bad" : "good"} />
+              <StatusItem icon={FileText} label="Policies on" href="/dashboard/swg"
+                value={`${h.policies_enabled} of ${h.policies}`}
+                detail={h.policies_enabled ? "Enforcing on every device" : "Nothing is being enforced"}
+                tone={h.policies_enabled ? "good" : "bad"} />
+            </div>
+          </Card>
+
+          <div className="grid gap-4 xl:grid-cols-3">
+            {/* What happened, by control */}
+            <Card
+              className="xl:col-span-2"
+              title="Incidents by control"
+              subtitle={`${formatNumber(totals.incidents ?? 0)} incidents, ${formatNumber(totals.affected_employees ?? 0)} employees involved`}
+              action={<Delta value={totals.delta} />}
             >
-              {r.label}
-            </button>
-          ))}
-        </div>
-      </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {CONTROLS.map((c) => {
+                  const s = controls.find((x) => x.id === c.id) ?? {};
+                  const empty = !s.count;
+                  return (
+                    <Link key={c.id} href={reportLink("incidents", c.id)}
+                      className={cn("rounded-lg border border-border p-3 transition-colors hover:bg-elevated", empty && "opacity-60")}>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <c.icon className="w-3.5 h-3.5" /> {c.label}
+                      </div>
+                      <p className="mt-2 text-2xl font-bold tabular-nums text-foreground">{formatNumber(s.count ?? 0)}</p>
+                      <p className="mt-1 text-[11px] text-subtle">
+                        {empty ? "None in this period" : `${s.blocked} blocked, ${s.alerted} flagged`}
+                      </p>
+                    </Link>
+                  );
+                })}
+              </div>
+            </Card>
 
-      {/* KPI row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatTile
-          label="Security incidents" value={formatNumber((kpis.blocked ?? 0) + (kpis.alerted ?? 0))}
-          sub={`${formatNumber(kpis.blocked ?? 0)} blocked · ${formatNumber(kpis.alerted ?? 0)} alerted`}
-          icon={Shield} tone="bg-red-500/10 text-danger" delta={deltas.blocked}
-        />
-        <StatTile
-          label="DLP incidents" value={formatNumber(kpis.dlp_incidents ?? 0)}
-          sub="sensitive data stopped or flagged"
-          icon={FileWarning} tone="bg-yellow-500/10 text-warning" delta={deltas.dlp_incidents}
-        />
-        <StatTile
-          label="Malware detections" value={formatNumber(kpis.malware ?? 0)}
-          sub="files caught on download"
-          icon={Bug} tone="bg-purple-500/10 text-accent-purple"
-        />
-        <StatTile
-          label="Employees affected" value={formatNumber(kpis.affected_users ?? 0)}
-          sub={`of ${formatNumber(coverage.employees ?? 0)} employees`}
-          icon={Users} tone="bg-brand-500/10 text-brand-500"
-        />
-      </div>
-
-      {/* Coverage strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: "Devices enrolled", value: `${coverage.devices_online ?? 0}/${coverage.devices ?? 0}`, sub: "online now", icon: Monitor, href: "/dashboard/devices" },
-          { label: "Employees protected", value: `${coverage.protected_employees ?? 0}/${coverage.employees ?? 0}`, sub: "have an agent", icon: Users, href: "/dashboard/employees" },
-          { label: "Active policies", value: `${coverage.policies_enabled ?? 0}/${coverage.policies ?? 0}`, sub: "enabled", icon: FileText, href: "/dashboard/swg" },
-          { label: "Pending requests", value: formatNumber(coverage.pending_requests ?? 0), sub: "awaiting review", icon: Inbox, href: "/dashboard/access-requests" },
-        ].map(item => (
-          <Link key={item.label} href={item.href}
-            className="bg-card rounded-xl p-4 border border-border shadow-sm flex items-center gap-3 hover:bg-elevated transition-colors">
-            <div className="p-2 rounded-lg bg-elevated text-muted-foreground flex-shrink-0">
-              <item.icon className="w-4 h-4" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs text-muted-foreground">{item.label}</p>
-              <p className="text-lg font-semibold text-foreground tabular-nums">{item.value}</p>
-              <p className="text-[11px] text-subtle">{item.sub}</p>
-            </div>
-            <ArrowRight className="w-3.5 h-3.5 text-faint flex-shrink-0" />
-          </Link>
-        ))}
-      </div>
-
-      {/* Trend — the headline chart */}
-      <ChartCard
-        title="Activity over time"
-        subtitle="Blocked and alerted events per day, with total traffic for context"
-      >
-        {trend.length === 0 ? (
-          <EmptyPlot message="No activity recorded in this period" height={280} />
-        ) : (
-          <ResponsiveContainer width="100%" height={280}>
-            <AreaChart data={trend} margin={{ top: 5, right: 8, left: -18, bottom: 0 }}>
-              <defs>
-                <linearGradient id="gTotal" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={chart.categorical[0]} stopOpacity={0.28} />
-                  <stop offset="100%" stopColor={chart.categorical[0]} stopOpacity={0.02} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} vertical={false} />
-              <XAxis dataKey="label" {...axis} minTickGap={24} />
-              <YAxis {...axis} allowDecimals={false} width={44} />
-              <Tooltip {...tooltip} />
-              <Legend wrapperStyle={{ fontSize: 11, color: chart.axis }} iconType="plainline" />
-              <Area type="monotone" dataKey="total" name="All events" stroke={chart.categorical[0]}
-                strokeWidth={2} fill="url(#gTotal)" dot={false} />
-              <Area type="monotone" dataKey="blocked" name="Blocked" stroke={chart.action.blocked}
-                strokeWidth={2} fill="none" dot={false} />
-              <Area type="monotone" dataKey="alerted" name="Alerted" stroke={chart.action.alerted}
-                strokeWidth={2} fill="none" dot={false} />
-            </AreaChart>
-          </ResponsiveContainer>
-        )}
-      </ChartCard>
-
-      <div className="grid lg:grid-cols-2 gap-4">
-        {/* Outcome mix */}
-        <ChartCard title="What happened to traffic" subtitle="Every event by enforcement outcome">
-          {byAction.length === 0 ? (
-            <EmptyPlot message="No events yet" />
-          ) : (
-            <ResponsiveContainer width="100%" height={240}>
-              <PieChart>
-                <Pie data={byAction} dataKey="value" nameKey="name" innerRadius={55} outerRadius={90}
-                  paddingAngle={2} stroke={chart.tooltip.background as string} strokeWidth={2}>
-                  {byAction.map((entry: any) => <Cell key={entry.name} fill={entry.fill} />)}
-                </Pie>
-                <Tooltip {...tooltip} />
-                <Legend wrapperStyle={{ fontSize: 11, color: chart.axis }} />
-              </PieChart>
-            </ResponsiveContainer>
-          )}
-        </ChartCard>
-
-        {/* Category mix */}
-        <ChartCard title="Incidents by category" subtitle="Which control caught them">
-          {byCategory.length === 0 ? (
-            <EmptyPlot message="No categorised incidents yet" />
-          ) : (
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={byCategory} layout="vertical" margin={{ top: 0, right: 40, left: 8, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} horizontal={false} />
-                <XAxis type="number" {...axis} allowDecimals={false} />
-                <YAxis type="category" dataKey="name" {...axis} width={110} />
-                <Tooltip {...tooltip} cursor={{ fill: chart.grid, opacity: 0.3 }} />
-                <Bar dataKey="count" name="Incidents" fill={chart.categorical[0]} radius={[0, 4, 4, 0]} barSize={16}>
-                  <LabelList dataKey="count" position="right" fill={chart.axis} fontSize={11} />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </ChartCard>
-
-        {/* Top destinations */}
-        <ChartCard title="Most-hit destinations" subtitle="Domains behind blocked and alerted events">
-          {topDomains.length === 0 ? (
-            <EmptyPlot message="No blocked destinations in this period" height={260} />
-          ) : (
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={topDomains} layout="vertical" margin={{ top: 0, right: 40, left: 8, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} horizontal={false} />
-                <XAxis type="number" {...axis} allowDecimals={false} />
-                <YAxis type="category" dataKey="name" {...axis} width={150} />
-                <Tooltip {...tooltip} cursor={{ fill: chart.grid, opacity: 0.3 }} />
-                <Bar dataKey="count" name="Events" radius={[0, 4, 4, 0]} barSize={14}>
-                  {topDomains.map((_: any, i: number) => (
-                    // Sequential ramp: darker = more hits, so rank reads without a legend.
-                    <Cell key={i} fill={chart.sequential[Math.max(0, chart.sequential.length - 1 - i)]} />
-                  ))}
-                  <LabelList dataKey="count" position="right" fill={chart.axis} fontSize={11} />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </ChartCard>
-
-        {/* Data-in-motion */}
-        <ChartCard title="How data was moving" subtitle="Operation behind each incident">
-          {byOperation.length === 0 ? (
-            <EmptyPlot message="No operations recorded yet" height={260} />
-          ) : (
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={byOperation} margin={{ top: 16, right: 8, left: -18, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} vertical={false} />
-                <XAxis dataKey="name" {...axis} interval={0} angle={-15} textAnchor="end" height={58} />
-                <YAxis {...axis} allowDecimals={false} width={44} />
-                <Tooltip {...tooltip} cursor={{ fill: chart.grid, opacity: 0.3 }} />
-                <Bar dataKey="count" name="Events" fill={chart.categorical[1]} radius={[4, 4, 0, 0]} barSize={28}>
-                  <LabelList dataKey="count" position="top" fill={chart.axis} fontSize={11} />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </ChartCard>
-
-        {/* When incidents happen */}
-        <ChartCard title="When incidents happen" subtitle="Incidents by hour of day — off-hours spikes stand out">
-          {!hasEvents ? (
-            <EmptyPlot message="Not enough activity to show a pattern" />
-          ) : (
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={hourly} margin={{ top: 5, right: 8, left: -18, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} vertical={false} />
-                <XAxis dataKey="hour" {...axis} interval={3} />
-                <YAxis {...axis} allowDecimals={false} width={44} />
-                <Tooltip {...tooltip} cursor={{ fill: chart.grid, opacity: 0.3 }} />
-                <Bar dataKey="incidents" name="Incidents" fill={chart.categorical[2]} radius={[3, 3, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </ChartCard>
-
-        {/* DLP detectors */}
-        <ChartCard title="Sensitive data detected" subtitle="Which DLP detectors fired most">
-          {detectors.length === 0 ? (
-            <EmptyPlot message="No DLP detections in this period" />
-          ) : (
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={detectors} layout="vertical" margin={{ top: 0, right: 40, left: 8, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} horizontal={false} />
-                <XAxis type="number" {...axis} allowDecimals={false} />
-                <YAxis type="category" dataKey="name" {...axis} width={130} />
-                <Tooltip {...tooltip} cursor={{ fill: chart.grid, opacity: 0.3 }} />
-                <Bar dataKey="count" name="Detections" fill={chart.categorical[3]} radius={[0, 4, 4, 0]} barSize={14}>
-                  <LabelList dataKey="count" position="right" fill={chart.axis} fontSize={11} />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </ChartCard>
-      </div>
-
-      {/* Riskiest employees — a ranked list is a table, not a chart */}
-      <div className="bg-card rounded-xl border border-border shadow-sm">
-        <div className="p-5 border-b border-border flex items-center justify-between">
-          <div>
-            <h3 className="font-semibold text-foreground text-sm">Employees with the most incidents</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">Blocked and alerted events in this period</p>
-          </div>
-          <Link href="/dashboard/reports" className="text-xs text-brand-500 hover:text-brand-400 flex items-center gap-1">
-            Full report <ArrowRight className="w-3 h-3" />
-          </Link>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-xs uppercase tracking-wide text-muted-foreground">
-                <th className="px-5 py-3 text-left font-medium">Employee</th>
-                <th className="px-5 py-3 text-left font-medium">Department</th>
-                <th className="px-5 py-3 text-left font-medium">Incidents</th>
-                <th className="px-5 py-3 text-left font-medium">Blocked</th>
-                <th className="px-5 py-3 text-left font-medium">DLP</th>
-                <th className="px-5 py-3 text-left font-medium">Highest risk</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-elevated">
-              {topUsers.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="text-center py-10 text-subtle text-sm">
-                    <Shield className="w-7 h-7 mx-auto mb-2 opacity-30" />
-                    No employee incidents in this period
-                  </td>
-                </tr>
+            {/* What should I do? */}
+            <Card title="Needs attention" subtitle={attention.length ? `${attention.length} open item${attention.length > 1 ? "s" : ""}` : undefined}>
+              {attention.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-8 text-center">
+                  <CheckCircle2 className="w-8 h-8 text-green-500 mb-2" />
+                  <p className="text-sm font-medium text-foreground">Nothing needs your attention</p>
+                  <p className="text-xs text-muted-foreground mt-1">Devices, checks and requests are all in order.</p>
+                </div>
               ) : (
-                topUsers.slice(0, 8).map((u: any) => (
-                  <tr key={u.employee_id} className="hover:bg-elevated transition-colors">
-                    <td className="px-5 py-3">
-                      <p className="text-foreground font-medium">{u.name || u.email}</p>
-                      <p className="text-xs text-subtle">{u.email}</p>
-                    </td>
-                    <td className="px-5 py-3 text-body text-xs">{u.department || "—"}</td>
-                    <td className="px-5 py-3 text-body tabular-nums">{u.incidents}</td>
-                    <td className="px-5 py-3 text-danger tabular-nums">{u.blocked}</td>
-                    <td className="px-5 py-3 text-warning tabular-nums">{u.dlp}</td>
-                    <td className="px-5 py-3">
-                      <span className={cn("px-2 py-0.5 rounded-md text-xs font-semibold tabular-nums",
-                        u.max_risk >= 80 ? "bg-red-500/10 text-danger"
-                          : u.max_risk >= 50 ? "bg-yellow-500/10 text-warning"
-                          : "bg-elevated text-body")}>
-                        {u.max_risk || "—"}
-                      </span>
-                    </td>
-                  </tr>
-                ))
+                <ul className="space-y-2">
+                  {attention.map((a, i) => (
+                    <li key={i}>
+                      <Link href={a.href} className="flex gap-3 rounded-lg border border-border p-3 hover:bg-elevated transition-colors">
+                        <CircleAlert className={cn("w-4 h-4 flex-shrink-0 mt-0.5", a.severity === "high" ? "text-danger" : "text-warning")} />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-foreground">{a.title}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{a.detail}</p>
+                        </div>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
               )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {!isLoading && !hasEvents && (
-        <div className="bg-brand-500/10 border border-brand-500/30 rounded-xl p-4 flex items-start gap-3">
-          <AlertTriangle className="w-4 h-4 text-brand-500 flex-shrink-0 mt-0.5" />
-          <div className="text-sm">
-            <p className="text-foreground font-medium">No activity recorded yet</p>
-            <p className="text-muted-foreground mt-0.5">
-              Figures appear once endpoint agents start reporting. Enrol a device from{" "}
-              <Link href="/dashboard/devices" className="text-brand-500 hover:underline">Devices</Link>,
-              or widen the period above.
-            </p>
+            </Card>
           </div>
-        </div>
+
+          <Card
+            title="Incidents over time"
+            subtitle={d.period?.bucket === "hour" ? "Per hour, by control" : "Per day, by control"}
+            action={<Link href={reportLink("incidents")} className="text-xs text-brand-500 hover:text-brand-400 flex items-center gap-1">All incidents <ArrowRight className="w-3 h-3" /></Link>}
+          >
+            {(totals.incidents ?? 0) === 0 ? (
+              <div className="h-[200px] flex flex-col items-center justify-center text-center">
+                <CheckCircle2 className="w-8 h-8 text-green-500 mb-2" />
+                <p className="text-sm font-medium text-foreground">All quiet</p>
+                <p className="text-xs text-muted-foreground mt-1">No blocked or flagged activity in this period.</p>
+              </div>
+            ) : (
+              <ControlTrend data={d.trend ?? []} />
+            )}
+          </Card>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card title="Blocked applications" subtitle="Apps stopped from running, including VPN clients"
+              action={<Link href={reportLink("apps")} className="text-xs text-brand-500 hover:text-brand-400">Report</Link>}>
+              <BarList
+                empty="No application was blocked"
+                items={(d.top_apps ?? []).map((a: any) => ({
+                  label: a.name,
+                  value: a.count,
+                  sub: `${a.employees} ${a.employees === 1 ? "person" : "people"}`,
+                  tag: a.control === "vpn" ? { text: "VPN", tone: "bg-yellow-500/15 text-warning" } : undefined,
+                }))}
+              />
+            </Card>
+
+            <Card title="Where sensitive data went" subtitle="Data protection findings by destination"
+              action={<Link href={reportLink("dlp")} className="text-xs text-brand-500 hover:text-brand-400">Report</Link>}>
+              <BarList
+                color="bg-yellow-500/15"
+                empty="No sensitive data detected"
+                items={(d.dlp_services ?? []).map((s: any) => ({
+                  label: s.service,
+                  value: s.count,
+                  tag: s.high ? { text: `${s.high} high`, tone: "bg-red-500/15 text-danger" } : undefined,
+                }))}
+              />
+              {(d.dlp_types ?? []).length > 0 && (
+                <div className="mt-4 flex flex-wrap gap-1.5">
+                  {(d.dlp_types as any[]).map((t) => (
+                    <span key={t.label} className="rounded-full bg-elevated px-2.5 py-1 text-[11px] text-body">
+                      {t.label} <span className="text-subtle tabular-nums">{t.count}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </Card>
+
+            <Card title="Blocked websites" subtitle="Most-attempted sites and the rule that stopped them"
+              action={<Link href={reportLink("web")} className="text-xs text-brand-500 hover:text-brand-400">Report</Link>}>
+              <BarList
+                color="bg-blue-500/15"
+                empty="No website was blocked"
+                items={(d.top_sites ?? []).map((s: any) => ({ label: s.domain, value: s.count, sub: s.category }))}
+              />
+            </Card>
+
+            <Card title="People with the most incidents" subtitle="Worth a conversation, not necessarily a warning"
+              action={<Link href={reportLink("employee-risk")} className="text-xs text-brand-500 hover:text-brand-400">Report</Link>}>
+              {(d.top_users ?? []).length === 0 ? (
+                <p className="py-8 text-center text-sm text-subtle">No employee incidents in this period</p>
+              ) : (
+                <ul className="divide-y divide-border">
+                  {(d.top_users as any[]).map((u) => (
+                    <li key={u.employee_id} className="flex items-center justify-between gap-3 py-2.5">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-foreground">{u.name?.trim() || u.email}</p>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {CONTROLS.filter((c) => u[c.id] > 0).map((c) => (
+                            <span key={c.id} className="rounded bg-elevated px-1.5 py-0.5 text-[10px] text-body">
+                              {c.label} {u[c.id]}
+                            </span>
+                          ))}
+                          {u.high_dlp > 0 && (
+                            <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-danger">{u.high_dlp} high-severity data</span>
+                          )}
+                        </div>
+                      </div>
+                      <span className="text-lg font-semibold tabular-nums text-foreground">{u.incidents}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          </div>
+        </>
       )}
 
       <p className="text-xs text-subtle flex items-center gap-1.5">
-        <Clock className="w-3 h-3" /> Refreshes every 60 seconds
+        <Clock className="w-3 h-3" /> Refreshes every minute. Times shown in your time zone.
       </p>
     </div>
   );

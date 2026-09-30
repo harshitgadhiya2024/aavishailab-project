@@ -299,7 +299,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "get_dashboard_overview",
-            "description": "Headline security figures for a period: incident counts with period-over-period change, coverage, daily trend, top domains, top employees, detectors, hourly pattern.",
+            "description": "Headline security figures for a period: protection status (devices online, stale devices, failing security checks, employees without an agent), items needing attention, incidents per control (data protection, web, apps, VPN, threats, device health) with period-over-period change, daily trend, top blocked apps and websites, where sensitive data went, and the employees with the most incidents.",
             "parameters": {
                 "type": "object",
                 "properties": {"days": {"type": "integer", "default": 30}}

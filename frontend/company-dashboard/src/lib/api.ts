@@ -340,8 +340,8 @@ export const reportApi = {
   catalog: () => api.get("/api/v1/reports/catalog"),
   get: (type: string, params?: Record<string, any>) =>
     api.get(`/api/v1/reports/${type}`, { params }),
-  exportCsv: (type: string, params?: Record<string, any>) =>
-    api.get(`/api/v1/reports/${type}`, { params: { ...params, format: "csv" }, responseType: "blob" }),
+  export: (type: string, format: "csv" | "xlsx", params?: Record<string, any>) =>
+    api.get(`/api/v1/reports/${type}`, { params: { ...params, format }, responseType: "blob", timeout: 120000 }),
 };
 
 // ─── Dashboard users (RBAC) ──────────────────────────────────────────────────
