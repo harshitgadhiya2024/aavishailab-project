@@ -71,12 +71,17 @@ type ManagedApplication struct {
 // AppControlRule is one organization's decision about one application.
 type AppControlRule struct {
 	Base
-	// One rule per (org, application) — enforced by a partial unique index
-	// created in database.MigrateAppControlIndexes, not by a plain uniqueIndex
-	// tag: these rows soft-delete, and a plain index counts deleted rows, so
-	// removing a rule and adding it back would collide.
+	// One rule per (org, application, employee) — enforced by a partial unique
+	// index created in database.MigrateAppControlIndexes, not by a plain
+	// uniqueIndex tag: these rows soft-delete, and a plain index counts
+	// deleted rows, so removing a rule and adding it back would collide.
 	OrgID         uuid.UUID `gorm:"type:uuid;not null;index" json:"org_id"`
 	ApplicationID uuid.UUID `gorm:"type:uuid;not null;index" json:"application_id"`
+	// Set when the rule belongs to one employee — what a switch on that
+	// employee's row in the dashboard creates. Each employee's rule is its own
+	// row, so blocking an app for one person never changes it for anyone
+	// else. Nil for a rule that covers the whole org or a set of teams.
+	EmployeeID *uuid.UUID `gorm:"type:uuid;index" json:"employee_id,omitempty"`
 
 	Action  string `gorm:"default:'block'" json:"action"` // block | alert
 	Enabled bool   `gorm:"default:true" json:"enabled"`
@@ -84,11 +89,17 @@ type AppControlRule struct {
 	// Which halves of enforcement are on. Network-only is the safe default for
 	// an app people may legitimately have installed; process termination is
 	// deliberate and opt-in.
+	//
+	// Careful when creating a row: with a `default` tag, GORM leaves a false
+	// field out of the INSERT and the column default wins — a rule created
+	// with only App Block on came out with Network Block on too. Write these
+	// with handlers.writeRuleEnforcement after Create.
 	BlockNetwork bool `gorm:"default:true" json:"block_network"`
 	BlockProcess bool `gorm:"default:false" json:"block_process"`
 
-	// Same targeting shape as Policy.Targets: nil/empty means the whole org,
-	// otherwise {"employee_ids": [...], "team_ids": [...]}.
+	// Same targeting shape as Policy.Targets: {"scope": "all"}, or
+	// {"scope": "team", "team_ids": [...]}, or {"scope": "employee",
+	// "employee_ids": [...]}. Empty means the whole org.
 	Targets map[string]any `gorm:"type:jsonb;serializer:json" json:"targets"`
 
 	Application *ManagedApplication `gorm:"foreignKey:ApplicationID" json:"application,omitempty"`

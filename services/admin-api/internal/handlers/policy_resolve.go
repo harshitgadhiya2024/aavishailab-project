@@ -94,6 +94,21 @@ func normalizePolicyDomain(raw string) string {
 // change enforcement instead of being cosmetic bookkeeping.
 func policyTargetMatches(targets map[string]any, employeeID *uuid.UUID, teamID *uuid.UUID) bool {
 	scope, _ := targets["scope"].(string)
+	if scope == "" {
+		// No scope written — application control rules toggled on one
+		// employee's row were saved as just {"employee_ids": [...]}. Reading
+		// that as "everyone" applied one employee's block to the whole
+		// company. A list that names people or teams means only them.
+		emps := idList(targets["employee_ids"])
+		teams := idList(targets["team_ids"])
+		if len(emps) == 0 && len(teams) == 0 {
+			return true
+		}
+		if employeeID != nil && contains(emps, employeeID.String()) {
+			return true
+		}
+		return teamID != nil && contains(teams, teamID.String())
+	}
 	switch scope {
 	case "", "all":
 		return true
@@ -112,14 +127,36 @@ func policyTargetMatches(targets map[string]any, employeeID *uuid.UUID, teamID *
 	}
 }
 
-func idListContains(raw any, target string) bool {
-	ids, _ := raw.([]any)
-	for _, id := range ids {
-		if s, ok := id.(string); ok && s == target {
+func idList(raw any) []string {
+	var out []string
+	switch ids := raw.(type) {
+	case []any:
+		for _, id := range ids {
+			if s, ok := id.(string); ok && s != "" {
+				out = append(out, s)
+			}
+		}
+	case []string:
+		for _, s := range ids {
+			if s != "" {
+				out = append(out, s)
+			}
+		}
+	}
+	return out
+}
+
+func contains(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
 			return true
 		}
 	}
 	return false
+}
+
+func idListContains(raw any, target string) bool {
+	return contains(idList(raw), target)
 }
 
 func filterPoliciesByTarget(policies []models.Policy, employeeID *uuid.UUID, teamID *uuid.UUID) []models.Policy {

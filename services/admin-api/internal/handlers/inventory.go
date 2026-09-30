@@ -464,15 +464,17 @@ func (h *InventoryHandler) decorate(orgID uuid.UUID, rows []models.InstalledAppl
 	}
 
 	empNames := map[uuid.UUID]string{}
+	empTeams := map[uuid.UUID]*uuid.UUID{}
 	if len(empIDs) > 0 {
 		var emps []models.Employee
-		h.db.Select("id, first_name, last_name, email").Where("id IN ?", keys(empIDs)).Find(&emps)
+		h.db.Select("id, first_name, last_name, email, team_id").Where("id IN ?", keys(empIDs)).Find(&emps)
 		for _, e := range emps {
 			name := strings.TrimSpace(e.FirstName + " " + e.LastName)
 			if name == "" {
 				name = e.Email
 			}
 			empNames[e.ID] = name
+			empTeams[e.ID] = e.TeamID
 		}
 	}
 
@@ -486,8 +488,9 @@ func (h *InventoryHandler) decorate(orgID uuid.UUID, rows []models.InstalledAppl
 	}
 
 	// Control rules, indexed by the catalog application they cover. A rule
-	// only counts for a row when its Targets actually include that row's
-	// employee — an org-wide rule covers everyone, a targeted one does not.
+	// only counts for a row when it covers that row's employee — their own
+	// rule, or an org/team rule that includes them; the same check the agent
+	// feed uses (appRuleCovers), so the switches show what is enforced.
 	var rules []models.AppControlRule
 	h.db.Where("org_id = ? AND enabled = ?", orgID, true).Find(&rules)
 	rulesByApp := map[uuid.UUID][]models.AppControlRule{}
@@ -501,13 +504,20 @@ func (h *InventoryHandler) decorate(orgID uuid.UUID, rows []models.InstalledAppl
 			e.EmployeeName = empNames[*r.EmployeeID]
 		}
 		if r.ApplicationID != nil {
+			var team *uuid.UUID
+			if r.EmployeeID != nil {
+				team = empTeams[*r.EmployeeID]
+			}
 			for _, rule := range rulesByApp[*r.ApplicationID] {
-				if !appRuleCoversEmployee(rule, r.EmployeeID) {
+				if !appRuleCovers(rule, r.EmployeeID, team) {
 					continue
 				}
 				e.BlockNetwork = e.BlockNetwork || rule.BlockNetwork
 				e.BlockProcess = e.BlockProcess || rule.BlockProcess
-				e.RuleID = rule.ID.String()
+				// The employee's own rule is the one the row's switches edit.
+				if e.RuleID == "" || rule.EmployeeID != nil {
+					e.RuleID = rule.ID.String()
+				}
 			}
 		}
 		out = append(out, e)
@@ -521,20 +531,6 @@ func keys(m map[uuid.UUID]bool) []uuid.UUID {
 		out = append(out, k)
 	}
 	return out
-}
-
-// appRuleCoversEmployee reports whether a control rule applies to one
-// employee. An empty/absent Targets means the whole organization, matching
-// AppControlRule's documented shape.
-func appRuleCoversEmployee(rule models.AppControlRule, employeeID *uuid.UUID) bool {
-	ids, ok := rule.Targets["employee_ids"].([]any)
-	if !ok || len(ids) == 0 {
-		return true
-	}
-	if employeeID == nil {
-		return false
-	}
-	return idListContains(rule.Targets["employee_ids"], employeeID.String())
 }
 
 func (h *InventoryHandler) categories(orgID uuid.UUID) []string {
@@ -591,13 +587,25 @@ func (h *InventoryHandler) SetControl(c *gin.Context) {
 		return
 	}
 
-	targets := map[string]any{}
+	// The switch lives on one employee's row, so it controls that employee's
+	// own rule and nobody else's. Each employee's decision is its own row;
+	// turning an app off for one person used to rewrite (or delete) the one
+	// shared rule, silently changing it for everyone else.
+	targets := map[string]any{"scope": "all"}
+	var ruleEmployee *uuid.UUID
 	if !in.AllEmployees && row.EmployeeID != nil {
-		targets["employee_ids"] = []any{row.EmployeeID.String()}
+		ruleEmployee = row.EmployeeID
+		targets = map[string]any{"scope": "employee", "employee_ids": []any{row.EmployeeID.String()}}
 	}
 
 	var rule models.AppControlRule
-	err = h.db.Where("org_id = ? AND application_id = ?", orgID, appID).First(&rule).Error
+	q := h.db.Where("org_id = ? AND application_id = ?", orgID, appID)
+	if ruleEmployee != nil {
+		q = q.Where("employee_id = ?", *ruleEmployee)
+	} else {
+		q = q.Where("employee_id IS NULL")
+	}
+	err = q.First(&rule).Error
 	switch {
 	case err == nil:
 		updates := map[string]any{"targets": targets, "enabled": true}
@@ -615,16 +623,25 @@ func (h *InventoryHandler) SetControl(c *gin.Context) {
 			rule.BlockProcess = *in.BlockProcess
 		}
 	case err == gorm.ErrRecordNotFound:
+		blockNetwork := in.BlockNetwork != nil && *in.BlockNetwork
+		blockProcess := in.BlockProcess != nil && *in.BlockProcess
 		rule = models.AppControlRule{
 			OrgID:         orgID,
 			ApplicationID: appID,
+			EmployeeID:    ruleEmployee,
 			Action:        "block",
 			Enabled:       true,
-			BlockNetwork:  in.BlockNetwork != nil && *in.BlockNetwork,
-			BlockProcess:  in.BlockProcess != nil && *in.BlockProcess,
+			BlockNetwork:  blockNetwork,
+			BlockProcess:  blockProcess,
 			Targets:       targets,
 		}
 		if err := h.db.Create(&rule).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not save the control"})
+			return
+		}
+		// Only the switch that was flipped is on — without this the column
+		// default turned Network Block on alongside App Block.
+		if err := writeRuleEnforcement(h.db, &rule, true, blockNetwork, blockProcess); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not save the control"})
 			return
 		}

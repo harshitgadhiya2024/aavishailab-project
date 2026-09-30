@@ -192,3 +192,38 @@ log) was then wiped the same way, keeping only the superadmin login. A full
 **Commit:** `1bf7529` (the `ADMIN_API_DATABASE_URL` override itself, which
 stays — it's what made the revert a one-line `.env` change rather than a
 code change).
+
+### 15. One employee's app block reached the whole company; App Block also turned on Network Block
+**What happened:** an admin blocked Microsoft Teams for one employee
+(Harshit Patel), and Teams was also killed on a teammate's Mac (Riya
+Patel). There were two causes:
+1. The per-employee switch saved the rule's targets as
+   `{"employee_ids":[…]}` with no `scope`. The matcher read a missing
+   scope as "whole company", so every employee in the org matched. There
+   was also only one rule per (company, app), so a second employee's
+   switch rewrote the first employee's rule.
+2. `block_network` and `block_process` carry GORM `default:` tags. GORM
+   leaves a false field out of the INSERT, so the column default (network
+   on) won. On Postgres it also reads the defaults back into the struct
+   after the INSERT. The result was that every rule created with only
+   App Block on came out with Network Block on too.
+
+**Fix (admin-api):**
+- A rule can now belong to one employee (`app_control_rules.employee_id`).
+- The unique index is on (org, app, employee).
+- The dashboard switch writes only that employee's own row.
+- Targets with no `scope` are inferred from their lists: an employee list
+  means only those employees, a team list means only those teams, and
+  nothing at all means the whole company. This also protects Web Gateway
+  and DLP policies saved without a scope.
+- The switches are written explicitly after the row is created, from the
+  values the admin asked for.
+- A boot migration converts existing single-employee rules to the new shape.
+
+**Tested:** end to end against a local stack with two companies, two teams
+and four employees (30/30 checks). The tests covered:
+- per-employee App Block and Network Block
+- unblocking one employee while a teammate stays blocked
+- a company admin getting 404 on another company's rows
+- Web Gateway policies scoped to the company, a team, one employee, and
+  an employee list with no scope

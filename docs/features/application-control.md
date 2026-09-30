@@ -28,6 +28,24 @@ seen running on a device, it's auto-added to the org's application list
 process-name matcher, only a bundle ID and path pattern, because that's all
 that's known about it.
 
+## Who a rule applies to
+
+Tenancy is company → employee. Every rule belongs to one company
+(`org_id`), and an agent only ever receives rules for its own company.
+Inside the company a rule is one of:
+
+- **One employee's rule** (`employee_id` set): what the App Block /
+  Network Block switches on an employee's row in the dashboard create.
+  Each employee has their own row per app, so blocking Teams for one
+  person never blocks it for a teammate, and unblocking it for one person
+  never unblocks it for anyone else.
+- **A company or team rule** (`employee_id` empty): created from the
+  catalog, with targets `{"scope":"all"}` or `{"scope":"team",
+  "team_ids":[…]}`.
+
+App Block (kill the process) and Network Block (block the app's
+domains) are independent switches. Turning one on never turns the other on.
+
 ## Bugs fixed this cycle
 
 See [../bug-fixes.md](../bug-fixes.md). Summary:
@@ -56,3 +74,5 @@ See [../bug-fixes.md](../bug-fixes.md). Summary:
    software from devices that still exist and belong to a current
    employee, so a genuinely stale device (pre-dating this fix) doesn't
    show duplicate rows either.
+3. **Blocking an app for one employee blocked it for the whole company,
+   and App Block also switched on Network Block.** See bug-fixes #15.

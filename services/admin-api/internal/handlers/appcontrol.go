@@ -18,6 +18,17 @@ func NewAppControlHandler(db *gorm.DB) *AppControlHandler { return &AppControlHa
 
 // ─── Shared resolution (used by the agent feed and by the rules API) ─────────
 
+// appRuleCovers reports whether a rule applies to one employee. A rule that
+// belongs to one employee (EmployeeID set — what a switch on that employee's
+// row creates) covers only them; any other rule covers whoever its Targets
+// name, or the whole org when it names nobody.
+func appRuleCovers(r models.AppControlRule, employeeID, teamID *uuid.UUID) bool {
+	if r.EmployeeID != nil {
+		return employeeID != nil && *r.EmployeeID == *employeeID
+	}
+	return policyTargetMatches(r.Targets, employeeID, teamID)
+}
+
 // activeAppRules returns an org's enabled rules with their applications
 // loaded, filtered to the ones that apply to this employee/team.
 func activeAppRules(db *gorm.DB, orgID uuid.UUID, employeeID, teamID *uuid.UUID) []models.AppControlRule {
@@ -31,7 +42,7 @@ func activeAppRules(db *gorm.DB, orgID uuid.UUID, employeeID, teamID *uuid.UUID)
 		if r.Application == nil {
 			continue
 		}
-		if !policyTargetMatches(r.Targets, employeeID, teamID) {
+		if !appRuleCovers(r, employeeID, teamID) {
 			continue
 		}
 		out = append(out, r)
@@ -47,6 +58,7 @@ func activeAppRules(db *gorm.DB, orgID uuid.UUID, employeeID, teamID *uuid.UUID)
 func appControlDomainRules(db *gorm.DB, orgID uuid.UUID, employeeID, teamID *uuid.UUID) []models.DomainRule {
 	var out []models.DomainRule
 	org := orgID
+	seen := map[string]bool{}
 	for _, r := range activeAppRules(db, orgID, employeeID, teamID) {
 		if !r.BlockNetwork {
 			continue
@@ -57,9 +69,12 @@ func appControlDomainRules(db *gorm.DB, orgID uuid.UUID, employeeID, teamID *uui
 		}
 		for _, domain := range r.Application.Domains {
 			domain = strings.ToLower(strings.TrimSpace(domain))
-			if domain == "" {
+			// An employee's own rule and an org-wide one can both name the
+			// same app; the first (block sorts before alert below) wins.
+			if domain == "" || seen[domain+"|"+string(action)] {
 				continue
 			}
+			seen[domain+"|"+string(action)] = true
 			out = append(out, models.DomainRule{
 				Base:     models.Base{ID: r.ID},
 				OrgID:    &org,
@@ -75,12 +90,12 @@ func appControlDomainRules(db *gorm.DB, orgID uuid.UUID, employeeID, teamID *uui
 }
 
 // appControlMatchers is the process half — what the agent's watcher compares
-// running processes against.
+// running processes against. One matcher per application: an employee's own
+// rule and an org-wide rule for the same app merge, and block beats alert.
 func appControlMatchers(db *gorm.DB, orgID uuid.UUID, employeeID, teamID *uuid.UUID) []models.AppControlMatcher {
 	out := []models.AppControlMatcher{}
-	configured := map[uuid.UUID]bool{}
+	index := map[uuid.UUID]int{}
 	for _, r := range activeAppRules(db, orgID, employeeID, teamID) {
-		configured[r.ApplicationID] = true
 		if !r.BlockProcess {
 			continue
 		}
@@ -88,6 +103,13 @@ func appControlMatchers(db *gorm.DB, orgID uuid.UUID, employeeID, teamID *uuid.U
 		if len(app.ProcessNames) == 0 && len(app.BundleIDs) == 0 && len(app.PathPatterns) == 0 {
 			continue // nothing to match on — a web-only app
 		}
+		if i, ok := index[app.ID]; ok {
+			if r.Action != "alert" {
+				out[i].Action = "block"
+			}
+			continue
+		}
+		index[app.ID] = len(out)
 		out = append(out, models.AppControlMatcher{
 			AppID:        app.ID.String(),
 			Name:         app.Name,
@@ -97,7 +119,7 @@ func appControlMatchers(db *gorm.DB, orgID uuid.UUID, employeeID, teamID *uuid.U
 			PathPatterns: app.PathPatterns,
 		})
 	}
-	return append(out, defaultVPNMatchers(db, orgID, configured)...)
+	return append(out, defaultVPNMatchers(db, orgID, employeeID, teamID)...)
 }
 
 // defaultVPNBlockCategories are the catalog categories every organization
@@ -108,20 +130,24 @@ func appControlMatchers(db *gorm.DB, orgID uuid.UUID, employeeID, teamID *uuid.U
 // policy (see effectiveDLPPolicies).
 var defaultVPNBlockCategories = []string{"vpn", "anonymizer"}
 
-// defaultVPNMatchers blocks every built-in VPN/anonymizer application the org
-// has NOT already made its own decision about. An explicit rule always wins:
-// if an admin created a rule for one of these apps — to allow it, alert only,
-// or disabled the block — that app's ID is in `configured` (all rules,
-// enabled or not, see the caller) and no default is injected for it, so an
-// intentional exception is never overridden. Delivered to the agent the same
-// way an explicit block is; nothing is written to the database.
-func defaultVPNMatchers(db *gorm.DB, orgID uuid.UUID, configured map[uuid.UUID]bool) []models.AppControlMatcher {
-	// An admin's own rule counts as a decision even when disabled, so the
-	// set has to include disabled rows, which activeAppRules filters out.
+// defaultVPNMatchers blocks every built-in VPN/anonymizer application this
+// employee has no explicit decision about. An explicit rule always wins: if an
+// admin created a rule covering this employee for one of these apps — to
+// allow it, alert only, or a disabled block — no default is injected for it,
+// so an intentional exception is never overridden.
+//
+// Only rules that cover this employee count. A rule on one employee's row
+// used to count for everyone, so one person's exception switched the default
+// VPN block off for the whole company.
+func defaultVPNMatchers(db *gorm.DB, orgID uuid.UUID, employeeID, teamID *uuid.UUID) []models.AppControlMatcher {
+	// A disabled rule is still a decision, so disabled rows count too.
 	var ruled []models.AppControlRule
-	db.Select("application_id").Where("org_id = ?", orgID).Find(&ruled)
+	db.Select("application_id, employee_id, targets").Where("org_id = ?", orgID).Find(&ruled)
+	configured := map[uuid.UUID]bool{}
 	for _, r := range ruled {
-		configured[r.ApplicationID] = true
+		if appRuleCovers(r, employeeID, teamID) {
+			configured[r.ApplicationID] = true
+		}
 	}
 
 	var apps []models.ManagedApplication
@@ -146,6 +172,24 @@ func defaultVPNMatchers(db *gorm.DB, orgID uuid.UUID, configured map[uuid.UUID]b
 		})
 	}
 	return out
+}
+
+// writeRuleEnforcement stores a rule's switches exactly as given. Needed after
+// every Create: the model's `default` tags make GORM leave a false switch out
+// of the INSERT, so the column default (network block on) replaced it — a
+// rule created with only App Block on came out with Network Block on too.
+// The values are passed in rather than read off r because Create reads the
+// column defaults back into r, overwriting what the caller asked for.
+func writeRuleEnforcement(db *gorm.DB, r *models.AppControlRule, enabled, blockNetwork, blockProcess bool) error {
+	if err := db.Model(&models.AppControlRule{}).Where("id = ?", r.ID).Updates(map[string]any{
+		"enabled":       enabled,
+		"block_network": blockNetwork,
+		"block_process": blockProcess,
+	}).Error; err != nil {
+		return err
+	}
+	r.Enabled, r.BlockNetwork, r.BlockProcess = enabled, blockNetwork, blockProcess
+	return nil
 }
 
 // ─── Company API ─────────────────────────────────────────────────────────────
@@ -253,12 +297,17 @@ func (h *AppControlHandler) CreateRule(c *gin.Context) {
 		BlockProcess:  boolOr(in.BlockProcess, false),
 		Targets:       in.Targets,
 	}
+	if len(rule.Targets) == 0 {
+		rule.Targets = map[string]any{"scope": "all"}
+	}
 
 	// Unscoped: a rule the company removed earlier is still on disk, and the
 	// unique index counts it. Revive that row rather than failing to insert a
 	// second one.
 	var existing models.AppControlRule
-	err = h.db.Unscoped().Where("org_id = ? AND application_id = ?", orgID, appID).First(&existing).Error
+	// Only the org/team-level rule — an employee's own rule for this app is a
+	// separate row (see InventoryHandler.SetControl) and is left alone.
+	err = h.db.Unscoped().Where("org_id = ? AND application_id = ? AND employee_id IS NULL", orgID, appID).First(&existing).Error
 	if err == nil {
 		// Save rather than a map-based Updates: Targets carries a JSON
 		// serializer that a map update bypasses, and Save clears deleted_at in
@@ -278,7 +327,12 @@ func (h *AppControlHandler) CreateRule(c *gin.Context) {
 		return
 	}
 
+	enabled, blockNetwork, blockProcess := rule.Enabled, rule.BlockNetwork, rule.BlockProcess
 	if err := h.db.Create(&rule).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create the rule"})
+		return
+	}
+	if err := writeRuleEnforcement(h.db, &rule, enabled, blockNetwork, blockProcess); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create the rule"})
 		return
 	}
