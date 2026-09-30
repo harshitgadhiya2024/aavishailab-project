@@ -32,7 +32,7 @@ export function Footer() {
             <ul className="mt-4 grid gap-2.5">
               {col.links.map((l) => (
                 <li key={l.href}>
-                  <Link href={l.href} className="text-sm text-muted transition-colors hover:text-fg">
+                  <Link href={l.href} className="text-sm text-muted transition-colors hover:text-brand-ink">
                     {l.label}
                   </Link>
                 </li>

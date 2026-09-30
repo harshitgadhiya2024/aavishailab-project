@@ -10,7 +10,7 @@ function CellHead({ slug, invert = false }: { slug: ModuleSlug; invert?: boolean
   return (
     <div className="relative">
       <div className="flex items-center justify-between">
-        <span className={`grid size-10 place-items-center rounded-full border ${invert ? "border-ink-fg/20" : "border-line"}`}>
+        <span className={`grid size-10 place-items-center rounded-full border transition-colors duration-300 ${invert ? "border-brand/50 text-brand" : "border-line group-hover:border-brand group-hover:text-brand-ink"}`}>
           <ModuleIcon icon={m.icon} size={20} />
         </span>
         <ArrowUpRight size={18} className="opacity-40 transition-[opacity,transform] duration-300 ease-out-expo group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:opacity-100" />
@@ -47,7 +47,7 @@ export function ModulesBento() {
                   <span className="block truncate opacity-55">to {d}</span>
                 </span>
                 <span className="flex shrink-0 items-center gap-1.5">
-                  <WarningCircle size={14} weight="fill" />
+                  <WarningCircle size={14} weight="fill" className="text-brand" />
                   {why}
                 </span>
               </div>
@@ -68,7 +68,7 @@ export function ModulesBento() {
                 ["Productivity", false],
               ].map(([c, blocked]) => (
                 <span key={c as string} className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 ${blocked ? "border-fg/25 text-fg" : "border-line text-muted"}`}>
-                  {blocked ? <Prohibit size={12} weight="bold" /> : <CheckCircle size={12} weight="bold" />}
+                  {blocked ? <Prohibit size={12} weight="bold" className="text-brand-ink" /> : <CheckCircle size={12} weight="bold" />}
                   {c as string}
                 </span>
               ))}
@@ -82,7 +82,7 @@ export function ModulesBento() {
           <Link href="/platform/vpn-control" className={cell}>
             <CellHead slug="vpn-control" />
             <p className="mt-6 font-mono text-[12px] text-muted" aria-hidden>
-              default: <span className="text-fg">blocked</span>
+              default: <span className="text-brand-ink">blocked</span>
             </p>
           </Link>
         </Spotlight>
@@ -111,7 +111,7 @@ export function ModulesBento() {
             <ul className="mt-6 grid grid-cols-2 gap-2 text-[12px] text-fg-2" aria-hidden>
               {["Disk encryption", "Firewall", "OS patches", "Antivirus"].map((c) => (
                 <li key={c} className="flex items-center gap-1.5">
-                  <CheckCircle size={14} weight="fill" className="text-signal" />
+                  <CheckCircle size={14} weight="fill" className="text-brand-ink" />
                   {c}
                 </li>
               ))}
@@ -129,8 +129,8 @@ export function ModulesBento() {
               {[38, 62, 45, 80, 70, 92, 55, 66, 84, 48, 73, 58, 88, 64].map((h, i) => (
                 <span
                   key={i}
-                  className="flex-1 origin-bottom rounded-t-md bg-fg/80 transition-transform duration-700 ease-out-expo group-hover:scale-y-[1.08]"
-                  style={{ height: `${h}%`, opacity: 0.25 + (h / 100) * 0.75, transitionDelay: `${i * 25}ms` }}
+                  className={`flex-1 origin-bottom rounded-t-md ${i === 5 ? "bg-brand" : "bg-fg/80"} transition-transform duration-700 ease-out-expo group-hover:scale-y-[1.08]`}
+                  style={{ height: `${h}%`, opacity: i === 5 ? 1 : 0.25 + (h / 100) * 0.75, transitionDelay: `${i * 25}ms` }}
                 />
               ))}
             </div>

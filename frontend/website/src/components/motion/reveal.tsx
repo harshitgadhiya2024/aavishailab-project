@@ -57,23 +57,30 @@ export function StaggerItem({ className, children }: { className?: string; child
   );
 }
 
-/** Headline that rises in word by word on first view. */
-export function WordRise({ text, className, delay = 0 }: { text: string; className?: string; delay?: number }) {
+/**
+ * Headline that rises in word by word on first view. The full sentence is
+ * also rendered as plain sr-only text, so crawlers and screen readers get
+ * one clean string. Words listed in `accent` are drawn in the brand colour.
+ */
+export function WordRise({ text, className, delay = 0, accent = [] }: { text: string; className?: string; delay?: number; accent?: string[] }) {
   const reduce = useReducedMotion();
   const words = text.split(" ");
+  const clean = (w: string) => w.toLowerCase().replace(/[.,]/g, "");
+  const hot = new Set(accent.map(clean));
   return (
-    <span className={className} aria-label={text}>
+    <span className={className}>
+      <span className="sr-only">{text}</span>
       {words.map((w, i) => (
         <span key={i} aria-hidden className="inline-block overflow-hidden pb-[0.12em] align-top">
           <motion.span
-            className="inline-block"
+            className={`inline-block ${hot.has(clean(w)) ? "text-brand-ink" : ""}`}
             initial={reduce ? false : { y: "110%" }}
             whileInView={{ y: "0%" }}
             viewport={{ once: true }}
             transition={{ duration: 0.9, delay: delay + i * 0.055, ease: EASE }}
           >
             {w}
-            {i < words.length - 1 ? " " : ""}
+            {i < words.length - 1 ? "\u00a0" : ""}
           </motion.span>
         </span>
       ))}

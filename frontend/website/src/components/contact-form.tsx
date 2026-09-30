@@ -8,7 +8,7 @@ type Status = "idle" | "sending" | "sent" | "error";
 type Errors = Partial<Record<"name" | "email" | "company" | "devices", string>>;
 
 const field =
-  "h-12 w-full rounded-xl border border-line-strong bg-surface px-4 text-[15px] text-fg placeholder:text-muted transition-[border-color,box-shadow] focus:border-fg focus:outline-none focus:ring-4 focus:ring-fg/10";
+  "h-12 w-full rounded-xl border border-line-strong bg-surface px-4 text-[15px] text-fg placeholder:text-muted transition-[border-color,box-shadow] focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/20";
 
 function validate(data: FormData): Errors {
   const e: Errors = {};
@@ -59,7 +59,7 @@ export function ContactForm() {
                 initial={{ scale: 0.4, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 transition={{ type: "spring", stiffness: 300, damping: 16, delay: 0.1 }}
-                className="mx-auto grid size-16 place-items-center rounded-full bg-invert-bg text-invert-fg"
+                className="mx-auto grid size-16 place-items-center rounded-full bg-brand text-on-brand"
               >
                 <CheckCircle size={30} weight="fill" />
               </motion.span>
@@ -104,7 +104,7 @@ export function ContactForm() {
             <button
               type="submit"
               disabled={status === "sending"}
-              className="mt-2 inline-flex h-12 items-center justify-center gap-2 rounded-full bg-invert-bg px-7 text-[15px] font-medium text-invert-fg transition-[transform,opacity] duration-200 active:scale-[0.98] disabled:opacity-70"
+              className="mt-2 inline-flex h-12 items-center justify-center gap-2 rounded-full bg-brand px-7 text-[15px] font-medium text-on-brand hover:bg-brand-dark transition-[transform,opacity] duration-200 active:scale-[0.98] disabled:opacity-70"
             >
               {status === "sending" && <CircleNotch size={16} weight="bold" className="animate-spin" />}
               {status === "sending" ? "Sending" : "Book a demo"}

@@ -5,8 +5,11 @@ import { PageHero } from "@/components/page-hero";
 import { SolutionsTabs } from "@/components/solutions-tabs";
 
 export const metadata: Metadata = {
-  title: "Solutions",
-  description: "AI governance, remote teams, audit readiness and insider risk, solved with one endpoint agent.",
+  title: "Solutions: AI Governance, Remote Teams, Audit Readiness, Insider Risk",
+  description:
+    "See how DelSecure solves AI tool governance, remote workforce security, audit readiness and insider risk with one endpoint agent.",
+  alternates: { canonical: "/solutions" },
+  openGraph: { url: "/solutions" },
 };
 
 const teams = [
@@ -20,6 +23,7 @@ export default function SolutionsPage() {
     <>
       <PageHero
         eyebrow="Solutions"
+        accent={["today."]}
         title="Start from the problem you have today."
         body="Each solution combines the DelSecure controls that matter for it. Pick one below to see how."
         aside={false}
@@ -31,12 +35,12 @@ export default function SolutionsPage() {
 
       <section className="mx-auto mt-36 max-w-6xl px-4 md:px-6">
         <h2 className="max-w-2xl text-4xl font-semibold leading-[1.05] tracking-tight md:text-5xl">
-          <WordRise text="Built for the people who carry the risk." />
+          <WordRise text="Built for the people who carry the risk." accent={["risk."]} />
         </h2>
         <div className="mt-14 grid gap-12 md:grid-cols-[1fr_1fr_1fr] md:gap-8">
           {teams.map((t, i) => (
             <Reveal key={t.who} delay={i * 0.1} className={i === 1 ? "md:mt-16" : i === 2 ? "md:mt-32" : ""}>
-              <div className="border-t border-fg pt-6">
+              <div className="border-t-2 border-brand pt-6">
                 <h3 className="text-2xl font-semibold tracking-tight text-fg">{t.who}</h3>
                 <p className="mt-3 leading-relaxed text-muted">{t.what}</p>
               </div>

@@ -9,7 +9,7 @@ type Props = {
   className?: string;
 };
 
-/** Pill link-button. Solid = inverted surface, ghost = hairline outline. */
+/** Pill link-button. Solid = brand orange (near-black text, as in the product), ghost = hairline outline. */
 export function Button({ href, children, variant = "solid", size = "md", className = "" }: Props) {
   const external = href.startsWith("http");
   const Arrow = external ? ArrowUpRight : ArrowRight;
@@ -18,7 +18,7 @@ export function Button({ href, children, variant = "solid", size = "md", classNa
   const sizes = size === "lg" ? "h-12 pl-6 pr-5 text-[15px]" : "h-10 pl-5 pr-4 text-sm";
   const variants =
     variant === "solid"
-      ? "bg-invert-bg text-invert-fg hover:opacity-90"
+      ? "bg-brand text-on-brand shadow-[0_8px_24px_-10px_rgb(255_112_0/0.7)] hover:bg-brand-dark"
       : "border border-line-strong text-fg hover:bg-bg-2";
   return (
     <Link href={href} className={`${base} ${sizes} ${variants} ${className}`}>

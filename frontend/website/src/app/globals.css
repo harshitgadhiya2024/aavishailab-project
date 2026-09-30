@@ -4,8 +4,9 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /*
- * DelSecure tokens. Monochrome by design: the only colour on the site is
- * --signal, reserved for real state (live, allowed, flagged).
+ * DelSecure tokens. Monochrome base with one brand accent: the product's
+ * orange (#FF7000, same as the dashboards). Text on orange is near-black,
+ * matching the product's --on-brand. --danger is only for "blocked" state.
  * Radius system: interactive = pill, surfaces = 20px, inputs = 12px.
  */
 :root {
@@ -21,7 +22,11 @@
   --invert-fg: #fafafa;
   --ink: #0b0b0d;
   --ink-fg: #fafafa;
-  --signal: #15803d;
+  --brand: #ff7000;
+  --brand-dark: #e56400;
+  --brand-ink: #c2410c;
+  --on-brand: #0a0a0a;
+  --signal: var(--brand-ink);
   --danger: #b42318;
   --shadow: 0 1px 0 rgb(255 255 255 / 0.8) inset, 0 24px 60px -24px rgb(24 24 27 / 0.22);
   --grid-dot: rgb(11 11 13 / 0.13);
@@ -40,7 +45,11 @@
   --invert-fg: #09090b;
   --ink: #17171b;
   --ink-fg: #f4f4f5;
-  --signal: #4ade80;
+  --brand: #ff7000;
+  --brand-dark: #ff8a2b;
+  --brand-ink: #ff8a2b;
+  --on-brand: #0a0a0a;
+  --signal: var(--brand);
   --danger: #f97066;
   --shadow: 0 1px 0 rgb(255 255 255 / 0.06) inset, 0 24px 60px -24px rgb(0 0 0 / 0.7);
   --grid-dot: rgb(255 255 255 / 0.12);
@@ -60,6 +69,10 @@
   --color-ink: var(--ink);
   --color-ink-fg: var(--ink-fg);
   --color-signal: var(--signal);
+  --color-brand: var(--brand);
+  --color-brand-dark: var(--brand-dark);
+  --color-brand-ink: var(--brand-ink);
+  --color-on-brand: var(--on-brand);
   --color-danger: var(--danger);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
@@ -98,14 +111,48 @@ body {
 }
 
 ::selection {
-  background: var(--fg);
-  color: var(--bg);
+  background: var(--brand);
+  color: var(--on-brand);
 }
 
 :focus-visible {
-  outline: 2px solid var(--fg);
+  outline: 2px solid var(--brand);
   outline-offset: 3px;
   border-radius: 6px;
+}
+
+/*
+ * Above-the-fold entrance done in CSS, not JS: it starts on first paint,
+ * before hydration, so the hero text never holds back LCP.
+ */
+/* Transform only: the text is visible from the first paint, so it counts for LCP. */
+@keyframes enter {
+  from { transform: translateY(18px); }
+  to { transform: none; }
+}
+.enter {
+  animation: enter 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes page-in {
+  from { transform: translateY(10px); }
+  to { transform: none; }
+}
+.page-in {
+  animation: page-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes nav-in {
+  from { transform: translateY(-24px); }
+  to { transform: none; }
+}
+.nav-in {
+  animation: nav-in 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes rise {
+  from { transform: translateY(110%); }
+  to { transform: none; }
+}
+.rise {
+  animation: rise 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 /* Dot field used behind heroes; masked so it fades toward the edges. */

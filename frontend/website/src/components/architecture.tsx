@@ -18,7 +18,7 @@ export function Architecture() {
       <svg className="pointer-events-none absolute left-0 right-0 top-[44px] hidden h-2 w-full md:block" preserveAspectRatio="none" viewBox="0 0 100 2" aria-hidden>
         <motion.line
           x1="12" y1="1" x2="88" y2="1"
-          stroke="var(--line-strong)" strokeWidth="0.25" strokeDasharray="0.8 0.8"
+          stroke="var(--brand)" strokeWidth="0.3" strokeDasharray="0.8 0.8"
           initial={reduce ? false : { pathLength: 0 }}
           whileInView={{ pathLength: 1 }}
           viewport={{ once: true, amount: 0.6 }}
@@ -34,7 +34,7 @@ export function Architecture() {
           transition={{ duration: 0.8, delay: 0.2 + i * 0.18, ease: [0.16, 1, 0.3, 1] }}
           className="relative"
         >
-          <div className={`relative z-[1] grid size-[88px] place-items-center rounded-full border ${i === 0 ? "border-transparent bg-invert-bg text-invert-fg" : "border-line bg-surface text-fg"}`}>
+          <div className={`relative z-[1] grid size-[88px] place-items-center rounded-full border ${i === 0 ? "border-transparent bg-brand text-on-brand shadow-[0_20px_50px_-15px_rgb(255_112_0/0.7)]" : "border-line bg-surface text-fg"}`}>
             <I size={30} weight="light" />
           </div>
           <h3 className="mt-6 text-lg font-semibold tracking-tight text-fg">{title}</h3>

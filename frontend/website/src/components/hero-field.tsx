@@ -34,8 +34,8 @@ const FEED: Omit<Event, "id">[] = [
 
 const STATE_STYLE: Record<Event["state"], string> = {
   blocked: "text-danger",
-  flagged: "text-fg",
-  allowed: "text-signal",
+  flagged: "text-brand-ink",
+  allowed: "text-muted",
 };
 
 function useParallax(depth: number, mx: MotionValue<number>, my: MotionValue<number>) {
@@ -117,7 +117,7 @@ export function HeroField() {
           animate={reduce ? undefined : { rotate: 360 }}
           transition={{ duration: 60, repeat: Infinity, ease: "linear" }}
         >
-          <span className="absolute left-1/2 top-0 size-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-fg" />
+          <span className="absolute left-1/2 top-0 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand shadow-[0_0_14px_rgb(255_112_0)]" />
         </motion.div>
         <motion.div
           className="absolute inset-[150px]"
@@ -131,17 +131,18 @@ export function HeroField() {
       {/* Core */}
       <motion.div style={mid} className="absolute inset-0 grid place-items-center">
         <div className="relative grid size-32 place-items-center">
-          <span className="absolute inset-0 animate-pulse-ring rounded-full border border-fg/30" />
-          <span className="absolute inset-0 animate-pulse-ring rounded-full border border-fg/20 [animation-delay:1.2s]" />
+          <span className="absolute inset-0 animate-pulse-ring rounded-full border-2 border-brand/60" />
+          <span className="absolute inset-0 animate-pulse-ring rounded-full border border-brand/40 [animation-delay:1.2s]" />
+          <span className="absolute -inset-6 rounded-full bg-brand/15 blur-2xl" />
           <motion.div
             initial={reduce ? false : { scale: 0.6, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             transition={{ type: "spring", stiffness: 140, damping: 16, delay: 0.3 }}
-            className="relative grid size-24 place-items-center rounded-full bg-invert-bg text-invert-fg shadow-[0_30px_80px_-20px_rgb(0_0_0/0.5)]"
+            className="relative grid size-24 place-items-center rounded-full bg-invert-bg text-invert-fg shadow-[0_30px_80px_-20px_rgb(255_112_0/0.55)] ring-1 ring-brand/50"
           >
             <ShieldCheck size={40} weight="light" />
             <span className="pointer-events-none absolute inset-0 overflow-hidden rounded-full">
-              <span className="absolute inset-x-0 top-0 h-3 animate-scan bg-gradient-to-b from-transparent via-invert-fg/25 to-transparent" />
+              <span className="absolute inset-x-0 top-0 h-3 animate-scan bg-gradient-to-b from-transparent via-brand/50 to-transparent" />
             </span>
           </motion.div>
         </div>

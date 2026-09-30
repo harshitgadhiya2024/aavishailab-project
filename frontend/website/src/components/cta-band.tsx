@@ -8,7 +8,8 @@ export function CtaBand({ title = "Put policy on every device this week." }: { t
     <section className="mx-auto mt-32 max-w-6xl px-4 md:px-6">
       <div className="relative ink-edge overflow-hidden rounded-[28px] bg-ink px-6 py-20 text-center text-ink-fg md:px-16 md:py-28">
         <div className="dot-field-ink absolute inset-0 opacity-70" aria-hidden />
-        <div aria-hidden className="absolute -left-24 -top-24 size-72 rounded-full border border-ink-fg/15" />
+        <div aria-hidden className="absolute -left-24 -top-24 size-72 rounded-full border border-brand/30" />
+        <div aria-hidden className="absolute left-1/2 top-full size-[520px] -translate-x-1/2 -translate-y-1/3 rounded-full bg-brand/25 blur-3xl" />
         <div aria-hidden className="absolute -bottom-32 -right-20 size-96 rounded-full border border-ink-fg/10" />
         <h2 className="relative mx-auto max-w-3xl text-4xl font-semibold leading-[1.05] tracking-tight md:text-6xl">
           <WordRise text={title} />
@@ -22,7 +23,7 @@ export function CtaBand({ title = "Put policy on every device this week." }: { t
           <Magnetic>
             <Link
               href="/contact"
-              className="inline-flex h-12 items-center rounded-full bg-ink-fg px-7 text-[15px] font-medium text-ink transition-transform duration-200 active:scale-[0.97]"
+              className="inline-flex h-12 items-center rounded-full bg-brand px-7 text-[15px] font-medium text-on-brand shadow-[0_10px_30px_-10px_rgb(255_112_0/0.8)] hover:bg-brand-dark transition-transform duration-200 active:scale-[0.97]"
             >
               {CTA.demo}
             </Link>

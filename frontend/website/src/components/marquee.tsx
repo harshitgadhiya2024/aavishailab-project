@@ -33,7 +33,7 @@ export function Marquee() {
     <div className="group relative overflow-hidden [mask-image:linear-gradient(90deg,transparent,#000_12%,#000_88%,transparent)]">
       <ul className="flex w-max animate-marquee items-center gap-14 py-2 group-hover:[animation-play-state:paused]">
         {row.map(({ I, name }, i) => (
-          <li key={i} className="text-fg/55 transition-colors duration-300 hover:text-fg">
+          <li key={i} className="text-fg/55 transition-colors duration-300 hover:text-brand">
             <I size={34} weight="fill" aria-label={i < items.length ? name : undefined} aria-hidden={i >= items.length} />
           </li>
         ))}

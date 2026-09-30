@@ -4,10 +4,13 @@ import { Check } from "@phosphor-icons/react/dist/ssr";
 import { Faq } from "@/components/faq";
 import { Reveal, Stagger, StaggerItem, WordRise } from "@/components/motion/reveal";
 import { PageHero } from "@/components/page-hero";
+import { JsonLd, faqLd } from "@/lib/seo";
 
 export const metadata: Metadata = {
-  title: "Pricing",
-  description: "Per-device pricing for DelSecure. Start with the controls you need and add more later.",
+  title: "Pricing: Per-Device Endpoint Security Plans",
+  description: "DelSecure pricing is per device, billed annually. Compare Essentials, Business and Enterprise plans and get a quote.",
+  alternates: { canonical: "/pricing" },
+  openGraph: { url: "/pricing" },
 };
 
 const plans = [
@@ -40,8 +43,10 @@ const faq = [
 export default function PricingPage() {
   return (
     <>
+      <JsonLd data={faqLd(faq)} />
       <PageHero
         eyebrow="Pricing"
+        accent={["rack."]}
         title="Pay per device. Nothing to rack."
         body="Every plan includes the agent for macOS, Windows and Linux, the admin console, and employee self-enrollment."
         aside={false}
@@ -58,7 +63,7 @@ export default function PricingPage() {
               >
                 <div className="flex items-center justify-between">
                   <h2 className="text-2xl font-semibold tracking-tight">{p.name}</h2>
-                  {p.featured && <span className="rounded-full border border-ink-fg/25 px-3 py-1 text-[12px]">Most chosen</span>}
+                  {p.featured && <span className="rounded-full bg-brand px-3 py-1 text-[12px] font-medium text-on-brand">Most chosen</span>}
                 </div>
                 <p className={`mt-3 leading-relaxed ${p.featured ? "opacity-70" : "text-muted"}`}>{p.for}</p>
                 <p className="mt-8 text-4xl font-semibold tracking-tight">Custom</p>
@@ -66,7 +71,7 @@ export default function PricingPage() {
                 <ul className="mb-10 mt-8 grid gap-3">
                   {p.features.map((f) => (
                     <li key={f} className="flex items-center gap-3 text-[15px]">
-                      <Check size={16} weight="bold" className="shrink-0" />
+                      <Check size={16} weight="bold" className={`shrink-0 ${p.featured ? "text-brand" : "text-brand-ink"}`} />
                       {f}
                     </li>
                   ))}
@@ -74,7 +79,7 @@ export default function PricingPage() {
                 <Link
                   href="/contact"
                   className={`mt-auto inline-flex h-12 shrink-0 items-center justify-center rounded-full text-[15px] font-medium transition-transform duration-200 active:scale-[0.97] ${
-                    p.featured ? "bg-ink-fg text-ink" : "border border-line-strong text-fg hover:bg-bg-2"
+                    p.featured ? "bg-brand text-on-brand hover:bg-brand-dark" : "border border-line-strong text-fg hover:bg-bg-2"
                   }`}
                 >
                   Get a quote
@@ -87,7 +92,7 @@ export default function PricingPage() {
 
       <section className="mx-auto mt-40 grid max-w-6xl gap-12 px-4 md:grid-cols-[0.8fr_1.2fr] md:px-6">
         <h2 className="text-4xl font-semibold leading-[1.05] tracking-tight md:text-5xl">
-          <WordRise text="Questions, answered." />
+          <WordRise text="Questions, answered." accent={["answered."]} />
         </h2>
         <Reveal delay={0.1}>
           <Faq items={faq} />

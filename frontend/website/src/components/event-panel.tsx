@@ -6,8 +6,8 @@ import type { Module } from "@/lib/content";
 
 const STATE = {
   blocked: { I: Prohibit, cls: "text-danger", label: "Blocked" },
-  flagged: { I: WarningCircle, cls: "text-fg", label: "Flagged" },
-  allowed: { I: CheckCircle, cls: "text-signal", label: "Allowed" },
+  flagged: { I: WarningCircle, cls: "text-brand-ink", label: "Flagged" },
+  allowed: { I: CheckCircle, cls: "text-muted", label: "Allowed" },
 } as const;
 
 /** Example events for a module, arriving one after another. */

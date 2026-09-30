@@ -2,9 +2,10 @@
 
 import { CheckCircle } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "motion/react";
+import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
-import { getModule, solutions } from "@/lib/content";
+import { getModule, solutionImages, solutions } from "@/lib/content";
 
 export function SolutionsTabs() {
   const [active, setActive] = useState(solutions[0].id);
@@ -12,24 +13,24 @@ export function SolutionsTabs() {
 
   return (
     <div>
-      <div role="tablist" aria-label="Solutions" className="flex gap-1 overflow-x-auto rounded-full border border-line bg-surface p-1 [scrollbar-width:none]">
+      <div role="tablist" aria-label="Solutions" className="grid grid-cols-2 gap-1 rounded-[22px] border border-line bg-surface p-1 sm:flex sm:rounded-full">
         {solutions.map((x) => (
           <button
             key={x.id}
             role="tab"
             aria-selected={active === x.id}
             onClick={() => setActive(x.id)}
-            className={`relative whitespace-nowrap rounded-full px-5 py-2.5 text-sm font-medium transition-colors ${active === x.id ? "text-invert-fg" : "text-muted hover:text-fg"}`}
+            className={`relative whitespace-nowrap rounded-full px-5 py-2.5 text-sm font-medium transition-colors ${active === x.id ? "text-on-brand" : "text-muted hover:text-fg"}`}
           >
             {active === x.id && (
-              <motion.span layoutId="sol-pill" className="absolute inset-0 -z-0 rounded-full bg-invert-bg" transition={{ type: "spring", stiffness: 380, damping: 32 }} />
+              <motion.span layoutId="sol-pill" className="absolute inset-0 -z-0 rounded-full bg-brand" transition={{ type: "spring", stiffness: 380, damping: 32 }} />
             )}
             <span className="relative">{x.name}</span>
           </button>
         ))}
       </div>
 
-      <div className="relative mt-8 min-h-[420px]">
+      <div className="relative mt-8 min-h-[420px] lg:min-h-[680px]">
         <AnimatePresence mode="wait">
           <motion.div
             key={s.id}
@@ -52,14 +53,19 @@ export function SolutionsTabs() {
                     transition={{ delay: 0.15 + i * 0.07, duration: 0.4 }}
                     className="flex items-center gap-3 text-fg-2"
                   >
-                    <CheckCircle size={20} weight="fill" className="text-fg" />
+                    <CheckCircle size={20} weight="fill" className="text-brand-ink" />
                     {p}
                   </motion.li>
                 ))}
               </ul>
             </div>
             <div className="relative overflow-hidden ink-edge rounded-[20px] bg-ink p-8 text-ink-fg md:p-10">
-              <div className="dot-field-ink absolute inset-0 opacity-70" aria-hidden />
+              <div className="relative -mx-8 -mt-8 mb-8 aspect-[4/3] overflow-hidden md:-mx-10 md:-mt-10">
+                <motion.div initial={{ scale: 1.08 }} animate={{ scale: 1 }} transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1] }} className="absolute inset-0">
+                  <Image src={solutionImages[s.id].image} alt={solutionImages[s.id].alt} fill sizes="(max-width: 1024px) 100vw, 460px" className="object-cover" />
+                </motion.div>
+                <div className="absolute inset-0 bg-gradient-to-t from-ink via-transparent to-transparent" />
+              </div>
               <p className="relative text-sm opacity-60">Built from</p>
               <ul className="relative mt-6 grid gap-3">
                 {s.modules.map((slug, i) => {
