@@ -48,8 +48,8 @@ export function ParallaxImage({
           fill
           sizes={sizes}
           className="object-cover"
-          loading={eager ? "eager" : "lazy"}
-          fetchPriority={eager ? "high" : "auto"}
+          // eager = this image is the page's LCP: preload it from <head>.
+          {...(eager ? { preload: true } : { loading: "lazy" as const })}
         />
       </motion.div>
       {children}
