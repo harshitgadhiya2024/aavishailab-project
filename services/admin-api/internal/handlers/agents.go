@@ -1454,6 +1454,13 @@ func defaultMITMBypassDomains() []string {
 		"clients2.google.com", "clients4.google.com", "dl.google.com",
 		"update.googleapis.com", "accounts.google.com",
 		"addons.mozilla.org", "aus5.mozilla.org",
+		// WhatsApp's desktop app pins the certificate of its media hosts
+		// (mmg.whatsapp.net, media.*.whatsapp.net): intercepted, every photo
+		// and document upload failed while text, which uses its own protocol,
+		// still went. Nothing is lost by passing it through — media is
+		// end-to-end encrypted before upload, so DLP would only ever see
+		// ciphertext. Blocking WhatsApp by host is unaffected.
+		"whatsapp.net",
 	}
 }
 
