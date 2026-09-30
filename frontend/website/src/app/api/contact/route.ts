@@ -2,6 +2,8 @@
 // the team and the requester, and lists it in the superadmin panel); this
 // route validates, rate-limits and forwards it server-to-server.
 
+import http from "node:http";
+
 const MAX = 4000;
 const ADMIN_API = process.env.ADMIN_API_INTERNAL_URL || "http://admin-api:6000";
 
@@ -18,6 +20,35 @@ function limited(ip: string) {
   hits.set(ip, recent);
   if (hits.size > 5000) hits.clear();
   return recent.length > LIMIT;
+}
+
+// admin-api listens on 6000 inside the compose network, and 6000 is on the
+// fetch spec's blocked-port list (fetch fails with "bad port"), so this call
+// uses node:http directly.
+function postInternal(url: string, payload: unknown): Promise<{ status: number; body: string }> {
+  const data = JSON.stringify(payload);
+  return new Promise((resolve, reject) => {
+    const r = http.request(
+      url,
+      {
+        method: "POST",
+        timeout: 8000,
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(data),
+          "X-Internal-Secret": process.env.INTERNAL_API_SECRET || "",
+        },
+      },
+      (res) => {
+        let body = "";
+        res.on("data", (c) => (body += c));
+        res.on("end", () => resolve({ status: res.statusCode ?? 0, body }));
+      },
+    );
+    r.on("timeout", () => r.destroy(new Error("timeout")));
+    r.on("error", reject);
+    r.end(data);
+  });
 }
 
 export async function POST(req: Request) {
@@ -53,17 +84,12 @@ export async function POST(req: Request) {
   }
 
   try {
-    const res = await fetch(`${ADMIN_API}/internal/website/demo-requests`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Internal-Secret": process.env.INTERNAL_API_SECRET || "" },
-      body: JSON.stringify(lead),
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) throw new Error(`admin-api ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    const res = await postInternal(`${ADMIN_API}/internal/website/demo-requests`, lead);
+    if (res.status < 200 || res.status >= 300) throw new Error(`admin-api ${res.status}: ${res.body.slice(0, 200)}`);
   } catch (err) {
     // Keep the lead recoverable from `docker logs` even when admin-api is down.
     console.error("[demo-request] forward failed", err, JSON.stringify(lead));
-    return Response.json({ error: "Could not send your request. Please try again." }, { status: 502 });
+    return Response.json({ error: "Could not send your request. Please try again." }, { status: 500 });
   }
 
   return Response.json({ ok: true });
