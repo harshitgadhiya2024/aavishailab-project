@@ -93,17 +93,23 @@ func (h *DemoRequestHandler) Submit(c *gin.Context) {
 }
 
 // notifyList decides who hears about a new request: LEADS_NOTIFY_EMAIL
-// (comma-separated) if set, else SUPERADMIN_MAIL, else every active
-// superadmin account, so a fresh install still gets the email.
+// (comma-separated) if set, else the platform team (see teamRecipients).
 func (h *DemoRequestHandler) notifyList() []string {
-	if v := os.Getenv("LEADS_NOTIFY_EMAIL"); v != "" {
+	return teamRecipients(h.db, "LEADS_NOTIFY_EMAIL")
+}
+
+// teamRecipients is who on the Delsecure side hears about something: the
+// comma-separated addresses in envKey if set, else SUPERADMIN_MAIL, else
+// every active superadmin account, so a fresh install still gets the email.
+func teamRecipients(db *gorm.DB, envKey string) []string {
+	if v := os.Getenv(envKey); v != "" {
 		return strings.Split(v, ",")
 	}
 	if v := mailer.Settings().SuperadminEmail; v != "" {
 		return []string{v}
 	}
 	var emails []string
-	h.db.Model(&models.User{}).
+	db.Model(&models.User{}).
 		Where("role = ? AND status = ?", models.RoleSuperAdmin, models.StatusActive).
 		Pluck("email", &emails)
 	return emails

@@ -134,6 +134,7 @@ func (h *ComplianceHandler) Purge(c *gin.Context) {
 		tx.Unscoped().Where("org_id = ?", orgID).Delete(&models.ActivityEvent{})
 		tx.Unscoped().Where("org_id = ?", orgID).Delete(&models.BillingRecord{})
 		tx.Unscoped().Where("flag_id IN (SELECT id FROM feature_flags) AND org_id = ?", orgID).Delete(&models.FeatureFlagOrg{})
+		tx.Where("ticket_id IN (SELECT id FROM support_tickets WHERE org_id = ?)", orgID).Delete(&models.SupportTicketAttachment{})
 		tx.Where("ticket_id IN (SELECT id FROM support_tickets WHERE org_id = ?)", orgID).Delete(&models.SupportTicketMessage{})
 		tx.Unscoped().Where("org_id = ?", orgID).Delete(&models.SupportTicket{})
 		tx.Unscoped().Where("id = ?", orgID).Delete(&models.Organization{})

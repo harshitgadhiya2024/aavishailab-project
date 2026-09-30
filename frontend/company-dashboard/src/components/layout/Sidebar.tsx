@@ -6,7 +6,6 @@ import {
   Shield, LayoutDashboard, Users, UsersRound,
   Activity, Globe, Bot, Monitor, ChevronLeft, ChevronRight, ChevronDown,
   BarChart3, FileWarning, Inbox, Tags, UserCog, AppWindow, Camera,
-  LifeBuoy
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
@@ -53,14 +52,6 @@ const navGroups: NavGroup[] = [
       { href: "/dashboard/access-requests", icon: Inbox, label: "Access Requests", permission: PERMISSIONS.accessRequestsRead },
       { href: "/dashboard/reports", icon: BarChart3, label: "Reports", permission: PERMISSIONS.reportsRead },
       { href: "/dashboard/ai-assistant", icon: Bot, label: "AI Assistant", permission: PERMISSIONS.aiUse },
-    ],
-  },
-  {
-    id: "support",
-    label: "Help",
-    items: [
-      // No permission gate — every role can ask for help.
-      { href: "/dashboard/support", icon: LifeBuoy, label: "Support" },
     ],
   },
 ];

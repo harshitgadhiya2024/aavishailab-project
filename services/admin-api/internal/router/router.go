@@ -256,6 +256,7 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 			saTickets.GET("/:id", ticketH.GetAny)
 			saTickets.PATCH("/:id", ticketH.UpdateStatus)
 			saTickets.POST("/:id/messages", ticketH.AddMessageAny)
+			saTickets.GET("/:id/attachments/:aid", ticketH.AttachmentAny)
 		}
 
 		agentPkgs := superadmin.Group("/agent-packages")
@@ -539,9 +540,13 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	tickets := company.Group("/tickets")
 	{
 		tickets.GET("", ticketH.ListForOrg)
+		tickets.GET("/unread", ticketH.UnreadForOrg)
 		tickets.POST("", ticketH.Create)
 		tickets.GET("/:id", ticketH.Get)
 		tickets.POST("/:id/messages", ticketH.AddMessage)
+		tickets.POST("/:id/resolve", ticketH.Resolve)
+		tickets.POST("/:id/feedback", ticketH.Feedback)
+		tickets.GET("/:id/attachments/:aid", ticketH.Attachment)
 	}
 
 	// ─── Employee Portal (employee JWT) ───────────────────────────────────────

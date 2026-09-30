@@ -110,6 +110,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&models.FeatureFlagOrg{},
 		&models.SupportTicket{},
 		&models.SupportTicketMessage{},
+		&models.SupportTicketAttachment{},
 		&models.DemoRequest{},
 	)
 }

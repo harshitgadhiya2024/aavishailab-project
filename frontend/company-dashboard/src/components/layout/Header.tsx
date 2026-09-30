@@ -1,14 +1,38 @@
 "use client";
 
 import { useSession, signOut } from "next-auth/react";
-import { LogOut, Settings, ChevronDown, Building2 } from "lucide-react";
+import { LogOut, Settings, ChevronDown, Building2, LifeBuoy } from "lucide-react";
 import { useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { getInitials } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { NotificationBell } from "@/components/layout/NotificationBell";
+import { SupportButton } from "@/components/support/SupportButton";
+
+// Page title shown in the header, by route prefix (most specific first).
+const TITLES: [string, string][] = [
+  ["/dashboard/support", "Help & support"],
+  ["/dashboard/reports", "Reports"],
+  ["/dashboard/employees", "Employees"],
+  ["/dashboard/teams", "Teams"],
+  ["/dashboard/devices", "Devices"],
+  ["/dashboard/users", "Team & access"],
+  ["/dashboard/categories", "Policy categories"],
+  ["/dashboard/swg", "Web gateway"],
+  ["/dashboard/applications", "Application control"],
+  ["/dashboard/dlp", "Data loss prevention"],
+  ["/dashboard/activity", "Activity"],
+  ["/dashboard/screenshots", "Screenshots"],
+  ["/dashboard/access-requests", "Access requests"],
+  ["/dashboard/ai-assistant", "AI assistant"],
+  ["/dashboard/profile", "Company profile"],
+  ["/dashboard/settings", "Settings"],
+];
 
 export function Header({ title }: { title?: string }) {
+  const pathname = usePathname();
+  const pageTitle = title || TITLES.find(([p]) => pathname.startsWith(p))?.[1] || "Dashboard";
   const { data: session } = useSession();
   const [open, setOpen] = useState(false);
   const user = (session as any)?.user;
@@ -16,7 +40,7 @@ export function Header({ title }: { title?: string }) {
   return (
     <header className="h-16 bg-card border-b border-border flex items-center justify-between px-6 sticky top-0 z-30">
       <div>
-        <h1 className="text-lg font-semibold text-foreground">{title || "Dashboard"}</h1>
+        <h1 className="text-lg font-semibold text-foreground">{pageTitle}</h1>
       </div>
 
       <div className="flex items-center gap-3">
@@ -28,6 +52,10 @@ export function Header({ title }: { title?: string }) {
 
         {/* Theme */}
         <ThemeToggle />
+
+        {/* Help & support: every role can ask for help, so it lives in the
+            header rather than in a permission-gated sidebar group. */}
+        <SupportButton />
 
         {/* Notifications */}
         <NotificationBell />
@@ -74,6 +102,13 @@ export function Header({ title }: { title?: string }) {
                   className="flex items-center gap-2 px-4 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
                 >
                   <Settings className="w-4 h-4" /> Settings
+                </Link>
+                <Link
+                  href="/dashboard/support"
+                  onClick={() => setOpen(false)}
+                  className="flex items-center gap-2 px-4 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  <LifeBuoy className="w-4 h-4" /> Help &amp; support
                 </Link>
 
                 <div className="border-t border-border mt-1 pt-1">

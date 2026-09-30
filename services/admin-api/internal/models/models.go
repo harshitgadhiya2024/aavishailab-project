@@ -800,25 +800,61 @@ type SupportTicket struct {
 	Base
 	// OrgID is nil for a ticket a superadmin opens directly (an internal /
 	// platform issue) rather than one raised by an org.
-	OrgID        *uuid.UUID     `gorm:"type:uuid;index" json:"org_id"`
+	OrgID *uuid.UUID `gorm:"type:uuid;index" json:"org_id"`
+	// Number is the customer-facing reference ("DS-1042"). Assigned by the
+	// database sequence (see database.MigrateSupportTickets), never by Go.
+	Number       int64          `gorm:"->;column:number" json:"number"`
 	Subject      string         `gorm:"not null" json:"subject"`
+	Category     string         `gorm:"type:varchar(30);default:'other'" json:"category"`
 	Status       TicketStatus   `gorm:"type:varchar(20);default:'open'" json:"status"`
 	Priority     TicketPriority `gorm:"type:varchar(20);default:'normal'" json:"priority"`
 	CreatedByID  uuid.UUID      `gorm:"type:uuid;not null" json:"created_by_id"`
 	AssignedToID *uuid.UUID     `gorm:"type:uuid" json:"assigned_to_id"`
 
+	// Conversation state, kept on the ticket so lists don't re-scan messages.
+	LastMessageAt   *time.Time `json:"last_message_at"`
+	LastMessageSide string     `gorm:"type:varchar(10)" json:"last_message_side"` // customer | support
+	CustomerReadAt  *time.Time `json:"customer_read_at"`
+	SupportReadAt   *time.Time `json:"support_read_at"`
+	ResolvedAt      *time.Time `json:"resolved_at"`
+	// Customer feedback once resolved: 1 = solved, -1 = not solved.
+	Rating        *int   `json:"rating"`
+	RatingComment string `json:"rating_comment"`
+
 	Org *Organization `gorm:"foreignKey:OrgID" json:"org,omitempty"`
 }
+
+// Ticket message sides. System entries record status changes in the thread.
+const (
+	TicketSideCustomer = "customer"
+	TicketSideSupport  = "support"
+	TicketSideSystem   = "system"
+)
 
 // SupportTicketMessage is one entry in a ticket's thread — the ticket's
 // original description is just its first message, so there's one shape for
 // "what was said" instead of a separate free-text field that duplicates it.
 type SupportTicketMessage struct {
-	ID        uuid.UUID `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()" json:"id"`
-	TicketID  uuid.UUID `gorm:"type:uuid;not null;index" json:"ticket_id"`
-	AuthorID  uuid.UUID `gorm:"type:uuid;not null" json:"author_id"`
+	ID       uuid.UUID `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()" json:"id"`
+	TicketID uuid.UUID `gorm:"type:uuid;not null;index" json:"ticket_id"`
+	AuthorID uuid.UUID `gorm:"type:uuid;not null" json:"author_id"`
+	Side     string    `gorm:"type:varchar(10);default:'customer'" json:"side"`
+	// Internal notes are support-only and never shown or emailed to the org.
+	Internal  bool      `gorm:"default:false" json:"internal"`
 	Body      string    `gorm:"not null" json:"body"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+// SupportTicketAttachment is a file attached to one message.
+type SupportTicketAttachment struct {
+	ID          uuid.UUID `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()" json:"id"`
+	TicketID    uuid.UUID `gorm:"type:uuid;not null;index" json:"ticket_id"`
+	MessageID   uuid.UUID `gorm:"type:uuid;not null;index" json:"message_id"`
+	FileName    string    `gorm:"not null" json:"file_name"`
+	ContentType string    `json:"content_type"`
+	Size        int64     `json:"size"`
+	StorageKey  string    `gorm:"not null" json:"-"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // ─── Demo Requests ───────────────────────────────────────────────────────────

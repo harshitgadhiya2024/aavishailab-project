@@ -377,9 +377,15 @@ export const companyApi = {
 
 // ─── Support tickets ──────────────────────────────────────────────────────────
 export const ticketApi = {
-  list: () => api.get("/api/v1/tickets"),
+  list: (view?: string) => api.get("/api/v1/tickets", { params: view ? { view } : undefined }),
+  unread: () => api.get("/api/v1/tickets/unread"),
   get: (id: string) => api.get(`/api/v1/tickets/${id}`),
-  create: (data: { subject: string; body: string; priority?: string }) =>
-    api.post("/api/v1/tickets", data),
-  addMessage: (id: string, body: string) => api.post(`/api/v1/tickets/${id}/messages`, { body }),
+  /** FormData: subject, body, category, priority, files[] */
+  create: (form: FormData) => api.post("/api/v1/tickets", form, { headers: { "Content-Type": "multipart/form-data" }, timeout: 120000 }),
+  /** FormData: body, files[] */
+  reply: (id: string, form: FormData) =>
+    api.post(`/api/v1/tickets/${id}/messages`, form, { headers: { "Content-Type": "multipart/form-data" }, timeout: 120000 }),
+  resolve: (id: string) => api.post(`/api/v1/tickets/${id}/resolve`),
+  feedback: (id: string, rating: 1 | -1, comment?: string) => api.post(`/api/v1/tickets/${id}/feedback`, { rating, comment }),
+  attachment: (id: string, aid: string) => api.get(`/api/v1/tickets/${id}/attachments/${aid}`),
 };

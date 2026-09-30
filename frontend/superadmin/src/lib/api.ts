@@ -131,8 +131,11 @@ export const superAdminTicketApi = {
   list: (params?: Record<string, any>) => api.get("/superadmin/tickets", { params }),
   get: (id: string) => api.get(`/superadmin/tickets/${id}`),
   create: (data: any) => api.post("/superadmin/tickets", data),
-  updateStatus: (id: string, data: any) => api.patch(`/superadmin/tickets/${id}`, data),
-  addMessage: (id: string, body: string) => api.post(`/superadmin/tickets/${id}/messages`, { body }),
+  update: (id: string, data: { status?: string; priority?: string; assigned_to_id?: string }) => api.patch(`/superadmin/tickets/${id}`, data),
+  /** FormData: body, internal ("true"), status (optional), files[] */
+  reply: (id: string, form: FormData) =>
+    api.post(`/superadmin/tickets/${id}/messages`, form, { headers: { "Content-Type": "multipart/form-data" }, timeout: 120000 }),
+  attachment: (id: string, aid: string) => api.get(`/superadmin/tickets/${id}/attachments/${aid}`),
 };
 
 export const agentPackageApi = {

@@ -24,6 +24,9 @@ type Message struct {
 	Subject string
 	HTML    string
 	Text    string
+	// Headers are extra RFC 5322 headers, e.g. Message-ID / In-Reply-To /
+	// References so every email about one ticket lands in one thread.
+	Headers map[string]string
 }
 
 type Config struct {
@@ -223,6 +226,14 @@ func buildMIME(msg Message) []byte {
 	fmt.Fprintf(&b, "To: %s\r\n", strings.Join(msg.To, ", "))
 	fmt.Fprintf(&b, "Subject: %s\r\n", msg.Subject)
 	fmt.Fprintf(&b, "Date: %s\r\n", time.Now().Format(time.RFC1123Z))
+	for k, v := range msg.Headers {
+		// Header values come from our own code, but never let one smuggle a
+		// line break into the message head.
+		if strings.ContainsAny(k+v, "\r\n") {
+			continue
+		}
+		fmt.Fprintf(&b, "%s: %s\r\n", k, v)
+	}
 	b.WriteString("MIME-Version: 1.0\r\n")
 	fmt.Fprintf(&b, "Content-Type: multipart/alternative; boundary=%q\r\n\r\n", boundary)
 
