@@ -1449,6 +1449,12 @@ func defaultMITMBypassDomains() []string {
 		"swupd.apple.com", "mesu.apple.com", "gs.apple.com",
 		"ocsp.apple.com", "crl.apple.com", "valid.apple.com",
 		"xp.apple.com", "gdmf.apple.com", "appleid.apple.com",
+		// macOS Software Update: the catalog (swscan) is what "Check for
+		// updates" fetches first, and without it the check fails outright
+		// with NSURLErrorDomain -1012; the rest serve the updates themselves.
+		"swscan.apple.com", "swdist.apple.com", "swcdn.apple.com",
+		"oscdn.apple.com", "osrecovery.apple.com", "skl.apple.com",
+		"cdn-apple.com",
 		"windowsupdate.com", "update.microsoft.com", "delivery.mp.microsoft.com",
 		"login.microsoftonline.com", "login.live.com",
 		"clients2.google.com", "clients4.google.com", "dl.google.com",
