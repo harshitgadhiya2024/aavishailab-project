@@ -12,11 +12,11 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: "DelSecure | Endpoint Security, DLP and Web Filtering for Every Device",
-    template: "%s | DelSecure",
+    default: "Aavishield | Endpoint Security, DLP and Web Filtering for Every Device",
+    template: "%s | Aavishield",
   },
   description:
-    "DelSecure is endpoint security for companies. One lightweight agent enforces web filtering, data loss prevention, application control, VPN blocking, malware scanning and device posture on macOS, Windows and Linux.",
+    "Aavishield is endpoint security for companies. One lightweight agent enforces web filtering, data loss prevention, application control, VPN blocking, malware scanning and device posture on macOS, Windows and Linux.",
   applicationName: SITE_NAME,
   keywords: [
     "endpoint security",
@@ -39,12 +39,12 @@ export const metadata: Metadata = {
     siteName: SITE_NAME,
     locale: "en_US",
     url: "/",
-    title: "DelSecure | Endpoint security for every device",
+    title: "Aavishield | Endpoint security for every device",
     description: "Web gateway, DLP, application control, VPN control, malware scanning and device posture in one agent.",
   },
   twitter: {
     card: "summary_large_image",
-    title: "DelSecure | Endpoint security for every device",
+    title: "Aavishield | Endpoint security for every device",
     description: "Web gateway, DLP, application control, VPN control, malware scanning and device posture in one agent.",
   },
   robots: { index: true, follow: true, googleBot: { index: true, follow: true, "max-image-preview": "large", "max-snippet": -1 } },

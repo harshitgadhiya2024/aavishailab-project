@@ -10,7 +10,15 @@ import { ModuleIcon } from "@/components/icons";
 import { Enter, HeadlineRise } from "@/components/motion/enter";
 import { Float } from "@/components/motion/float";
 import { Reveal, Stagger, StaggerItem, WordRise } from "@/components/motion/reveal";
-import { ParallaxImage } from "@/components/parallax-image";
+import Image from "next/image";
+import { FeatureSplit, LinkCards } from "@/components/blocks";
+import { BrowserFrame } from "@/components/browser-frame";
+import { ScrollTilt } from "@/components/scroll-tilt";
+import { Section, SectionHead } from "@/components/section";
+import { SolutionIcon } from "@/components/solution-icon";
+import { moduleShots } from "@/lib/module-shots";
+import { shots } from "@/lib/shots";
+import { solutionsList } from "@/lib/solutions";
 import { CTA, getModule, moduleExtras, modules, type ModuleSlug } from "@/lib/content";
 import { JsonLd, SITE_URL, breadcrumbLd, faqLd } from "@/lib/seo";
 
@@ -30,8 +38,8 @@ export async function generateMetadata(props: PageProps<"/platform/[slug]">): Pr
     description: x.description,
     keywords: x.keywords,
     alternates: { canonical: path },
-    openGraph: { url: path, title: `${x.seoTitle} | DelSecure`, description: x.description, type: "article" },
-    twitter: { title: `${x.seoTitle} | DelSecure`, description: x.description },
+    openGraph: { url: path, title: `${x.seoTitle} | Aavishield`, description: x.description, type: "article" },
+    twitter: { title: `${x.seoTitle} | Aavishield`, description: x.description },
   };
 }
 
@@ -44,6 +52,8 @@ export default async function ModulePage(props: PageProps<"/platform/[slug]">) {
   const next = modules[(idx + 1) % modules.length];
   const related = [modules[(idx + 1) % modules.length], modules[(idx + 2) % modules.length]];
   const path = `/platform/${m.slug}`;
+  const ms = moduleShots[m.slug as ModuleSlug];
+  const sols = solutionsList.filter((x) => x.modules.includes(m.slug as ModuleSlug)).slice(0, 3);
 
   return (
     <>
@@ -56,8 +66,8 @@ export default async function ModulePage(props: PageProps<"/platform/[slug]">) {
           name: x.seoTitle,
           description: x.description,
           url: `${SITE_URL}${path}`,
-          primaryImageOfPage: `${SITE_URL}${x.image}`,
-          about: { "@type": "SoftwareApplication", name: `DelSecure ${m.name}`, applicationCategory: "SecurityApplication", operatingSystem: "macOS, Windows, Linux" },
+          primaryImageOfPage: `${SITE_URL}${shots[ms.hero].src}`,
+          about: { "@type": "SoftwareApplication", name: `Aavishield ${m.name}`, applicationCategory: "SecurityApplication", operatingSystem: "macOS, Windows, Linux" },
           isPartOf: { "@id": `${SITE_URL}/#website` },
         }}
       />
@@ -102,11 +112,13 @@ export default async function ModulePage(props: PageProps<"/platform/[slug]">) {
         </div>
       </section>
 
-      {/* Hero image with floating live panel */}
-      <section className="mx-auto max-w-[1400px] px-3 sm:px-4 md:px-6">
+      {/* Real console screen with floating live panel */}
+      <section className="mx-auto max-w-6xl px-4 md:px-6">
         <div className="relative">
-          <ParallaxImage src={x.image} alt={x.alt} sizes="(max-width: 1400px) 100vw, 1400px" aspect="aspect-[4/3] sm:aspect-[16/8]" eager strength={50} />
-          <div className="relative z-[1] mx-auto -mt-24 w-[calc(100%-1.5rem)] max-w-md sm:absolute sm:bottom-8 sm:right-8 sm:mt-0 sm:w-[380px]">
+          <ScrollTilt>
+            <BrowserFrame shot={shots[ms.hero]} priority sizes="(max-width: 1200px) 100vw, 1150px" />
+          </ScrollTilt>
+          <div className="relative z-[1] mx-auto -mt-16 w-[calc(100%-1.5rem)] max-w-md sm:absolute sm:-bottom-10 sm:-right-4 sm:mt-0 sm:w-[360px] lg:-right-10">
             <Reveal delay={0.4} y={30}>
               <Float amplitude={8} duration={7}>
                 <EventPanel title={m.name} events={m.events} />
@@ -132,6 +144,34 @@ export default async function ModulePage(props: PageProps<"/platform/[slug]">) {
         </Stagger>
       </section>
 
+      {/* Gallery: the console, screen by screen */}
+      <Section>
+        <SectionHead eyebrow="In the console" title={`${m.name}, screen by screen.`} accent={["screen"]} body="Real captures of the Aavishield console with demo data." />
+        <div className="mt-16 grid gap-24">
+          {ms.gallery.map((g, i) => (
+            <FeatureSplit key={g.title} eyebrow={`0${i + 1}`} title={g.title} body={g.body} points={g.points} shot={shots[g.shot]} crop={g.crop} reverse={i % 2 === 1} />
+          ))}
+        </div>
+      </Section>
+
+      {/* Detail crops + mood image */}
+      <Section>
+        <div className="grid gap-4 md:grid-cols-3">
+          {ms.detail.map((d) => (
+            <Reveal key={d.caption} className="min-w-0">
+              <BrowserFrame shot={shots[d.shot]} crop={d.crop} aspect="aspect-[4/3]" chrome={false} sizes="(max-width: 768px) 100vw, 380px" />
+              <p className="mt-3 text-sm text-muted">{d.caption}</p>
+            </Reveal>
+          ))}
+          <Reveal delay={0.1} className="min-w-0">
+            <div className="relative aspect-[4/3] overflow-hidden rounded-[18px] bg-ink">
+              <Image src={x.image} alt={x.alt} fill sizes="(max-width: 768px) 100vw, 380px" className="object-cover" />
+            </div>
+            <p className="mt-3 text-sm text-muted">{m.short}</p>
+          </Reveal>
+        </div>
+      </Section>
+
       {/* Flow */}
       <section className="mx-auto mt-28 max-w-6xl px-4 md:mt-36 md:px-6">
         <div className="ink-edge relative overflow-hidden rounded-[28px] bg-ink p-8 text-ink-fg md:p-14">
@@ -153,6 +193,23 @@ export default async function ModulePage(props: PageProps<"/platform/[slug]">) {
         </div>
       </section>
 
+      {/* Setup */}
+      <Section>
+        <div className="grid gap-12 lg:grid-cols-[0.9fr_1.1fr]">
+          <SectionHead eyebrow="Setup" title="Switched on in minutes." accent={["minutes."]} body="No appliance, no network change, no separate agent." />
+          <ol className="grid gap-3">
+            {ms.setup.map((st, i) => (
+              <Reveal key={st} delay={i * 0.06}>
+                <li className="flex items-center gap-5 rounded-[18px] border border-line bg-surface p-5">
+                  <span className="grid size-10 shrink-0 place-items-center rounded-full bg-brand font-mono text-sm font-semibold text-on-brand">{i + 1}</span>
+                  <span className="text-fg-2">{st}</span>
+                </li>
+              </Reveal>
+            ))}
+          </ol>
+        </div>
+      </Section>
+
       {/* Use cases */}
       <section className="mx-auto mt-28 max-w-6xl px-4 md:mt-36 md:px-6">
         <h2 className="max-w-2xl text-4xl font-semibold leading-[1.05] tracking-tight md:text-5xl">
@@ -169,6 +226,16 @@ export default async function ModulePage(props: PageProps<"/platform/[slug]">) {
           ))}
         </div>
       </section>
+
+      {/* Problems this solves */}
+      {sols.length > 0 && (
+        <Section>
+          <SectionHead eyebrow="Problems it solves" title={`Where ${m.name} makes the difference.`} />
+          <div className="mt-12">
+            <LinkCards items={sols.map((x2) => ({ href: `/solutions/${x2.slug}`, title: x2.name, body: x2.menu, icon: <SolutionIcon icon={x2.icon} size={22} /> }))} />
+          </div>
+        </Section>
+      )}
 
       {/* FAQ */}
       <section id="faq" className="mx-auto mt-28 grid max-w-6xl scroll-mt-28 gap-10 px-4 md:mt-36 md:grid-cols-[0.8fr_1.2fr] md:px-6">

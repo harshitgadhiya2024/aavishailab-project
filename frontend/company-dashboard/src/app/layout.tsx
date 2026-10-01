@@ -12,7 +12,7 @@ const inter = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Delsecure — Company Dashboard",
+  title: "Aavishield — Company Dashboard",
   description: "Zero Trust Security Platform — Company Admin",
   icons: { icon: "/favicon.ico" },
 };

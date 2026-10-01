@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Shield, LayoutDashboard, Users, UsersRound,
+  LayoutDashboard, Users, UsersRound,
   Activity, Globe, Monitor, ChevronLeft, ChevronRight, ChevronDown,
   BarChart3, FileWarning, Inbox, Tags, UserCog, AppWindow, Camera,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { PERMISSIONS, usePermissions } from "@/lib/permissions";
+import { BrandLogo, BrandMark } from "@/components/brand/BrandLogo";
 
 type NavItem = { href: string; icon: React.ElementType; label: string; permission?: string };
 type NavGroup = { id: string; label: string; items: NavItem[] };
@@ -137,13 +138,12 @@ export function Sidebar() {
     >
       {/* Logo */}
       <div className="flex items-center gap-3 px-4 py-5 border-b border-border">
-        <div className="w-8 h-8 bg-brand-500 rounded-lg flex items-center justify-center flex-shrink-0">
-          <Shield className="w-5 h-5 text-on-brand" />
-        </div>
-        {!collapsed && (
-          <div>
-            <span className="font-bold text-lg text-foreground">Delsecure</span>
-            <p className="text-xs text-muted-foreground">Company Admin</p>
+        {collapsed ? (
+          <BrandMark className="h-8 w-8" />
+        ) : (
+          <div className="min-w-0">
+            <BrandLogo className="h-12" priority />
+            <p className="mt-1 text-xs text-muted-foreground">Company Admin</p>
           </div>
         )}
       </div>
@@ -209,7 +209,7 @@ export function Sidebar() {
       {/* Footer version */}
       {!collapsed && (
         <div className="px-4 py-3 border-t border-border">
-          <p className="text-xs text-muted-foreground">Delsecure v1.0 MVP</p>
+          <p className="text-xs text-muted-foreground">Aavishield v1.0 MVP</p>
         </div>
       )}
     </aside>

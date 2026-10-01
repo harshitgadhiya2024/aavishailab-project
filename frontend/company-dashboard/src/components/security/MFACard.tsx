@@ -229,7 +229,7 @@ export function MFACard() {
                 const blob = new Blob([recoveryCodes.join("\n")], { type: "text/plain" });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement("a");
-                a.href = url; a.download = "delsecure-recovery-codes.txt"; a.click();
+                a.href = url; a.download = "aavishield-recovery-codes.txt"; a.click();
                 URL.revokeObjectURL(url);
               }}
               className="border border-border text-body hover:bg-elevated px-3 py-2 rounded-lg text-sm"

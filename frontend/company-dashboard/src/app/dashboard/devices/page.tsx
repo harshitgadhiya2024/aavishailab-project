@@ -213,7 +213,7 @@ export default function DevicesPage() {
       <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-border">
           <h3 className="font-semibold text-foreground">Registered Devices</h3>
-          <p className="text-xs text-subtle mt-0.5">Devices with Delsecure endpoint agent installed</p>
+          <p className="text-xs text-subtle mt-0.5">Devices with Aavishield endpoint agent installed</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -417,7 +417,7 @@ export default function DevicesPage() {
           <div>
             <h4 className="font-semibold text-brand-500">Endpoint Agent Deployment</h4>
             <p className="text-sm text-body mt-1">
-              Install the Delsecure Windows agent on employee machines to enable real-time DNS filtering,
+              Install the Aavishield Windows agent on employee machines to enable real-time DNS filtering,
               web policy enforcement, DLP, malware scanning, and SSL inspection where the org CA is trusted.
               Employees can download installers from the employee portal.
             </p>

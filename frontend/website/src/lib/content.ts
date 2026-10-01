@@ -39,7 +39,7 @@ export const modules: Module[] = [
     short: "Block and log sites by category or domain, on every device, on every network.",
     headline: "The web your company approves. Nothing else.",
     intro:
-      "Every request leaves the device through the DelSecure agent, so policy follows the laptop from the office to a hotel lobby without a hardware appliance in sight.",
+      "Every request leaves the device through the Aavishield agent, so policy follows the laptop from the office to a hotel lobby without a hardware appliance in sight.",
     capabilities: [
       { title: "Category blocking", body: "Social media, AI tools, gambling, and sensitive banking or government sites, switched on per policy." },
       { title: "Custom lists", body: "Admins add any domain to allow or block. Changes reach devices on their next policy pull." },
@@ -64,7 +64,7 @@ export const modules: Module[] = [
     short: "See sensitive data leaving through uploads, messages and email, without breaking anyone's work.",
     headline: "Know exactly what left the building.",
     intro:
-      "DelSecure watches outbound uploads, messages and emails across Gmail, Outlook, Teams, OneDrive, ChatGPT and any other site or app. It is monitor-only, so the business is never interrupted.",
+      "Aavishield watches outbound uploads, messages and emails across Gmail, Outlook, Teams, OneDrive, ChatGPT and any other site or app. It is monitor-only, so the business is never interrupted.",
     capabilities: [
       { title: "Pattern detection", body: "Card numbers, government IDs, API keys, credentials and source code." },
       { title: "AI classification", body: "Recognises a salary sheet, a contract or a photographed ID even when no fixed pattern exists." },
@@ -114,7 +114,7 @@ export const modules: Module[] = [
     short: "VPNs and anonymizers are blocked by default. No setup required.",
     headline: "No tunnels around your policy.",
     intro:
-      "Personal VPNs and anonymizers are the easiest way around a web policy. DelSecure blocks desktop clients, their downloads, and known browser extensions on every device from day one.",
+      "Personal VPNs and anonymizers are the easiest way around a web policy. Aavishield blocks desktop clients, their downloads, and known browser extensions on every device from day one.",
     capabilities: [
       { title: "On by default", body: "Protection starts the moment a device enrolls. There is nothing to configure." },
       { title: "Desktop clients", body: "Known VPN applications are stopped from running." },
@@ -189,7 +189,7 @@ export const modules: Module[] = [
     short: "Periodic screenshots and application usage, for the devices you choose to monitor.",
     headline: "See how work actually happens.",
     intro:
-      "For the devices an organisation chooses to monitor, DelSecure captures periodic screenshots and application usage, stored securely and visible only to admins.",
+      "For the devices an organisation chooses to monitor, Aavishield captures periodic screenshots and application usage, stored securely and visible only to admins.",
     capabilities: [
       { title: "Periodic screenshots", body: "Captured on a schedule you set, only on monitored devices." },
       { title: "App usage", body: "Which applications were in use, and for how long." },
@@ -211,47 +211,20 @@ export const modules: Module[] = [
 
 export const getModule = (slug: string) => modules.find((m) => m.slug === slug);
 
-export const solutions = [
-  {
-    id: "ai",
-    name: "AI governance",
-    headline: "Let people use AI without pasting the company into it.",
-    body: "Decide which AI tools are allowed, and see when source code, credentials or customer data are uploaded to them.",
-    points: ["Block or allow AI tools by category", "Flag sensitive uploads to ChatGPT and others", "Per-team policies for engineering, sales and finance"],
-    modules: ["web-gateway", "data-loss-prevention"] as ModuleSlug[],
-  },
-  {
-    id: "remote",
-    name: "Remote teams",
-    headline: "The same policy at home, in the office, and on the road.",
-    body: "Enforcement runs on the laptop itself, so there is no VPN concentrator or office firewall to route traffic through.",
-    points: ["Works on any network", "Personal VPNs blocked by default", "Downloads scanned wherever they happen"],
-    modules: ["web-gateway", "vpn-control", "malware-scanning"] as ModuleSlug[],
-  },
-  {
-    id: "compliance",
-    name: "Audit readiness",
-    headline: "Answer the auditor with evidence, not a spreadsheet.",
-    body: "Show encryption, firewall and patch status for every device, plus a record of where sensitive data went.",
-    points: ["Posture status per device", "Data movement history", "Application inventory across the fleet"],
-    modules: ["device-posture", "data-loss-prevention", "application-control"] as ModuleSlug[],
-  },
-  {
-    id: "insider",
-    name: "Insider risk",
-    headline: "Notice the resignation before the download.",
-    body: "Combine data movement, application use and activity monitoring to see risk building up, early.",
-    points: ["Sensitive uploads tied to the person", "Unapproved tools blocked", "Activity context for investigations"],
-    modules: ["data-loss-prevention", "application-control", "activity-monitoring"] as ModuleSlug[],
-  },
-];
-
 export const nav = [
-  { href: "/platform", label: "Platform" },
-  { href: "/solutions", label: "Solutions" },
-  { href: "/security", label: "Trust" },
+  { href: "/platform", label: "Platform", menu: "platform" },
+  { href: "/solutions", label: "Solutions", menu: "solutions" },
+  { href: "/product-tour", label: "Resources", menu: "resources" },
   { href: "/pricing", label: "Pricing" },
   { href: "/company", label: "Company" },
+] as const;
+
+export const resources = [
+  { href: "/product-tour", label: "Product tour", body: "Walk through the real console, screen by screen." },
+  { href: "/how-it-works", label: "How it works", body: "From install to first event in an afternoon." },
+  { href: "/why-aavishield", label: "Why Aavishield", body: "One agent instead of four separate tools." },
+  { href: "/security", label: "Trust and security", body: "How we protect the data we see." },
+  { href: "/faq", label: "FAQ", body: "Straight answers to common questions." },
 ];
 
 // One label per intent across the whole site.
@@ -274,7 +247,7 @@ export const moduleExtras: Record<ModuleSlug, ModuleExtra> = {
     alt: "Streams of light passing through a dark archway, with a few stopped by an orange barrier",
     seoTitle: "Secure Web Gateway for Every Laptop",
     description:
-      "Block and log websites by category or domain on every employee device, on any network. DelSecure's endpoint web gateway needs no appliance or VPN.",
+      "Block and log websites by category or domain on every employee device, on any network. Aavishield's endpoint web gateway needs no appliance or VPN.",
     keywords: ["secure web gateway", "web filtering", "URL filtering", "block websites for employees", "endpoint web filter"],
     useCases: [
       { title: "Keep work devices for work", body: "Block social media, gambling and adult categories on company laptops without touching personal phones." },
@@ -282,7 +255,7 @@ export const moduleExtras: Record<ModuleSlug, ModuleExtra> = {
       { title: "Protect remote staff", body: "The same filtering applies on home Wi-Fi, hotel networks and mobile hotspots." },
     ],
     faqs: [
-      { q: "Does the web gateway need a VPN or office network?", a: "No. Filtering runs in the DelSecure agent on each device, so it works on any network without routing traffic through an office." },
+      { q: "Does the web gateway need a VPN or office network?", a: "No. Filtering runs in the Aavishield agent on each device, so it works on any network without routing traffic through an office." },
       { q: "Can I block a single website that is not in a category?", a: "Yes. Admins can add any domain to a custom allow or block list, and devices pick it up on their next policy pull." },
       { q: "Are allowed visits logged too?", a: "Yes. Both allowed and blocked requests are recorded against the employee and device that made them." },
     ],
@@ -300,7 +273,7 @@ export const moduleExtras: Record<ModuleSlug, ModuleExtra> = {
       { title: "Catch documents, not just patterns", body: "AI classification recognises salary sheets, contracts and photographed IDs even with no fixed pattern." },
     ],
     faqs: [
-      { q: "Does DelSecure DLP block uploads?", a: "No. DLP is monitor-only by design. It records what sensitive data left and where it went, without interrupting anyone's work." },
+      { q: "Does Aavishield DLP block uploads?", a: "No. DLP is monitor-only by design. It records what sensitive data left and where it went, without interrupting anyone's work." },
       { q: "Which apps and sites does DLP cover?", a: "Gmail, Outlook, Microsoft Teams, OneDrive, ChatGPT and any other website or desktop app that sends data over the network." },
       { q: "Can it read scanned documents and images?", a: "Yes. Documents, archives, PDFs and images are unpacked, and scanned or photographed pages are read with OCR." },
     ],
@@ -328,10 +301,10 @@ export const moduleExtras: Record<ModuleSlug, ModuleExtra> = {
     alt: "A long dark tunnel of light blocked near the end by a wall of orange light",
     seoTitle: "Block Personal VPNs and Anonymizers on Company Devices",
     description:
-      "DelSecure blocks VPN clients, VPN installers and proxy browser extensions on every device by default, so employees cannot tunnel around your web policy.",
+      "Aavishield blocks VPN clients, VPN installers and proxy browser extensions on every device by default, so employees cannot tunnel around your web policy.",
     keywords: ["block VPN", "VPN blocking software", "block anonymizer", "block proxy extension", "VPN control"],
     useCases: [
-      { title: "Close the easiest bypass", body: "A personal VPN would sidestep web filtering. DelSecure stops it before it connects." },
+      { title: "Close the easiest bypass", body: "A personal VPN would sidestep web filtering. Aavishield stops it before it connects." },
       { title: "Zero setup", body: "Protection is on from the moment a device enrolls. There is nothing to configure." },
       { title: "Cover the browser too", body: "Proxy and VPN extensions are blocked alongside desktop clients." },
     ],
@@ -372,7 +345,7 @@ export const moduleExtras: Record<ModuleSlug, ModuleExtra> = {
       { title: "Onboard with confidence", body: "Check new devices meet your baseline as soon as they enroll." },
     ],
     faqs: [
-      { q: "What does DelSecure check?", a: "Disk encryption (FileVault, BitLocker, LUKS), OS firewall, operating system patch level, and antivirus presence." },
+      { q: "What does Aavishield check?", a: "Disk encryption (FileVault, BitLocker, LUKS), OS firewall, operating system patch level, and antivirus presence." },
       { q: "How often are devices checked?", a: "Continuously. The agent reports posture regularly so the console reflects the current state." },
       { q: "Does it fix problems automatically?", a: "It highlights non-compliant devices and what needs fixing, so IT can follow up." },
     ],
@@ -395,11 +368,4 @@ export const moduleExtras: Record<ModuleSlug, ModuleExtra> = {
       { q: "What does app usage show?", a: "Which applications were in use on a monitored device, and for how long." },
     ],
   },
-};
-
-export const solutionImages: Record<string, { image: string; alt: string }> = {
-  ai: { image: "/images/solution-ai.webp", alt: "A professional working on a laptop with faint orange particles rising from the screen" },
-  remote: { image: "/images/solution-remote.webp", alt: "A woman working on a laptop in a cafe by a rainy window at dusk" },
-  compliance: { image: "/images/solution-compliance.webp", alt: "Orderly archive boxes on dark shelves with one small orange indicator light" },
-  insider: { image: "/images/solution-insider.webp", alt: "A silhouetted person in an empty office at night beside an orange desk lamp" },
 };

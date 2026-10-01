@@ -45,7 +45,7 @@ export default function DevicesPage() {
       <div>
         <h2 className="text-2xl font-bold text-foreground">My Devices</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Devices enrolled with the Delsecure security agent
+          Devices enrolled with the Aavishield security agent
         </p>
       </div>
 

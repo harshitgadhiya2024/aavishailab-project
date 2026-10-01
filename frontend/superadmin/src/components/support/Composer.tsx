@@ -53,7 +53,7 @@ export function Composer({
       <label htmlFor="sa-composer" className="sr-only">Message</label>
       <textarea id="sa-composer" value={body} onChange={(e) => setBody(e.target.value)} rows={4}
         onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(false); } }}
-        placeholder={internal ? "Only the Delsecure team sees this note…" : `Reply to ${customerName}. They'll get it by email too…`}
+        placeholder={internal ? "Only the Aavishield team sees this note…" : `Reply to ${customerName}. They'll get it by email too…`}
         className="block w-full resize-y bg-transparent px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none" />
       {files.length > 0 && (
         <ul className="flex flex-wrap gap-2 px-4 pb-3">

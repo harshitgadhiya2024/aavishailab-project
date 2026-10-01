@@ -88,7 +88,9 @@ pub fn build(ui_state: UiState) -> Option<Tray> {
     menu.append(&open_item).ok()?;
     menu.append(&status_item).ok()?;
 
-    let icon = tray_icon::Icon::from_rgba(shield_rgba(), 64, 64).ok()?;
+    // The Aavishield mark — the same artwork as the app and installer icons.
+    let (rgba, w, h) = crate::brand::rgba(crate::brand::MARK_PNG, Some(64))?;
+    let icon = tray_icon::Icon::from_rgba(rgba, w, h).ok()?;
 
     let show = ShowSignal::default();
     let tray = TrayIconBuilder::new()
@@ -110,45 +112,4 @@ pub fn build(ui_state: UiState) -> Option<Tray> {
     }));
 
     Some(Tray { _icon: tray, show })
-}
-
-/// A brand-orange shield, matching the pystray icon's own generated glyph
-/// (a hexagonal shield silhouette) closely enough to be recognisable, not
-/// pixel-identical — a tray icon at 16-22px doesn't reward more detail than
-/// this.
-fn shield_rgba() -> Vec<u8> {
-    const SIZE: usize = 64;
-    let mut buf = vec![0u8; SIZE * SIZE * 4];
-    let cx = SIZE as f32 / 2.0;
-    let cy = SIZE as f32 / 2.0;
-    for y in 0..SIZE {
-        for x in 0..SIZE {
-            let (fx, fy) = (x as f32 - cx, y as f32 - cy);
-            let inside = point_in_shield(fx / cx, fy / cy);
-            let idx = (y * SIZE + x) * 4;
-            if inside {
-                buf[idx] = 0xFF;
-                buf[idx + 1] = 0x70;
-                buf[idx + 2] = 0x00;
-                buf[idx + 3] = 0xFF;
-            }
-        }
-    }
-    buf
-}
-
-/// Normalised (-1..1, -1..1) point-in-shield test — a hexagon tapering to a
-/// point at the bottom, the same silhouette the HTML UI's SVG path draws.
-fn point_in_shield(x: f32, y: f32) -> bool {
-    if y < -0.85 || y > 0.9 {
-        return false;
-    }
-    let width_at_y = if y < -0.3 {
-        // Shoulders: widest just below the top edge.
-        0.85 * (1.0 - (y + 0.85) / 0.55 * 0.15)
-    } else {
-        // Taper to the point.
-        0.85 * (1.0 - (y + 0.3) / 1.2).max(0.0)
-    };
-    x.abs() <= width_at_y
 }

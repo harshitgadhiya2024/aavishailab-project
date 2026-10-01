@@ -3,9 +3,10 @@
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Shield, Eye, EyeOff, Loader2, CheckCircle2 } from "lucide-react";
+import { Eye, EyeOff, Loader2, CheckCircle2 } from "lucide-react";
 import { authApi } from "@/lib/api";
 import { toast } from "sonner";
+import { BrandLogo } from "@/components/brand/BrandLogo";
 
 export default function ResetPasswordPage() {
   return (
@@ -73,10 +74,8 @@ function ResetPasswordForm() {
 
       <div className="relative w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-brand-500 rounded-2xl mb-4">
-            <Shield className="w-8 h-8 text-on-brand" />
-          </div>
-          <h1 className="text-2xl font-bold text-foreground">Delsecure</h1>
+          <BrandLogo className="h-16 mb-2" priority />
+            <h1 className="sr-only">Aavishield</h1>
           <p className="text-muted-foreground mt-1">Company Security Console</p>
         </div>
 

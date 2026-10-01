@@ -33,7 +33,7 @@ const QUICK_REPLIES = [
   "How do I block social media for a team?",
 ];
 
-const SESSION_KEY = "delsecure-assistant-session";
+const SESSION_KEY = "aavishield-assistant-session";
 const ATTACHMENT_TOOL = "report_attachment";
 let seq = 0;
 const nid = () => `m${Date.now()}-${seq++}`;
@@ -117,8 +117,8 @@ export function AssistantWidget() {
   // (it may run before this mounts), and any link can dispatch the event.
   useEffect(() => {
     try {
-      if (sessionStorage.getItem("delsecure-open-assistant")) {
-        sessionStorage.removeItem("delsecure-open-assistant");
+      if (sessionStorage.getItem("aavishield-open-assistant")) {
+        sessionStorage.removeItem("aavishield-open-assistant");
         setOpen(true);
       }
     } catch {}
@@ -129,8 +129,8 @@ export function AssistantWidget() {
       const q = (e as CustomEvent).detail?.prompt;
       if (q) setInput(q);
     };
-    window.addEventListener("delsecure:open-assistant", onOpen);
-    return () => window.removeEventListener("delsecure:open-assistant", onOpen);
+    window.addEventListener("aavishield:open-assistant", onOpen);
+    return () => window.removeEventListener("aavishield:open-assistant", onOpen);
   }, []);
 
   // Keyboard: Esc closes.
@@ -303,7 +303,7 @@ export function AssistantWidget() {
       {/* Launcher */}
       <button
         onClick={() => setOpen((o) => !o)}
-        aria-label={open ? "Close assistant" : "Open Delsecure AI assistant"}
+        aria-label={open ? "Close assistant" : "Open Aavishield AI assistant"}
         aria-expanded={open}
         className={cn(
           "fixed bottom-5 right-5 z-50 grid h-14 w-14 place-items-center rounded-full bg-brand-500 text-white shadow-[0_12px_32px_-8px_rgb(255_112_0/0.7)] transition-all duration-300 hover:scale-105 hover:bg-brand-600 active:scale-95",
@@ -322,7 +322,7 @@ export function AssistantWidget() {
       {/* Panel */}
       <section
         role="dialog"
-        aria-label="Delsecure AI assistant"
+        aria-label="Aavishield AI assistant"
         aria-hidden={!open}
         className={cn(
           "fixed z-50 flex flex-col overflow-hidden border border-border bg-card shadow-2xl transition-all duration-300 ease-out",
@@ -344,7 +344,7 @@ export function AssistantWidget() {
             <span className="grid h-8 w-8 place-items-center rounded-full bg-brand-500 text-white"><Sparkles className="h-4 w-4" /></span>
           )}
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-foreground">{view === "history" ? "Conversations" : "Delsecure Assistant"}</p>
+            <p className="text-sm font-semibold text-foreground">{view === "history" ? "Conversations" : "Aavishield Assistant"}</p>
             {view === "chat" && <p className="truncate text-[11px] text-muted-foreground">Live data · read-only</p>}
           </div>
           {view === "chat" && (
@@ -405,7 +405,7 @@ export function AssistantWidget() {
                   <Sparkles className="h-3.5 w-3.5" />
                 </span>
                 <div className="rounded-2xl rounded-tl-sm border border-border bg-elevated px-3.5 py-2.5 text-sm text-foreground">
-                  <p className="font-medium">Hi{firstName ? ` ${firstName}` : ""}! 👋 I&apos;m your Delsecure assistant.</p>
+                  <p className="font-medium">Hi{firstName ? ` ${firstName}` : ""}! 👋 I&apos;m your Aavishield assistant.</p>
                   <p className="mt-1 text-muted-foreground">
                     Ask me anything about your organization&apos;s security: employees, devices, alerts, policies or reports.
                     I read your live data and can export reports, but I never change settings.

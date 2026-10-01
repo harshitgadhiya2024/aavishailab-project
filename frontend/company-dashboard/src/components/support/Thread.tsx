@@ -86,7 +86,7 @@ export function Thread({
                 <div className="min-w-0">
                   <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-foreground">
                     {you ? "You" : m.author_name}
-                    {support && <span className="rounded-md bg-brand-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-500">Delsecure Support</span>}
+                    {support && <span className="rounded-md bg-brand-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-500">Aavishield Support</span>}
                     {m.source === "email" && <span className="rounded-md bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-500">via email</span>}
                     {m.internal && <span className="rounded-md bg-yellow-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-warning">Internal note</span>}
                   </p>

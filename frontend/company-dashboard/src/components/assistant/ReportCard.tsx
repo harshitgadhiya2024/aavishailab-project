@@ -40,7 +40,7 @@ export function ReportCard({ r }: { r: ReportAttachment }) {
   if (r.control) params.control = r.control;
   if (r.employee_id) params.employee_id = r.employee_id;
   const slug = r.employee_name ? `_${r.employee_name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}` : "";
-  const base = `delsecure_${r.type}${slug}_${r.start}_to_${r.end}`;
+  const base = `aavishield_${r.type}${slug}_${r.start}_to_${r.end}`;
   const period = r.start === r.end ? fmt(r.start) : `${fmt(r.start)} to ${fmt(r.end)}`;
 
   const get = async (f: "pdf" | "xlsx" | "csv") => {

@@ -97,12 +97,19 @@ Invoke-Sign $AgentExe
 $Wxs = @"
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi" xmlns:util="http://schemas.microsoft.com/wix/UtilExtension">
-  <Product Id="*" Name="Aavishield Agent (Rust)" Language="1033" Version="$Version"
+  <Product Id="*" Name="Aavishield Agent" Language="1033" Version="$Version"
            Manufacturer="Aavishield" UpgradeCode="9B3E5C2A-1F4B-4E52-8F1D-2C7A1B4D9F41">
     <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine"
-             Description="Aavishield security agent (Rust connector)" />
+             Description="Aavishield security agent" />
     <MajorUpgrade DowngradeErrorMessage="A newer version of the Aavishield Agent is already installed." />
     <MediaTemplate EmbedCab="yes" />
+
+    <!-- The Aavishield mark (packaging/icons/aavishield.ico, generated from
+         the brand favicon by packaging/make-icons.py) as the icon shown in
+         Settings > Apps and Programs and Features. The .exe carries the
+         same icon itself via build.rs. -->
+    <Icon Id="AavishieldIcon.ico" SourceFile="$RepoRoot\packaging\icons\aavishield.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AavishieldIcon.ico" />
 
     <Property Id="TOKEN" Secure="yes" />
     <Property Id="ADMINURL" Secure="yes" />
@@ -151,7 +158,7 @@ $Wxs = @"
       </Component>
     </DirectoryRef>
 
-    <Feature Id="Main" Title="Aavishield Agent (Rust)" Level="1">
+    <Feature Id="Main" Title="Aavishield Agent" Level="1">
       <ComponentRef Id="AgentExe" />
       <ComponentRef Id="AgentExePermissions" />
       <ComponentRef Id="EnrollDrop" />

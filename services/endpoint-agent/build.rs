@@ -26,4 +26,41 @@ fn main() {
     // since env var changes aren't tracked by file mtime the way source
     // changes are.
     println!("cargo:rerun-if-env-changed=AAVISHIELD_VERSION");
+
+    #[cfg(windows)]
+    windows_resources(&version);
+}
+
+/// Embeds the Aavishield icon (packaging/icons/aavishield.ico, generated
+/// from the brand favicon by packaging/make-icons.py) and the product
+/// details into the .exe. Only compiled on a Windows build host; only run
+/// when actually targeting Windows.
+#[cfg(windows)]
+fn windows_resources(version: &str) {
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
+        return;
+    }
+    let icon = "../../packaging/icons/aavishield.ico";
+    println!("cargo:rerun-if-changed={icon}");
+
+    // "2.9.0" -> 0x0002_0009_0000_0000, the packed form FILEVERSION wants.
+    let mut parts = version.split(|c: char| !c.is_ascii_digit()).filter(|p| !p.is_empty()).map(|p| p.parse::<u64>().unwrap_or(0));
+    let packed = (0..4).fold(0u64, |acc, _| (acc << 16) | (parts.next().unwrap_or(0) & 0xFFFF));
+
+    let mut res = winresource::WindowsResource::new();
+    res.set_icon(icon)
+        .set("ProductName", "Aavishield")
+        .set("FileDescription", "Aavishield Agent")
+        .set("CompanyName", "Aavishield")
+        .set("LegalCopyright", "© Aavish AI Lab")
+        .set("ProductVersion", version)
+        .set("FileVersion", version)
+        .set("OriginalFilename", "aavishield-agent.exe")
+        .set_version_info(winresource::VersionInfo::FILEVERSION, packed)
+        .set_version_info(winresource::VersionInfo::PRODUCTVERSION, packed);
+    if let Err(e) = res.compile() {
+        // A missing resource compiler must not break the build; the exe
+        // just falls back to the default icon. Loud, so CI logs show it.
+        println!("cargo:warning=could not embed Windows icon/version resources: {e}");
+    }
 }

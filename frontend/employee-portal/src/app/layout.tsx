@@ -12,7 +12,7 @@ const inter = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Delsecure — Employee Portal",
+  title: "Aavishield — Employee Portal",
   description: "Download security agent and view your protection activity",
   icons: { icon: "/favicon.ico" },
 };

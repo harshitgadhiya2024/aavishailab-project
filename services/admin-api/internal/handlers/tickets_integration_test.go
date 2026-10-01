@@ -84,7 +84,7 @@ func TestTicketsIntegration(t *testing.T) {
 	org := models.Organization{Name: "Delphic", Slug: "delphic-" + uuid.NewString()[:8]}
 	must(db.Create(&org).Error)
 	customer := models.User{OrgID: &org.ID, Email: "utsavi@delphic.test", FirstName: "Utsavi", LastName: "Narola", PasswordHash: "x", Role: "org_admin"}
-	agent := models.User{Email: "harshit@delsecure.test", FirstName: "Harshit", LastName: "Gadhiya", PasswordHash: "x", Role: models.RoleSuperAdmin}
+	agent := models.User{Email: "harshit@aavishield.test", FirstName: "Harshit", LastName: "Gadhiya", PasswordHash: "x", Role: models.RoleSuperAdmin}
 	must(db.Create(&customer).Error)
 	must(db.Create(&agent).Error)
 
@@ -312,7 +312,7 @@ func TestTicketMailIntegration(t *testing.T) {
 
 	// Customer replies by email: added, ticket reopens.
 	check("customer reply", in("<c1@gmail.com>", "utsavi@delphic.in", custThread,
-		"It came back after a restart.\n\nOn Wed, Delsecure wrote:\n> Turn the firewall on"), "added")
+		"It came back after a restart.\n\nOn Wed, Aavishield wrote:\n> Turn the firewall on"), "added")
 	var got models.SupportTicket
 	must(db.First(&got, "id = ?", id).Error)
 	if got.Status != models.TicketStatusOpen || got.LastMessageSide != models.TicketSideCustomer {
@@ -331,9 +331,9 @@ func TestTicketMailIntegration(t *testing.T) {
 	// Someone from another company can't write into it, even with the thread id.
 	check("other org", in("<c3@x>", "x@other.com", custThread, "hi"), "ignored: sender is not in this ticket's organization")
 	// An unknown address is refused.
-	check("unknown", in("<c4@x>", "attacker@evil.com", custThread, "hi"), "ignored: sender is not a Delsecure user")
+	check("unknown", in("<c4@x>", "attacker@evil.com", custThread, "hi"), "ignored: sender is not a Aavishield user")
 	// A customer can't post into the team thread.
-	check("customer on team thread", in("<c5@x>", "utsavi@delphic.in", teamThread, "hi"), "ignored: sender is not on the Delsecure team")
+	check("customer on team thread", in("<c5@x>", "utsavi@delphic.in", teamThread, "hi"), "ignored: sender is not on the Aavishield team")
 	// A forged thread id is not a ticket reply at all.
 	forged := strings.Replace(custThread, id, uuid.NewString(), 1)
 	if res, ticket := h.ingestEmail(ctx, in("<c6@x>", "utsavi@delphic.in", forged, "hi")); ticket {

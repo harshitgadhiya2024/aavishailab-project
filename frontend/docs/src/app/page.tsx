@@ -3,6 +3,7 @@ import {
   Shield, ArrowRight, Building2, UserCheck, Rocket, Globe, FileWarning,
   AppWindow, Bot, Camera, BarChart3, KeyRound, Download, Laptop, Inbox,
 } from "lucide-react";
+import { BrandLogo } from "@/components/brand/BrandLogo";
 
 const QUICK_LINKS = [
   { href: "/getting-started/quick-start", icon: Rocket, title: "Quick Start", desc: "Sign up, set up your org, and get your first policy live." },
@@ -27,10 +28,8 @@ export default function HomePage() {
   return (
     <div className="max-w-5xl mx-auto px-8 py-16 lg:px-12">
       <div className="flex items-center gap-3 mb-6">
-        <div className="w-11 h-11 bg-brand-500 rounded-xl flex items-center justify-center">
-          <Shield className="w-6 h-6 text-[#0A0A0A]" />
-        </div>
-        <span className="text-sm font-medium text-muted-foreground">Aavishield Documentation</span>
+        <BrandLogo className="h-14" priority />
+        <span className="text-sm font-medium text-muted-foreground">Documentation</span>
       </div>
 
       <h1 className="text-4xl font-bold text-foreground tracking-tight max-w-2xl">

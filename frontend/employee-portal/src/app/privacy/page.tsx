@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { Shield, ArrowLeft } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
+import { BrandLogo } from "@/components/brand/BrandLogo";
 
 const SECTIONS = [
   {
     title: "1. Information we collect",
-    body: "We collect your account information (name, work email) and the device/activity data your employer's administrator has configured Delsecure to monitor for security policy enforcement.",
+    body: "We collect your account information (name, work email) and the device/activity data your employer's administrator has configured Aavishield to monitor for security policy enforcement.",
   },
   {
     title: "2. How we use your information",
@@ -16,15 +17,15 @@ const SECTIONS = [
   },
   {
     title: "4. Data retention",
-    body: "Your data is retained for as long as your employer maintains an active Delsecure subscription, plus a limited period afterward as required for legal and audit purposes.",
+    body: "Your data is retained for as long as your employer maintains an active Aavishield subscription, plus a limited period afterward as required for legal and audit purposes.",
   },
   {
     title: "5. Your rights",
-    body: "You may request access to, correction of, or deletion of your personal data by contacting your IT administrator or Delsecure support.",
+    body: "You may request access to, correction of, or deletion of your personal data by contacting your IT administrator or Aavishield support.",
   },
   {
     title: "6. Contact",
-    body: "Questions about this policy can be directed to your IT administrator or to Delsecure support.",
+    body: "Questions about this policy can be directed to your IT administrator or to Aavishield support.",
   },
 ];
 
@@ -34,10 +35,7 @@ export default function PrivacyPage() {
       <header className="border-b border-border">
         <div className="max-w-3xl mx-auto px-6 py-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-brand-500 rounded-lg flex items-center justify-center">
-              <Shield className="w-5 h-5 text-on-brand" />
-            </div>
-            <span className="font-bold text-foreground">Delsecure</span>
+            <BrandLogo className="h-12" priority />
           </div>
           <Link href="/login" className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
             <ArrowLeft className="w-3.5 h-3.5" /> Back to sign in

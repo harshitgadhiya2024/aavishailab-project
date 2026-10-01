@@ -35,7 +35,7 @@ func TestParseWindowWholeDaysInZone(t *testing.T) {
 	if !w.PrevEnd.Equal(w.Start) || w.End.Sub(w.Start) != w.PrevEnd.Sub(w.PrevStart) {
 		t.Fatal("previous window must be the equal-length span right before")
 	}
-	if got := exportFilename("dlp", w, "csv"); got != "delsecure_dlp_2026-09-01_to_2026-09-30.csv" {
+	if got := exportFilename("dlp", w, "csv"); got != "aavishield_dlp_2026-09-01_to_2026-09-30.csv" {
 		t.Fatalf("filename = %q", got)
 	}
 }

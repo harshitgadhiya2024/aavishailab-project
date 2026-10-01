@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Shield, LayoutDashboard, Building2, Activity,
+  LayoutDashboard, Building2, Activity,
   Settings, ChevronLeft, ChevronRight, Globe, Download, AppWindow,
   HeartPulse, ClipboardList, Users2, CreditCard, ShieldAlert, Megaphone,
   Flag, LifeBuoy, Inbox
@@ -12,6 +12,7 @@ import { useQuery } from "@tanstack/react-query";
 import { demoRequestApi } from "@/lib/api";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { BrandLogo, BrandMark } from "@/components/brand/BrandLogo";
 
 const navItems = [
   { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
@@ -51,13 +52,12 @@ export function Sidebar() {
     >
       {/* Logo */}
       <div className="flex items-center gap-3 px-4 py-5 border-b border-border">
-        <div className="w-8 h-8 bg-brand-500 rounded-lg flex items-center justify-center flex-shrink-0">
-          <Shield className="w-5 h-5 text-[#0A0A0A]" />
-        </div>
-        {!collapsed && (
-          <div>
-            <span className="font-bold text-lg text-foreground">Delsecure</span>
-            <p className="text-xs text-muted-foreground">Superadmin</p>
+        {collapsed ? (
+          <BrandMark className="h-8 w-8" />
+        ) : (
+          <div className="min-w-0">
+            <BrandLogo className="h-12" priority />
+            <p className="mt-1 text-xs text-muted-foreground">Superadmin</p>
           </div>
         )}
       </div>

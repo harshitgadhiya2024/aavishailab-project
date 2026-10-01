@@ -10,8 +10,8 @@ import { useRouter } from "next/navigation";
 export default function AIAssistantRedirect() {
   const router = useRouter();
   useEffect(() => {
-    try { sessionStorage.setItem("delsecure-open-assistant", "1"); } catch {}
-    window.dispatchEvent(new CustomEvent("delsecure:open-assistant"));
+    try { sessionStorage.setItem("aavishield-open-assistant", "1"); } catch {}
+    window.dispatchEvent(new CustomEvent("aavishield:open-assistant"));
     router.replace("/dashboard");
   }, [router]);
   return null;

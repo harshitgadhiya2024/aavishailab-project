@@ -78,8 +78,8 @@ func TestTOTPToleratesSpacedSecret(t *testing.T) {
 }
 
 func TestProvisioningURI(t *testing.T) {
-	uri := TOTPProvisioningURI("ABC234", "admin@acme.com", "Delsecure")
-	for _, want := range []string{"otpauth://totp/", "secret=ABC234", "issuer=Delsecure", "digits=6", "period=30"} {
+	uri := TOTPProvisioningURI("ABC234", "admin@acme.com", "Aavishield")
+	for _, want := range []string{"otpauth://totp/", "secret=ABC234", "issuer=Aavishield", "digits=6", "period=30"} {
 		if !strings.Contains(uri, want) {
 			t.Errorf("provisioning URI missing %q: %s", want, uri)
 		}

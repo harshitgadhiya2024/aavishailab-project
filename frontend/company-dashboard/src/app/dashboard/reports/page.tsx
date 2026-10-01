@@ -204,7 +204,7 @@ function ReportsInner() {
 
   const doExport = async (format: "pdf" | "xlsx" | "csv") => {
     setBusy(format);
-    const base = `delsecure_${reportType}_${period.start}_to_${period.end}`;
+    const base = `aavishield_${reportType}_${period.start}_to_${period.end}`;
     try {
       if (format === "pdf") {
         const { downloadReportPdf } = await import("@/lib/report-pdf");

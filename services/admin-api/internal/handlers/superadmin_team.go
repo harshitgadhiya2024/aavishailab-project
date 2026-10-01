@@ -53,7 +53,7 @@ type superAdminInviteRequest struct {
 func generateSuperAdminPassword() string {
 	buf := make([]byte, 12)
 	if _, err := rand.Read(buf); err != nil {
-		return "Delsecure#" + uuid.NewString()[:8]
+		return "Aavishield#" + uuid.NewString()[:8]
 	}
 	return base64.RawURLEncoding.EncodeToString(buf)
 }

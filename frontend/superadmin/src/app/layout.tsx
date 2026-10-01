@@ -12,8 +12,8 @@ const inter = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Delsecure — Superadmin",
-  description: "Delsecure Zero Trust Security Platform — Superadmin Console",
+  title: "Aavishield — Superadmin",
+  description: "Aavishield Zero Trust Security Platform — Superadmin Console",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

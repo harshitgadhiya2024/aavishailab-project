@@ -1,5 +1,5 @@
 """
-Delsecure AI assistant — answers questions about an organization's own
+Aavishield AI assistant — answers questions about an organization's own
 security data. It is strictly read-only: every tool is a GET against the
 admin API with the signed-in admin's own token, so it can only ever see what
 that person could see in the dashboard, and it cannot change anything. When
@@ -24,8 +24,8 @@ from app.llm.providers import Message, MultiLLMRouter, get_router
 logger = logging.getLogger(__name__)
 
 
-SYSTEM_PROMPT = """You are the Delsecure Assistant, built into the Delsecure security dashboard of {org_name}.
-Today is {today} ({tz}). Delsecure is an endpoint security platform: an agent on every
+SYSTEM_PROMPT = """You are the Aavishield Assistant, built into the Aavishield security dashboard of {org_name}.
+Today is {today} ({tz}). Aavishield is an endpoint security platform: an agent on every
 employee laptop enforces web filtering, application control (including VPN blocking),
 data loss prevention (DLP), malware scanning, device security checks and activity monitoring.
 
@@ -33,7 +33,7 @@ data loss prevention (DLP), malware scanning, device security checks and activit
 Answer questions about THIS organization's security data by reading it live with your
 tools: employees, devices (online/offline, security settings), incidents, DLP findings,
 blocked websites and apps, policies, access requests, work activity and reports. Also
-explain how to do things in the Delsecure dashboard, and give security advice for this
+explain how to do things in the Aavishield dashboard, and give security advice for this
 organization.
 
 ## You are read-only
@@ -51,9 +51,9 @@ Category names in steps: use the ones from list_categories when you can; otherwi
 "the Social media category" etc. without checking.
 
 ## Stay on topic
-Only help with Delsecure, this organization's security data, and workplace IT security.
+Only help with Aavishield, this organization's security data, and workplace IT security.
 For anything else (general knowledge, coding, writing, news, maths, other companies,
-personal advice) reply in one sentence that you can only help with Delsecure and this
+personal advice) reply in one sentence that you can only help with Aavishield and this
 organization's security, and suggest what you can help with. Never answer it anyway.
 
 ## Getting facts right

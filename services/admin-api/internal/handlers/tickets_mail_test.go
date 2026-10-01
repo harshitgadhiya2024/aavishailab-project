@@ -10,12 +10,12 @@ import (
 func TestExtractReply(t *testing.T) {
 	cases := map[string]struct{ in, want string }{
 		"gmail wrapped wrote line": {
-			"Turned it on, thanks!\n\nOn Wed, 30 Sep 2026 at 17:24, Delsecure Security <info@aavishailab.com>\nwrote:\n> Hi Utsavi,\n> Open System Settings",
+			"Turned it on, thanks!\n\nOn Wed, 30 Sep 2026 at 17:24, Aavishield Security <info@aavishailab.com>\nwrote:\n> Hi Utsavi,\n> Open System Settings",
 			"Turned it on, thanks!",
 		},
-		"gmail one line":    {"Done.\nOn Wed, 30 Sep 2026, Delsecure wrote:\n> old", "Done."},
-		"outlook separator": {"Still failing after reboot.\r\n\r\n________________________________\r\nFrom: Delsecure\r\nSent: Wednesday", "Still failing after reboot."},
-		"outlook headers":   {"Works now\n\nFrom: Delsecure <info@aavishailab.com>\nSent: 30 September 2026 17:24\nTo: Utsavi", "Works now"},
+		"gmail one line":    {"Done.\nOn Wed, 30 Sep 2026, Aavishield wrote:\n> old", "Done."},
+		"outlook separator": {"Still failing after reboot.\r\n\r\n________________________________\r\nFrom: Aavishield\r\nSent: Wednesday", "Still failing after reboot."},
+		"outlook headers":   {"Works now\n\nFrom: Aavishield <info@aavishailab.com>\nSent: 30 September 2026 17:24\nTo: Utsavi", "Works now"},
 		"our marker":        {"Here is the log\n\n" + mailer.ReplyMarker + " Reply to this email\nHarshit replied", "Here is the log"},
 		"quoted tail":       {"Yes please\n> earlier text\n> more", "Yes please"},
 		"only quote":        {"On Wed, X wrote:\n> hi", ""},
@@ -65,7 +65,7 @@ func TestParseMailMultipart(t *testing.T) {
 		"",
 		"Fix=E9 now, merci.",
 		"",
-		"On Wed, Delsecure wrote:",
+		"On Wed, Aavishield wrote:",
 		"> old",
 		"--b1",
 		"Content-Type: text/plain",

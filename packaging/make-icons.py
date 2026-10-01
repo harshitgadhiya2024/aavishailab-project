@@ -1,98 +1,80 @@
 #!/usr/bin/env python3
-"""Renders the Aavishield app icon into the formats each installer needs.
+"""Builds every Aavishield connector icon from the brand favicon.
 
-    python3 packaging/make-icons.py
+    python3 packaging/make-icons.py      (needs Pillow and numpy)
 
-Writes packaging/icons/aavishield.icns (macOS) and .ico (Windows). The
-outputs are committed so a build never depends on this running — but the
-source of truth is code rather than a binary somebody has to open an editor
-to change, and re-running it reproduces both files exactly.
+Source of truth is the brand artwork in logos/ at the repo root:
+  - favicon-white-theme.png                 -> app icons (.icns, .ico, PNGs)
+  - black-theme-sideview-with-tagline.png   -> the logo in the connector window
 
-Kept deliberately free of iconutil: that only exists on macOS, and the icons
-have to be regenerable from any machine.
+Both ship on a solid background. That background is removed with a soft
+colour-to-alpha ramp that leaves every pixel of the artwork itself untouched
+(compositing the result back onto the original background reproduces the
+source to within the background's own noise), then the result is trimmed.
+
+Writes:
+  packaging/icons/aavishield.icns           macOS app bundle icon
+  packaging/icons/aavishield.ico            Windows .exe and installer icon
+  packaging/icons/aavishield-<n>.png        Linux hicolor icons (48..512) + 1024
+  services/endpoint-agent/assets/mark-256.png          tray + window icon
+  services/endpoint-agent/assets/logo-tagline-dark.png window header logo
+
+The outputs are committed so a build never depends on this running. ICNS is
+written by hand so this works on any OS (no iconutil).
 """
 
+import io
 import os
 import struct
 import sys
 
-from PIL import Image, ImageDraw
+import numpy as np
+from PIL import Image
 
-BRAND = (255, 112, 0)        # #FF7000, the same brand-500 the portal uses
-BRAND_DEEP = (198, 86, 0)    # a shade under brand-600 for the gradient's foot
-GLYPH = (255, 255, 255)
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LOGOS = os.path.join(ROOT, "logos")
+ICON_DIR = os.path.join(ROOT, "packaging", "icons")
+ASSET_DIR = os.path.join(ROOT, "services", "endpoint-agent", "assets")
 
-OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons")
-
-# The shield from the UI (lucide's, as used in main.html), in its native 24x24
-# space so the app icon and the in-window glyph are unmistakably the same mark.
-SHIELD_TOP = (12.0, 2.0)
-SHIELD_R_TOP, SHIELD_R_MID = (20.0, 5.0), (20.0, 12.0)
-SHIELD_TIP = (12.0, 22.0)
-SHIELD_L_MID, SHIELD_L_TOP = (4.0, 12.0), (4.0, 5.0)
+WHITE, BLACK = (255, 255, 255), (0, 0, 0)
 
 
-def _quad(p0, p1, p2, steps=24):
-    """Samples a quadratic bezier — the shield's lower flanks are curves, and
-    a straight line there reads as a pentagon rather than a shield."""
-    out = []
-    for i in range(steps + 1):
-        t = i / steps
-        u = 1 - t
-        out.append((u * u * p0[0] + 2 * u * t * p1[0] + t * t * p2[0],
-                    u * u * p0[1] + 2 * u * t * p1[1] + t * t * p2[1]))
+def knockout(img, bg, t1=22.0, t2=70.0):
+    """Pixels within t1 of `bg` become transparent, beyond t2 stay opaque, and
+    the ramp between them has the background un-mixed from its colour, so
+    anti-aliased edges stay clean on any backdrop."""
+    a = np.asarray(img.convert("RGB")).astype(np.float32)
+    b = np.array(bg, dtype=np.float32)
+    d = np.sqrt(((a - b) ** 2).sum(axis=2))
+    alpha = np.clip((d - t1) / (t2 - t1), 0, 1)
+    safe = np.maximum(alpha, 1e-3)[..., None]
+    fg = np.clip((a - (1 - alpha[..., None]) * b) / safe, 0, 255)
+    return Image.fromarray(np.dstack([fg, alpha * 255]).astype(np.uint8), "RGBA")
+
+
+def trim(img):
+    return img.crop(img.getchannel("A").point(lambda v: 255 if v > 8 else 0).getbbox())
+
+
+def square(img, size, pad):
+    """`img` centred on a transparent square of `size`, `pad` of it each side."""
+    inner = int(size * (1 - 2 * pad))
+    scale = inner / max(img.size)
+    im = img.resize((max(1, round(img.width * scale)), max(1, round(img.height * scale))), Image.LANCZOS)
+    out = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    out.paste(im, ((size - im.width) // 2, (size - im.height) // 2), im)
     return out
 
 
-def shield_points(size, inset):
-    """The shield outline scaled into a `size` box with `inset` padding."""
-    span = size - 2 * inset
-    scale = span / 24.0
-
-    pts = [SHIELD_TOP, SHIELD_R_TOP, SHIELD_R_MID]
-    pts += _quad(SHIELD_R_MID, (20.0, 18.2), SHIELD_TIP)[1:]
-    pts += _quad(SHIELD_TIP, (4.0, 18.2), SHIELD_L_MID)[1:]
-    pts += [SHIELD_L_TOP]
-    return [(inset + x * scale, inset + y * scale) for x, y in pts]
+MARK = trim(knockout(Image.open(os.path.join(LOGOS, "favicon-white-theme.png")), WHITE))
 
 
 def render(size):
-    """One square icon at `size` px: brand-gradient rounded square, white shield."""
-    # Supersampled 4x and downscaled — the curves and the corner radius are
-    # what make it read as a real app icon rather than a screenshot of one.
-    ss = 4
-    n = size * ss
-    img = Image.new("RGBA", (n, n), (0, 0, 0, 0))
-
-    # macOS leaves ~10% breathing room around the rounded square; matching it
-    # keeps the icon the same visual weight as its neighbours in the Dock.
-    pad = int(n * 0.085)
-    box = (pad, pad, n - pad, n - pad)
-    radius = int((n - 2 * pad) * 0.225)   # Big Sur-era squircle proportion
-
-    grad = Image.new("RGBA", (n, n))
-    gd = ImageDraw.Draw(grad)
-    for y in range(n):
-        t = y / max(n - 1, 1)
-        gd.line([(0, y), (n, y)], fill=(
-            round(BRAND[0] + (BRAND_DEEP[0] - BRAND[0]) * t),
-            round(BRAND[1] + (BRAND_DEEP[1] - BRAND[1]) * t),
-            round(BRAND[2] + (BRAND_DEEP[2] - BRAND[2]) * t),
-            255,
-        ))
-
-    mask = Image.new("L", (n, n), 0)
-    ImageDraw.Draw(mask).rounded_rectangle(box, radius=radius, fill=255)
-    img.paste(grad, (0, 0), mask)
-
-    # Inset tuned for the 16px case: the Dock and the menu bar are where this
-    # is smallest, and a daintier glyph turns to mush there.
-    ImageDraw.Draw(img).polygon(shield_points(n, int(n * 0.255)), fill=GLYPH)
-    return img.resize((size, size), Image.LANCZOS)
+    # A little breathing room so the mark sits at the same visual weight as
+    # neighbouring icons in the Dock, taskbar and app menus.
+    return square(MARK, size, pad=0.06)
 
 
-# ICNS type codes paired with the pixel size each one carries. Written by hand
-# rather than via Pillow's ICNS writer, which is macOS-only in most builds.
 ICNS_TYPES = [
     (b"icp4", 16), (b"icp5", 32), (b"ic07", 128), (b"ic08", 256),
     (b"ic09", 512), (b"ic10", 1024), (b"ic11", 32), (b"ic12", 64),
@@ -101,7 +83,6 @@ ICNS_TYPES = [
 
 
 def write_icns(path):
-    import io
     chunks = b""
     for code, size in ICNS_TYPES:
         buf = io.BytesIO()
@@ -118,14 +99,31 @@ def write_ico(path):
 
 
 def main():
-    os.makedirs(OUT_DIR, exist_ok=True)
-    icns, ico = os.path.join(OUT_DIR, "aavishield.icns"), os.path.join(OUT_DIR, "aavishield.ico")
-    write_icns(icns)
-    write_ico(ico)
-    png = os.path.join(OUT_DIR, "aavishield-1024.png")
-    render(1024).save(png)
-    for p in (icns, ico, png):
-        print(f"  {os.path.relpath(p)}  {os.path.getsize(p):,} bytes")
+    os.makedirs(ICON_DIR, exist_ok=True)
+    os.makedirs(ASSET_DIR, exist_ok=True)
+    out = []
+
+    p = os.path.join(ICON_DIR, "aavishield.icns"); write_icns(p); out.append(p)
+    p = os.path.join(ICON_DIR, "aavishield.ico"); write_ico(p); out.append(p)
+    for s in (48, 128, 256, 512, 1024):
+        p = os.path.join(ICON_DIR, f"aavishield-{s}.png")
+        render(s).save(p, optimize=True)
+        out.append(p)
+
+    p = os.path.join(ASSET_DIR, "mark-256.png")
+    square(MARK, 256, pad=0.02).save(p, optimize=True)
+    out.append(p)
+
+    # The connector window is dark (#111), so it uses the white-wordmark
+    # lockup. 840px wide covers a ~210pt header on a 4x display.
+    logo = trim(knockout(Image.open(os.path.join(LOGOS, "black-theme-sideview-with-tagline.png")), BLACK))
+    logo = logo.resize((840, round(logo.height * 840 / logo.width)), Image.LANCZOS)
+    p = os.path.join(ASSET_DIR, "logo-tagline-dark.png")
+    logo.save(p, optimize=True)
+    out.append(p)
+
+    for p in out:
+        print(f"  {os.path.relpath(p, ROOT)}  {os.path.getsize(p):,} bytes")
     return 0
 
 

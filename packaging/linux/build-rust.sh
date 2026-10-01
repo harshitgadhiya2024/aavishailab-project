@@ -76,6 +76,31 @@ RestartSec=5
 WantedBy=default.target
 UNIT
 
+# ─── 2b. Icons and app-menu launcher ──────────────────────────────────────────
+# The Aavishield mark (packaging/icons/aavishield-<n>.png, generated from the
+# brand favicon by packaging/make-icons.py) in the freedesktop hicolor theme,
+# plus a .desktop entry so "Aavishield" appears in the app menu with that
+# icon. Launching it while the agent already runs just brings its window to
+# the front (single_instance.rs) — it never starts a second agent.
+# StartupWMClass matches the window's app id set in main.rs, so the open
+# window groups under this icon in the dock/taskbar.
+for size in 48 128 256 512; do
+    install -Dm644 "$REPO_ROOT/packaging/icons/aavishield-$size.png" \
+        "$ROOT_DIR/usr/share/icons/hicolor/${size}x${size}/apps/aavishield-agent.png"
+done
+install -Dm644 /dev/stdin "$ROOT_DIR/usr/share/applications/aavishield-agent.desktop" <<DESKTOP
+[Desktop Entry]
+Type=Application
+Name=Aavishield
+GenericName=Security agent
+Comment=Secure today. Enable tomorrow.
+Exec=$INSTALL_PREFIX/aavishield-agent
+Icon=aavishield-agent
+Terminal=false
+Categories=Network;Security;
+StartupWMClass=aavishield-agent
+DESKTOP
+
 # No CA-trust system unit here — see this script's header comment and
 # packaging/macos/build-rust.sh's: the Rust connector doesn't install the CA
 # into the system trust store yet (README's Scope section), so shipping a
@@ -131,12 +156,13 @@ Version: $VERSION
 Section: net
 Priority: optional
 Architecture: $ARCH
-Maintainer: Aavishield <support@aavishield.com>
+Maintainer: Aavishield <info@aavishailab.com>
+Homepage: https://delsecure.aavishailab.com
 Installed-Size: $INSTALLED_SIZE
 Depends: $RUNTIME_DEPENDS
 Conflicts: aavishield-agent
 Replaces: aavishield-agent
-Description: Aavishield security agent (Rust connector)
+Description: Aavishield security agent. Secure today. Enable tomorrow.
  Local enforcement proxy that applies your organisation's web, DLP and
  malware policy to this device. Native binary, no bundled runtime.
 CONTROL
@@ -166,6 +192,8 @@ if [[ -n "${SUDO_USER:-}" ]]; then
 fi
 
 systemctl --global enable aavishield-agent.service 2>/dev/null || true
+gtk-update-icon-cache -q -t /usr/share/icons/hicolor 2>/dev/null || true
+update-desktop-database -q /usr/share/applications 2>/dev/null || true
 echo "Aavishield Rust connector installed. Start it with: systemctl --user start aavishield-agent"
 exit 0
 POSTINST

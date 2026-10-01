@@ -168,7 +168,7 @@ func exportFilename(reportType string, w reportWindow, ext string) string {
 	if w.EmployeeName != "" {
 		reportType += "_" + strings.Trim(nonFileChars.ReplaceAllString(strings.ToLower(w.EmployeeName), "-"), "-")
 	}
-	return fmt.Sprintf("delsecure_%s_%s_to_%s.%s", reportType,
+	return fmt.Sprintf("aavishield_%s_%s_to_%s.%s", reportType,
 		w.Start.In(w.Loc).Format("2006-01-02"), end.In(w.Loc).Format("2006-01-02"), ext)
 }
 
@@ -181,7 +181,7 @@ func (w reportWindow) periodText() string {
 // in an audit folder explains what it covers without the email it came in.
 func (w reportWindow) preamble(reportType string, t reportTable) [][]string {
 	rows := [][]string{
-		{"DelSecure report", reportName(reportType)},
+		{"Aavishield report", reportName(reportType)},
 		{"Period", w.periodText()},
 	}
 	if w.EmployeeID != "" {

@@ -6,6 +6,12 @@ import (
 	"strings"
 )
 
+// logoURL is the hosted Aavishield logo shown at the top of every email. The
+// company dashboard serves it from /brand; MAIL_LOGO_URL overrides it.
+func logoURL() string {
+	return envOr("MAIL_LOGO_URL", "https://aavishield-app.aavishailab.com/brand/logo-horizontal-tagline-light.png")
+}
+
 // layout wraps content in the branded shell. Table-based and inline-styled on
 // purpose: email clients ignore most modern CSS, and a dark-mode-only design
 // would be unreadable in half of them.
@@ -19,7 +25,7 @@ func layout(heading, intro, body, ctaLabel, ctaURL, footer string) string {
       </td></tr>`, ctaURL, html.EscapeString(ctaLabel))
 	}
 	if footer == "" {
-		footer = "You're receiving this because you use Delsecure to protect your organization."
+		footer = "You're receiving this because you use Aavishield to protect your organization."
 	}
 
 	return fmt.Sprintf(`<!doctype html>
@@ -29,9 +35,8 @@ func layout(heading, intro, body, ctaLabel, ctaURL, footer string) string {
       <table role="presentation" width="600" cellpadding="0" cellspacing="0"
              style="max-width:600px;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;">
         <tr><td style="padding:24px 32px;border-bottom:1px solid #e5e7eb;">
-          <span style="display:inline-block;width:28px;height:28px;background:#FF7000;border-radius:6px;
-                       color:#fff;text-align:center;line-height:28px;font-weight:700;">D</span>
-          <span style="font-size:16px;font-weight:700;color:#111827;margin-left:8px;vertical-align:middle;">Delsecure</span>
+          <img src="%s" width="200" height="51" alt="Aavishield"
+               style="display:block;border:0;outline:none;width:200px;height:51px;font-size:18px;font-weight:700;color:#111827;">
         </td></tr>
         <tr><td style="padding:28px 32px 8px 32px;">
           <h1 style="margin:0 0 12px 0;font-size:20px;color:#111827;">%s</h1>
@@ -45,7 +50,7 @@ func layout(heading, intro, body, ctaLabel, ctaURL, footer string) string {
       </table>
     </td></tr>
   </table>
-</body></html>`, html.EscapeString(heading), intro, body, cta, footer)
+</body></html>`, html.EscapeString(logoURL()), html.EscapeString(heading), intro, body, cta, footer)
 }
 
 // statRow renders one "label: value" line used by the digest emails.
@@ -77,7 +82,7 @@ func WelcomeOrg(to, firstName, orgName string) {
 
 	Send(Message{
 		To:      []string{to},
-		Subject: "Welcome to Delsecure — " + orgName + " is ready",
+		Subject: "Welcome to Aavishield — " + orgName + " is ready",
 		HTML: layout(
 			"Welcome, "+html.EscapeString(firstName),
 			"Your organization is set up and your dashboard is live.",
@@ -103,10 +108,10 @@ func InviteUser(to, firstName, orgName, roleLabel, tempPassword, invitedBy strin
 
 	Send(Message{
 		To:      []string{to},
-		Subject: invitedBy + " added you to " + orgName + " on Delsecure",
+		Subject: invitedBy + " added you to " + orgName + " on Aavishield",
 		HTML: layout(
 			"You have access to "+html.EscapeString(orgName),
-			html.EscapeString(invitedBy)+" gave you access to the Delsecure security dashboard.",
+			html.EscapeString(invitedBy)+" gave you access to the Aavishield security dashboard.",
 			body, "Sign in", cfg.AppURL+"/login", ""),
 	})
 }
@@ -124,7 +129,7 @@ func PasswordReset(to, firstName, token string, portal bool) {
 
 	Send(Message{
 		To:      []string{to},
-		Subject: "Reset your Delsecure password",
+		Subject: "Reset your Aavishield password",
 		HTML: layout(
 			"Reset your password",
 			"Hi "+html.EscapeString(firstName)+", use the button below to choose a new password.",
@@ -143,11 +148,11 @@ func PasswordChanged(to, firstName string, portal bool) {
 
 	Send(Message{
 		To:      []string{to},
-		Subject: "Your Delsecure password was changed",
+		Subject: "Your Aavishield password was changed",
 		HTML: layout(
 			"Password changed",
-			"Hi "+html.EscapeString(firstName)+", the password on your Delsecure account was just changed.",
-			body, "Go to Delsecure", base, ""),
+			"Hi "+html.EscapeString(firstName)+", the password on your Aavishield account was just changed.",
+			body, "Go to Aavishield", base, ""),
 	})
 }
 
@@ -249,7 +254,7 @@ func SecurityAlert(admins []string, orgName, title, employeeName, target, detail
 		Subject: "🔴 Security alert — " + title,
 		HTML: layout(
 			"Security alert",
-			"Delsecure blocked something that needs your attention at "+html.EscapeString(orgName)+".",
+			"Aavishield blocked something that needs your attention at "+html.EscapeString(orgName)+".",
 			statTable(rows...), "Investigate in the dashboard", cfg.AppURL+"/dashboard/activity", ""),
 	})
 }
@@ -290,7 +295,7 @@ func ActivityDigest(admins []string, orgName string, hours int, blocked, alerted
 		Subject: fmt.Sprintf("%d security incidents at %s need review", blocked+alerted, orgName),
 		HTML: layout(
 			"Activity worth a look",
-			fmt.Sprintf("In the last %s, Delsecure recorded %d incidents at %s.",
+			fmt.Sprintf("In the last %s, Aavishield recorded %d incidents at %s.",
 				window, blocked+alerted, html.EscapeString(orgName)),
 			body, "Review in the dashboard", cfg.AppURL+"/dashboard/activity",
 			"You get this when incidents build up — not one email per event."),
@@ -319,7 +324,7 @@ func NoActivityNotice(admins []string, orgName string, days int, devices, online
 		Subject: "No security activity from " + orgName + " in " + fmt.Sprintf("%d days", days),
 		HTML: layout(
 			"Nothing has been reported",
-			"Delsecure hasn't received any activity from "+html.EscapeString(orgName)+" recently.",
+			"Aavishield hasn't received any activity from "+html.EscapeString(orgName)+" recently.",
 			statTable(rows...)+reason, "Check device status", cfg.AppURL+"/dashboard/devices",
 			"You get this when reporting goes quiet, so silence is never mistaken for safety."),
 	})
@@ -328,14 +333,14 @@ func NoActivityNotice(admins []string, orgName string, days int, devices, online
 // EmployeeInactivityNotice nudges an employee whose device stopped reporting.
 func EmployeeInactivityNotice(to, firstName, orgName string, days int) {
 	body := `<p style="margin:0;">If you've stopped using that device, you can ignore this. Otherwise, check
-	that the Delsecure agent is still running — while it isn't, you're browsing unprotected.</p>`
+	that the Aavishield agent is still running — while it isn't, you're browsing unprotected.</p>`
 
 	Send(Message{
 		To:      []string{to},
 		Subject: "Your device hasn't reported to " + orgName + " security in " + fmt.Sprintf("%d days", days),
 		HTML: layout(
 			"Your device has gone quiet",
-			"Hi "+html.EscapeString(firstName)+", your device hasn't checked in with Delsecure for "+
+			"Hi "+html.EscapeString(firstName)+", your device hasn't checked in with Aavishield for "+
 				fmt.Sprintf("%d days", days)+".",
 			body, "Open the portal", cfg.PortalURL, ""),
 	})
@@ -356,7 +361,7 @@ func DeviceEnrolled(admins []string, orgName, hostname, employeeName, osType str
 		Subject: "New device enrolled at " + orgName + ": " + hostname,
 		HTML: layout(
 			"A device was enrolled",
-			html.EscapeString(hostname)+" just registered with Delsecure.",
+			html.EscapeString(hostname)+" just registered with Aavishield.",
 			body, "View devices", cfg.AppURL+"/dashboard/devices", ""),
 	})
 }
@@ -388,7 +393,7 @@ func WeeklySummary(admins []string, orgName string, blocked, alerted, dlp, emplo
 		Subject: "Weekly security summary — " + orgName,
 		HTML: layout(
 			"Your week in security",
-			"Here's what Delsecure did for "+html.EscapeString(orgName)+" over the last seven days.",
+			"Here's what Aavishield did for "+html.EscapeString(orgName)+" over the last seven days.",
 			body, "Open full reports", cfg.AppURL+"/dashboard/reports",
 			"Sent weekly, whether or not anything happened."),
 	})
@@ -404,7 +409,7 @@ func MFAEnabled(to, firstName string) {
 
 	Send(Message{
 		To:      []string{to},
-		Subject: "Two-factor authentication is on for your Delsecure account",
+		Subject: "Two-factor authentication is on for your Aavishield account",
 		HTML: layout("Two-factor authentication enabled",
 			"Hi "+html.EscapeString(firstName)+", your account is now protected by a second factor.",
 			body, "Review account security", cfg.AppURL+"/dashboard/profile", ""),
@@ -421,7 +426,7 @@ func MFADisabled(to, firstName string) {
 		To:      []string{to},
 		Subject: "Two-factor authentication was turned off",
 		HTML: layout("Two-factor authentication disabled",
-			"Hi "+html.EscapeString(firstName)+", the second factor on your Delsecure account was removed.",
+			"Hi "+html.EscapeString(firstName)+", the second factor on your Aavishield account was removed.",
 			body, "Turn it back on", cfg.AppURL+"/dashboard/profile", ""),
 	})
 }
@@ -436,7 +441,7 @@ func MFARecoveryCodeUsed(to, firstName string, codesLeft int, ip string) {
 
 	Send(Message{
 		To:      []string{to},
-		Subject: "A recovery code was used to sign in to your Delsecure account",
+		Subject: "A recovery code was used to sign in to your Aavishield account",
 		HTML: layout("Recovery code used",
 			"Hi "+html.EscapeString(firstName)+", someone signed in using one of your backup codes instead of your authenticator app.",
 			body, "Review account security", cfg.AppURL+"/dashboard/profile", ""),
@@ -474,11 +479,11 @@ func LoginCode(to, firstName, code string, validMinutes int) {
 
 	Send(Message{
 		To:      []string{to},
-		Subject: code + " is your Delsecure sign-in code",
+		Subject: code + " is your Aavishield sign-in code",
 		HTML: layout("Your sign-in code",
 			"Hi "+html.EscapeString(firstName)+", enter this code to finish signing in.",
 			body, "", "",
-			"Never share this code. Delsecure will never ask you for it."),
+			"Never share this code. Aavishield will never ask you for it."),
 	})
 }
 
@@ -494,11 +499,11 @@ func RegistrationCode(to, firstName, code string, validMinutes int) {
 
 	Send(Message{
 		To:      []string{to},
-		Subject: code + " is your Delsecure verification code",
+		Subject: code + " is your Aavishield verification code",
 		HTML: layout("Confirm your email",
-			greeting+", enter this code to finish creating your Delsecure account.",
+			greeting+", enter this code to finish creating your Aavishield account.",
 			body, "", "",
-			"If you didn't sign up for Delsecure, you can ignore this email."),
+			"If you didn't sign up for Aavishield, you can ignore this email."),
 	})
 }
 
@@ -515,7 +520,7 @@ func DeviceDisconnected(admins []string, orgName, employeeName, hostname, when s
 		return
 	}
 	body := `<p style="margin:0 0 12px 0;"><strong>` + html.EscapeString(employeeName) +
-		`</strong> disconnected the Delsecure connector on <strong>` + html.EscapeString(hostname) +
+		`</strong> disconnected the Aavishield connector on <strong>` + html.EscapeString(hostname) +
 		`</strong>.</p>
 	<p style="margin:0;">That device is no longer being protected or monitored until it is connected
 	again. The full history is on the Devices page.</p>`
@@ -535,7 +540,7 @@ func DeviceUninstalled(admins []string, orgName, employeeName, hostname, approve
 	if len(admins) == 0 {
 		return
 	}
-	body := `<p style="margin:0 0 12px 0;">The Delsecure connector was removed from
+	body := `<p style="margin:0 0 12px 0;">The Aavishield connector was removed from
 	<strong>` + html.EscapeString(hostname) + `</strong>, used by <strong>` +
 		html.EscapeString(employeeName) + `</strong>.</p>
 	<p style="margin:0 0 12px 0;">Approved with the credentials of <strong>` +
@@ -559,7 +564,7 @@ func DeviceConnected(admins []string, orgName, employeeName, hostname, when stri
 		return
 	}
 	body := `<p style="margin:0;"><strong>` + html.EscapeString(employeeName) +
-		`</strong> connected the Delsecure connector on <strong>` + html.EscapeString(hostname) +
+		`</strong> connected the Aavishield connector on <strong>` + html.EscapeString(hostname) +
 		`</strong>. That device is protected again.</p>`
 
 	Send(Message{
@@ -601,7 +606,7 @@ func DemoRequestReceived(to []string, name, email, company, devices, message, so
 			"New demo request",
 			html.EscapeString(name)+" from "+html.EscapeString(company)+" booked a demo on the website.",
 			body, "Open in superadmin", cfg.SuperadminURL+"/dashboard/demo-requests",
-			"Sent to the Delsecure team for every demo request from the website."),
+			"Sent to the Aavishield team for every demo request from the website."),
 	})
 }
 
@@ -613,10 +618,10 @@ func DemoRequestConfirmation(to, name string) {
 
 	Send(Message{
 		To:      []string{to},
-		Subject: "We received your Delsecure demo request",
+		Subject: "We received your Aavishield demo request",
 		HTML: layout(
 			"Thanks, "+html.EscapeString(name),
-			"Your demo request reached the Delsecure team.",
+			"Your demo request reached the Aavishield team.",
 			body, "", "",
 			"You're receiving this because you booked a demo on delsecure.aavishailab.com."),
 	})

@@ -1,11 +1,28 @@
+import Image from "next/image";
 import Link from "next/link";
 
-/** Type-only wordmark until the real logo exists. */
+// Brand lockups in /public/brand: dark wordmark for the light theme, white
+// wordmark for the dark theme. Both render; the theme class picks one.
+const LOGO = {
+  plain: { light: ["/brand/logo-horizontal-light.png", 1200, 296], dark: ["/brand/logo-horizontal-dark.png", 1200, 308] },
+  tagline: { light: ["/brand/logo-horizontal-tagline-light.png", 1400, 354], dark: ["/brand/logo-horizontal-tagline-dark.png", 1400, 347] },
+} as const;
+
+export function Logo({ className = "h-8", tagline = true, priority = false }: { className?: string; tagline?: boolean; priority?: boolean }) {
+  const l = LOGO[tagline ? "tagline" : "plain"];
+  return (
+    <span className={`inline-flex shrink-0 ${className}`}>
+      <Image src={l.light[0]} alt="Aavishield" width={l.light[1]} height={l.light[2]} priority={priority} className="h-full w-auto dark:hidden" />
+      <Image src={l.dark[0]} alt="Aavishield" width={l.dark[1]} height={l.dark[2]} priority={priority} className="hidden h-full w-auto dark:block" />
+    </span>
+  );
+}
+
+/** The site's home link: the Aavishield logo. */
 export function Wordmark({ className = "" }: { className?: string }) {
   return (
-    <Link href="/" className={`inline-flex items-center gap-2 text-[17px] font-semibold tracking-tight text-fg ${className}`}>
-      <span aria-hidden className="relative grid size-6 place-items-center rounded-[7px] bg-brand text-[11px] font-bold text-on-brand">D</span>
-      DelSecure
+    <Link href="/" aria-label="Aavishield home" className={`inline-flex items-center ${className}`}>
+      <Logo className="h-9 sm:h-10" priority />
     </Link>
   );
 }

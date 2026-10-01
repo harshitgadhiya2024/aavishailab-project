@@ -39,7 +39,7 @@ func GenerateTOTPSecret() (string, error) {
 // TOTPProvisioningURI builds the otpauth:// URI an app scans as a QR code.
 func TOTPProvisioningURI(secret, accountEmail, issuer string) string {
 	if issuer == "" {
-		issuer = "Delsecure"
+		issuer = "Aavishield"
 	}
 	label := url.PathEscape(issuer + ":" + accountEmail)
 	q := url.Values{}

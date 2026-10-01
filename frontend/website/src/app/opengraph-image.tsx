@@ -1,6 +1,6 @@
 import { ogCard, ogSize } from "@/lib/og";
 
-export const alt = "DelSecure: endpoint security for every device";
+export const alt = "Aavishield: endpoint security for every device";
 export const size = ogSize;
 export const contentType = "image/png";
 

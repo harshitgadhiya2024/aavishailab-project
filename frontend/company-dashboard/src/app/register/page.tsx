@@ -3,9 +3,10 @@
 import { useState, useEffect } from "react";
 import { signIn } from "next-auth/react";
 import Link from "next/link";
-import { Shield, Eye, EyeOff, Loader2, CheckCircle2, Building2, Mail } from "lucide-react";
+import { Eye, EyeOff, Loader2, CheckCircle2, Building2, Mail } from "lucide-react";
 import { otpApi } from "@/lib/api";
 import { toast } from "sonner";
+import { BrandLogo } from "@/components/brand/BrandLogo";
 
 const SOCIAL_ERRORS: Record<string, string> = {
   NoAccountFound: "No account found for that email. Please complete registration below first.",
@@ -164,10 +165,7 @@ export default function RegisterPage() {
 
       <div className="hidden lg:flex lg:w-1/2 relative flex-col justify-between p-12">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-brand-500 rounded-xl flex items-center justify-center">
-            <Shield className="w-6 h-6 text-on-brand" />
-          </div>
-          <span className="font-bold text-xl text-foreground">Delsecure</span>
+          <BrandLogo className="h-12" priority />
         </div>
 
         <div className="space-y-8">
@@ -191,16 +189,14 @@ export default function RegisterPage() {
           </ul>
         </div>
 
-        <p className="text-xs text-subtle">© 2026 Delsecure. Zero Trust Security Platform.</p>
+        <p className="text-xs text-subtle">© 2026 Aavishield. Zero Trust Security Platform.</p>
       </div>
 
       <div className="w-full lg:w-1/2 relative flex items-center justify-center p-6 sm:p-10">
         <div className="w-full max-w-md">
           <div className="lg:hidden text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-brand-500 rounded-2xl mb-4">
-              <Shield className="w-8 h-8 text-on-brand" />
-            </div>
-            <h1 className="text-2xl font-bold text-foreground">Delsecure</h1>
+            <BrandLogo className="h-16 mb-2" priority />
+            <h1 className="sr-only">Aavishield</h1>
             <p className="text-muted-foreground mt-1">Company Security Console</p>
           </div>
 

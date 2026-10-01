@@ -23,6 +23,23 @@ const CONTROL_LABELS: Record<string, string> = {
   vpn: "VPN & bypass", threats: "Malware & threats", devices: "Device health",
 };
 
+/** The Aavishield logo as a data URL for jsPDF, or null if it can't be fetched. */
+async function loadLogo(): Promise<string | null> {
+  try {
+    const res = await fetch("/brand/logo-horizontal-tagline-light.png");
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return await new Promise((resolve) => {
+      const r = new FileReader();
+      r.onload = () => resolve(typeof r.result === "string" ? r.result : null);
+      r.onerror = () => resolve(null);
+      r.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
+
 export async function downloadReportPdf(report: Report, opts: { period: string; filename: string; filter?: string }) {
   const [{ jsPDF }, { default: autoTable }] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
 
@@ -34,15 +51,16 @@ export async function downloadReportPdf(report: Report, opts: { period: string; 
   // Header band
   doc.setFillColor(...ORANGE);
   doc.rect(0, 0, pageW, 6, "F");
-  doc.setFillColor(...ORANGE);
-  doc.roundedRect(margin, 28, 22, 22, 4, 4, "F");
-  doc.setTextColor(10, 10, 10);
+  const logo = await loadLogo();
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(13);
-  doc.text("D", margin + 11, 43, { align: "center" });
   doc.setTextColor(...INK);
-  doc.setFontSize(12);
-  doc.text("DelSecure", margin + 30, 43);
+  if (logo) {
+    // Brand lockup with tagline is 1400x354; draw it 30pt tall.
+    doc.addImage(logo, "PNG", margin, 22, 30 * (1400 / 354), 30);
+  } else {
+    doc.setFontSize(12);
+    doc.text("Aavishield", margin, 43);
+  }
 
   doc.setFontSize(20);
   doc.text(report.name, margin, 84);
@@ -134,7 +152,7 @@ export async function downloadReportPdf(report: Report, opts: { period: string; 
     doc.setFontSize(8);
     doc.setTextColor(...MUTED);
     const h = doc.internal.pageSize.getHeight();
-    doc.text(`DelSecure  |  ${report.name}  |  Confidential`, margin, h - 20);
+    doc.text(`Aavishield  |  ${report.name}  |  Confidential`, margin, h - 20);
     doc.text(`Page ${i} of ${pages}`, pageW - margin, h - 20, { align: "right" });
   }
 

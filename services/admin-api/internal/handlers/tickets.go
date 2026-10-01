@@ -22,7 +22,7 @@ import (
 
 // TicketHandler serves both sides of one support conversation: an org user
 // raising and following a request (company routes, scoped to their org) and
-// the Delsecure team answering every org's requests (superadmin routes).
+// the Aavishield team answering every org's requests (superadmin routes).
 //
 // A ticket reads like an email thread: each message has a side (customer,
 // support, system), support can leave internal notes the customer never
@@ -252,7 +252,7 @@ func firstName(full string) string {
 }
 
 func (h *TicketHandler) mailInfo(t *models.SupportTicket, forCustomer bool) mailer.TicketMail {
-	org := "Delsecure"
+	org := "Aavishield"
 	if t.OrgID != nil {
 		var o models.Organization
 		if h.db.Select("name").First(&o, "id = ?", *t.OrgID).Error == nil {
@@ -279,7 +279,7 @@ func (h *TicketHandler) customerRecipients(t *models.SupportTicket) []string {
 	return emails
 }
 
-// teamRecipients is the whole Delsecure team: every active superadmin, plus
+// teamRecipients is the whole Aavishield team: every active superadmin, plus
 // any extra addresses in SUPPORT_NOTIFY_EMAIL (e.g. a shared support inbox).
 func (h *TicketHandler) teamRecipients(_ *models.SupportTicket) []string {
 	var emails []string
@@ -722,7 +722,7 @@ func (h *TicketHandler) supportReply(ctx context.Context, t *models.SupportTicke
 	h.db.Model(t).Updates(updates)
 	if !in.Internal && t.OrgID != nil {
 		name, _ := h.userName(uid)
-		mailer.TicketReplyToCustomer(h.customerRecipients(t), h.mailInfo(t, true), firstName(name)+" from Delsecure Support", in.Body, len(in.Files))
+		mailer.TicketReplyToCustomer(h.customerRecipients(t), h.mailInfo(t, true), firstName(name)+" from Aavishield Support", in.Body, len(in.Files))
 	}
 	if in.Status != "" {
 		h.setStatus(t, uid, models.TicketStatus(in.Status))

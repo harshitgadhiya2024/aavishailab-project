@@ -54,7 +54,7 @@ func mailDomain() string {
 	if i := strings.LastIndexByte(cfg.FromEmail, '@'); i >= 0 {
 		return cfg.FromEmail[i+1:]
 	}
-	return "delsecure.local"
+	return "aavishield.local"
 }
 
 // ThreadMessageID is the root Message-ID for one side of a ticket's thread.
@@ -132,7 +132,7 @@ func TicketOpenedTeam(to []string, t TicketMail, author, body string, attachment
 		Headers: t.threadHeaders("team", true),
 		HTML: withMarker(layout("New support request "+t.Ref, html.EscapeString(t.OrgName)+" needs help: <b>"+html.EscapeString(t.Subject)+"</b>",
 			info+quote(body)+attachmentLine(attachments)+teamHint, "Open in superadmin", t.Link,
-			"Sent to the Delsecure support team for every new request."), t.Ref),
+			"Sent to the Aavishield support team for every new request."), t.Ref),
 	})
 }
 
@@ -144,7 +144,7 @@ func TicketOpenedCustomer(to []string, t TicketMail, name, body string) {
 		Headers: t.threadHeaders("customer", true),
 		HTML: withMarker(layout("We've got your request", "Hi "+html.EscapeString(name)+", thanks for reaching out. Your reference is <b>"+t.Ref+"</b>.",
 			`<p style="margin:0;">Our team usually replies within one business day. We'll email you as soon as someone answers. To add anything, just reply to this email or use your dashboard.</p>`+quote(body),
-			"View your request", t.Link, "You're receiving this because you contacted Delsecure support."), t.Ref),
+			"View your request", t.Link, "You're receiving this because you contacted Aavishield support."), t.Ref),
 	})
 }
 
@@ -156,7 +156,7 @@ func TicketReplyToCustomer(to []string, t TicketMail, agent, body string, attach
 		Headers: t.threadHeaders("customer", false),
 		HTML: withMarker(layout(agent+" replied", "New reply on your request <b>"+t.Ref+"</b>: "+html.EscapeString(t.Subject),
 			quote(body)+attachmentLine(attachments)+`<p style="margin:16px 0 0 0;">Just reply to this email to answer, or continue in your dashboard.</p>`,
-			"Reply", t.Link, "You're receiving this because you contacted Delsecure support."), t.Ref),
+			"Reply", t.Link, "You're receiving this because you contacted Aavishield support."), t.Ref),
 	})
 }
 
@@ -168,7 +168,7 @@ func TicketReplyToTeam(to []string, t TicketMail, author, body string, attachmen
 		Headers: t.threadHeaders("team", false),
 		HTML: withMarker(layout(author+" replied", html.EscapeString(t.OrgName)+" replied on <b>"+t.Ref+"</b>.",
 			quote(body)+attachmentLine(attachments)+teamHint, "Open in superadmin", t.Link,
-			"Sent to the Delsecure support team for every customer reply."), t.Ref),
+			"Sent to the Aavishield support team for every customer reply."), t.Ref),
 	})
 }
 
@@ -181,7 +181,7 @@ func TicketResolvedCustomer(to []string, t TicketMail, name string) {
 		Headers: t.threadHeaders("customer", false),
 		HTML: withMarker(layout("Your request was resolved", "Hi "+html.EscapeString(name)+", we've marked <b>"+t.Ref+"</b> as resolved.",
 			`<p style="margin:0;">If it isn't fixed for you, just reply to this email and the request reopens. We'd also love to know whether this solved it.</p>`,
-			"Tell us how we did", t.Link, "You're receiving this because you contacted Delsecure support."), t.Ref),
+			"Tell us how we did", t.Link, "You're receiving this because you contacted Aavishield support."), t.Ref),
 	})
 }
 

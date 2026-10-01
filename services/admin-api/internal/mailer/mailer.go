@@ -65,7 +65,7 @@ func Init() {
 			Port:            port,
 			Username:        os.Getenv("SMTP_EMAIL"),
 			Password:        os.Getenv("SMTP_PASSWORD"),
-			FromName:        envOr("SMTP_FROM_NAME", "Delsecure Security"),
+			FromName:        envOr("SMTP_FROM_NAME", "Aavishield Security"),
 			FromEmail:       envOr("SMTP_FROM_EMAIL", os.Getenv("SMTP_EMAIL")),
 			SuperadminEmail: os.Getenv("SUPERADMIN_MAIL"),
 			AppURL:          envOr("COMPANY_APP_URL", envOr("NEXTAUTH_URL_COMPANY", "http://localhost:5002")),
@@ -219,7 +219,7 @@ func sendWithClient(client *smtp.Client, auth smtp.Auth, msg Message, body []byt
 // buildMIME assembles a multipart/alternative message so clients that refuse
 // HTML still get a readable version.
 func buildMIME(msg Message) []byte {
-	boundary := fmt.Sprintf("delsecure-%d", time.Now().UnixNano())
+	boundary := fmt.Sprintf("aavishield-%d", time.Now().UnixNano())
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "From: %s <%s>\r\n", cfg.FromName, cfg.FromEmail)

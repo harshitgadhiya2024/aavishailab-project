@@ -4,7 +4,7 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /*
- * DelSecure tokens. Monochrome base with one brand accent: the product's
+ * Aavishield tokens. Monochrome base with one brand accent: the product's
  * orange (#FF7000, same as the dashboards). Text on orange is near-black,
  * matching the product's --on-brand. --danger is only for "blocked" state.
  * Radius system: interactive = pill, surfaces = 20px, inputs = 12px.

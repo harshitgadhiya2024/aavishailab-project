@@ -136,7 +136,7 @@ func parseMail(raw []byte) (inboundMail, error) {
 
 var quoteStarts = []*regexp.Regexp{
 	regexp.MustCompile(`(?m)^[ \t>]*` + regexp.QuoteMeta(mailer.ReplyMarker)),
-	// Gmail / Apple Mail: "On Wed, 30 Sep 2026 at 17:24, Delsecure <x@y> wrote:" (may wrap)
+	// Gmail / Apple Mail: "On Wed, 30 Sep 2026 at 17:24, Aavishield <x@y> wrote:" (may wrap)
 	regexp.MustCompile(`(?m)^On [^\n]{0,300}(\n[^\n]{0,300})?wrote:[ \t]*$`),
 	regexp.MustCompile(`(?mi)^-{2,}\s*Original Message\s*-{2,}`),
 	regexp.MustCompile(`(?mi)^-{2,}\s*Forwarded message\s*-{2,}`),
@@ -231,14 +231,14 @@ func (h *TicketHandler) ingestEmail(ctx context.Context, m inboundMail) (result 
 	}
 	var u models.User
 	if err := h.db.Where("LOWER(email) = ? AND status = ?", m.From, models.StatusActive).First(&u).Error; err != nil {
-		return record("ignored: sender is not a Delsecure user"), true
+		return record("ignored: sender is not a Aavishield user"), true
 	}
 	// The thread a reply belongs to decides who may write into it.
 	if side == "customer" && (t.OrgID == nil || u.OrgID == nil || *u.OrgID != *t.OrgID) {
 		return record("ignored: sender is not in this ticket's organization"), true
 	}
 	if side == "team" && u.Role != models.RoleSuperAdmin {
-		return record("ignored: sender is not on the Delsecure team"), true
+		return record("ignored: sender is not on the Aavishield team"), true
 	}
 
 	body := extractReply(m.Text)

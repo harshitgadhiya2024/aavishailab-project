@@ -183,11 +183,20 @@ fn main() {
     // to it would be offering a state with nothing to recommend it. There
     // is deliberately no maximum: growing only adds margin around a
     // centred column, which costs nothing to allow.
-    let viewport = eframe::egui::ViewportBuilder::default()
+    // 530 tall (was 460) to make room for the logo header above the status.
+    let mut viewport = eframe::egui::ViewportBuilder::default()
         .with_title("Aavishield")
-        .with_inner_size([340.0, 460.0])
+        // Matches the .desktop file's StartupWMClass on Linux, so the
+        // window groups under the Aavishield launcher icon in the dock.
+        .with_app_id("aavishield-agent")
+        .with_inner_size([340.0, 530.0])
         .with_min_inner_size([300.0, 320.0])
         .with_resizable(true);
+    // Title-bar and taskbar icon: the Aavishield mark. On macOS the Dock
+    // icon comes from the bundle's .icns instead; this is harmless there.
+    if let Some((rgba, width, height)) = aavishield_agent::brand::rgba(aavishield_agent::brand::MARK_PNG, Some(256)) {
+        viewport = viewport.with_icon(eframe::egui::IconData { rgba, width, height });
+    }
 
     let native_options = eframe::NativeOptions {
         viewport,

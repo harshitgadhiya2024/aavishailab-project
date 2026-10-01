@@ -98,9 +98,9 @@ func (h *MFAHandler) Setup(c *gin.Context) {
 	}
 	h.db.Model(user).Update("mfa_secret", secret)
 
-	issuer := "Delsecure"
+	issuer := "Aavishield"
 	if user.Org != nil && user.Org.Name != "" {
-		issuer = "Delsecure (" + user.Org.Name + ")"
+		issuer = "Aavishield (" + user.Org.Name + ")"
 	}
 
 	c.JSON(http.StatusOK, gin.H{

@@ -64,7 +64,7 @@ export default function DemoRequestsPage() {
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold text-foreground">Demo Requests</h2>
-        <p className="text-sm text-muted-foreground mt-1">&quot;Book a demo&quot; submissions from the DelSecure website</p>
+        <p className="text-sm text-muted-foreground mt-1">&quot;Book a demo&quot; submissions from the Aavishield website</p>
       </div>
 
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -146,7 +146,7 @@ function DemoDrawer({ item, onClose }: { item: DemoRequest; onClose: () => void 
     onError: (e: any) => toast.error(e.response?.data?.error ?? "Update failed"),
   });
 
-  const replyHref = `mailto:${item.email}?subject=${encodeURIComponent("Your DelSecure demo")}&body=${encodeURIComponent(`Hi ${item.name.split(" ")[0]},\n\nThanks for booking a DelSecure demo. `)}`;
+  const replyHref = `mailto:${item.email}?subject=${encodeURIComponent("Your Aavishield demo")}&body=${encodeURIComponent(`Hi ${item.name.split(" ")[0]},\n\nThanks for booking a Aavishield demo. `)}`;
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-sm" onClick={onClose}>

@@ -45,7 +45,7 @@ export default function SupportCenterPage() {
         <div aria-hidden className="pointer-events-none absolute -bottom-24 right-40 h-56 w-56 rounded-full border border-brand-500/20" />
         <div className="relative flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
           <div className="max-w-xl">
-            <p className="text-sm font-medium text-brand-500">Delsecure Support</p>
+            <p className="text-sm font-medium text-brand-500">Aavishield Support</p>
             <h2 className="mt-2 text-3xl font-bold tracking-tight text-foreground">
               {first ? `Hi ${first}, how can we help?` : "How can we help?"}
             </h2>
@@ -133,7 +133,7 @@ export default function SupportCenterPage() {
                       </p>
                       {t.preview && (
                         <p className="mt-1.5 line-clamp-1 text-sm text-muted-foreground">
-                          {t.last_message_side === "support" && <span className="font-medium text-brand-500">Delsecure Support: </span>}
+                          {t.last_message_side === "support" && <span className="font-medium text-brand-500">Aavishield Support: </span>}
                           {t.preview}
                         </p>
                       )}

@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { Shield, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { navGroups } from "@/lib/nav";
 import { cn } from "@/lib/utils";
+import { BrandLogo, BrandMark } from "@/components/brand/BrandLogo";
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -19,13 +20,12 @@ export function Sidebar() {
       )}
     >
       <Link href="/" className="flex items-center gap-3 px-5 py-5 border-b border-border">
-        <div className="w-8 h-8 bg-brand-500 rounded-lg flex items-center justify-center flex-shrink-0">
-          <Shield className="w-5 h-5 text-[#0A0A0A]" />
-        </div>
-        {!collapsed && (
-          <div>
-            <span className="font-bold text-lg text-foreground">Aavishield</span>
-            <p className="text-xs text-muted-foreground">Documentation</p>
+        {collapsed ? (
+          <BrandMark className="h-8 w-8" />
+        ) : (
+          <div className="min-w-0">
+            <BrandLogo className="h-12" priority />
+            <p className="mt-1 text-xs text-muted-foreground">Documentation</p>
           </div>
         )}
       </Link>

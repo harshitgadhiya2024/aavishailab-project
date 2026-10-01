@@ -98,7 +98,7 @@ func (h *DemoRequestHandler) notifyList() []string {
 	return teamRecipients(h.db, "LEADS_NOTIFY_EMAIL")
 }
 
-// teamRecipients is who on the Delsecure side hears about something: the
+// teamRecipients is who on the Aavishield side hears about something: the
 // comma-separated addresses in envKey if set, else SUPERADMIN_MAIL, else
 // every active superadmin account, so a fresh install still gets the email.
 func teamRecipients(db *gorm.DB, envKey string) []string {

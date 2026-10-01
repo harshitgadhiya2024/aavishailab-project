@@ -1,14 +1,15 @@
 import Link from "next/link";
-import { Shield, ArrowLeft } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
+import { BrandLogo } from "@/components/brand/BrandLogo";
 
 const SECTIONS = [
   {
     title: "1. Information we collect",
-    body: "We collect account information (name, work email, company name) that you provide when you register, and device/activity data that your organization's administrator configures Delsecure to monitor for security policy enforcement.",
+    body: "We collect account information (name, work email, company name) that you provide when you register, and device/activity data that your organization's administrator configures Aavishield to monitor for security policy enforcement.",
   },
   {
     title: "2. How we use your information",
-    body: "Information is used to operate the Delsecure platform: authenticating your account, enforcing your organization's security policies, and generating activity and compliance reports for your company's administrators.",
+    body: "Information is used to operate the Aavishield platform: authenticating your account, enforcing your organization's security policies, and generating activity and compliance reports for your company's administrators.",
   },
   {
     title: "3. Data sharing",
@@ -20,11 +21,11 @@ const SECTIONS = [
   },
   {
     title: "5. Your rights",
-    body: "You may request access to, correction of, or deletion of your personal data by contacting your organization's administrator or Delsecure support.",
+    body: "You may request access to, correction of, or deletion of your personal data by contacting your organization's administrator or Aavishield support.",
   },
   {
     title: "6. Contact",
-    body: "Questions about this policy can be directed to your organization's administrator or to Delsecure support.",
+    body: "Questions about this policy can be directed to your organization's administrator or to Aavishield support.",
   },
 ];
 
@@ -34,10 +35,7 @@ export default function PrivacyPage() {
       <header className="border-b border-border">
         <div className="max-w-3xl mx-auto px-6 py-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-brand-500 rounded-lg flex items-center justify-center">
-              <Shield className="w-5 h-5 text-on-brand" />
-            </div>
-            <span className="font-bold text-foreground">Delsecure</span>
+            <BrandLogo className="h-12" priority />
           </div>
           <Link href="/login" className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
             <ArrowLeft className="w-3.5 h-3.5" /> Back to sign in

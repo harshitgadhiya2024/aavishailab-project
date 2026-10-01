@@ -64,6 +64,42 @@ pub struct ConnectorApp {
     /// process (an unrecoverable eframe error), and otherwise never runs.
     tray: Option<crate::tray::Tray>,
     uninstall: UninstallState,
+    /// The Aavishield logo and mark, uploaded to the GPU on first use.
+    brand: Option<BrandTextures>,
+}
+
+/// Brand artwork as textures, pre-scaled on the CPU to the exact pixel size
+/// they are drawn at. Downscaling an 840px logo to ~200pt on the GPU without
+/// mipmaps shimmers and loses the tagline; a Lanczos resize up front keeps
+/// it crisp. Rebuilt if the window moves to a display with a different scale.
+struct BrandTextures {
+    pixels_per_point: f32,
+    logo: egui::TextureHandle,
+    logo_size: egui::Vec2,
+    mark: egui::TextureHandle,
+}
+
+/// Logo width in points at the design width; scaled down with the layout.
+const LOGO_WIDTH: f32 = 200.0;
+/// The mark's size inside the status medallion, in points.
+const MARK_SIZE: f32 = 40.0;
+
+impl BrandTextures {
+    fn load(ctx: &egui::Context) -> Option<Self> {
+        let ppp = ctx.pixels_per_point();
+        let upload = |name: &str, png: &[u8], width_pts: f32| -> Option<(egui::TextureHandle, egui::Vec2)> {
+            let img = image::load_from_memory_with_format(png, image::ImageFormat::Png).ok()?;
+            let w = (width_pts * ppp).round().max(1.0) as u32;
+            let h = ((img.height() as f32) * (w as f32) / (img.width() as f32)).round().max(1.0) as u32;
+            let rgba = img.resize_exact(w, h, image::imageops::FilterType::Lanczos3).to_rgba8();
+            let color = egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], rgba.as_raw());
+            let tex = ctx.load_texture(name, color, egui::TextureOptions::LINEAR);
+            Some((tex, egui::vec2(w as f32 / ppp, h as f32 / ppp)))
+        };
+        let (logo, logo_size) = upload("aavishield-logo", crate::brand::LOGO_PNG, LOGO_WIDTH)?;
+        let (mark, _) = upload("aavishield-mark", crate::brand::MARK_PNG, MARK_SIZE)?;
+        Some(BrandTextures { pixels_per_point: ppp, logo, logo_size, mark })
+    }
 }
 
 /// The uninstall confirmation dialog's own state — kept separate from the
@@ -93,6 +129,7 @@ impl ConnectorApp {
             confirm_disconnect: false,
             tray,
             uninstall: UninstallState::default(),
+            brand: None,
         }
     }
 
@@ -159,6 +196,10 @@ impl eframe::App for ConnectorApp {
 
         let snap = self.ui_state.snapshot();
 
+        if self.brand.as_ref().map_or(true, |b| b.pixels_per_point != ctx.pixels_per_point()) {
+            self.brand = BrandTextures::load(&ctx);
+        }
+
         ui.style_mut().visuals.panel_fill = PANEL_BG;
         // Measured on the panel, before the scroll area and the centring
         // layout each take their cut, so every element below is scaled by
@@ -174,7 +215,13 @@ impl eframe::App for ConnectorApp {
             // reach.
             egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             ui.vertical_centered(|ui| {
-                ui.add_space(28.0);
+                ui.add_space(22.0);
+                if let Some(brand) = &self.brand {
+                    // The full Aavishield logo with tagline, scaled with the
+                    // rest of the page so it never crowds a narrow window.
+                    ui.add(egui::Image::new((brand.logo.id(), brand.logo_size * scale)));
+                    ui.add_space(20.0);
+                }
                 self.render_medallion(ui, &snap);
                 ui.add_space(14.0);
 
@@ -285,15 +332,45 @@ impl ConnectorApp {
         let (rect, _) = ui.allocate_exact_size(egui::vec2(80.0, 80.0), egui::Sense::hover());
         let painter = ui.painter();
         painter.circle_stroke(rect.center(), 38.0, egui::Stroke::new(1.5, color));
-        painter.text(rect.center(), egui::Align2::CENTER_CENTER, "🛡", egui::FontId::proportional(34.0), color);
+        // The Aavishield mark itself; the ring around it carries the status
+        // colour. Falls back to a shield glyph only if the artwork failed to
+        // load, so the medallion is never empty.
+        match &self.brand {
+            Some(brand) => {
+                let mark_rect = egui::Rect::from_center_size(rect.center(), egui::vec2(MARK_SIZE, MARK_SIZE));
+                let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+                painter.image(brand.mark.id(), mark_rect, uv, egui::Color32::WHITE);
+            }
+            None => {
+                painter.text(rect.center(), egui::Align2::CENTER_CENTER, "🛡", egui::FontId::proportional(34.0), color);
+            }
+        }
+        // Status badge on the ring's lower-right, outside the mark. Drawn as
+        // shapes rather than text: the bundled font has no ✓ or ⏸ glyph,
+        // so text rendered as an empty box.
         if !glyph.is_empty() {
-            painter.text(
-                rect.center() + egui::vec2(14.0, 14.0),
-                egui::Align2::CENTER_CENTER,
-                glyph,
-                egui::FontId::proportional(14.0),
-                color,
-            );
+            let c = rect.center() + egui::vec2(27.0, 27.0);
+            painter.circle(c, 10.0, color, egui::Stroke::new(2.0, PANEL_BG));
+            let ink = egui::Stroke::new(2.0, PANEL_BG);
+            match snap.state {
+                ConnState::Connected => {
+                    painter.line_segment([c + egui::vec2(-4.5, 0.0), c + egui::vec2(-1.5, 3.5)], ink);
+                    painter.line_segment([c + egui::vec2(-1.5, 3.5), c + egui::vec2(4.5, -3.5)], ink);
+                }
+                ConnState::Paused => {
+                    painter.line_segment([c + egui::vec2(-2.5, -4.0), c + egui::vec2(-2.5, 4.0)], ink);
+                    painter.line_segment([c + egui::vec2(2.5, -4.0), c + egui::vec2(2.5, 4.0)], ink);
+                }
+                ConnState::Connecting => {
+                    for dx in [-4.0, 0.0, 4.0] {
+                        painter.circle_filled(c + egui::vec2(dx, 0.0), 1.4, PANEL_BG);
+                    }
+                }
+                _ => {
+                    painter.line_segment([c + egui::vec2(0.0, -4.5), c + egui::vec2(0.0, 1.5)], ink);
+                    painter.circle_filled(c + egui::vec2(0.0, 4.5), 1.2, PANEL_BG);
+                }
+            }
         }
     }
 
