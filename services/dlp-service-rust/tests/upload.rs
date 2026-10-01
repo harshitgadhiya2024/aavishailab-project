@@ -5,7 +5,7 @@
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::routing::post;
-use dlp_service::ai::{Ai, AiConfig, Provider};
+use dlp_service::ai::{Ai, AiConfig};
 use dlp_service::config::Config;
 use dlp_service::{auth::mint_token, build_router, AppState};
 use http_body_util::BodyExt;
@@ -46,10 +46,11 @@ async fn fake_llm(calls: Arc<AtomicUsize>) -> String {
 
 fn ai_config(base_url: String) -> AiConfig {
     AiConfig {
-        providers: vec![Provider { name: "fake".into(), base_url, api_key: "k".into(), per_model_path: false }],
-        text_model: "t".into(),
-        vision_model: "v".into(),
-        audio_model: "a".into(),
+        base_url,
+        api_key: "k".into(),
+        text_models: vec!["t".into()],
+        vision_models: vec!["v".into()],
+        audio_models: vec!["a".into()],
         text_daily_cap: 1000,
         vision_daily_cap: 1000,
         audio_daily_cap: 1000,

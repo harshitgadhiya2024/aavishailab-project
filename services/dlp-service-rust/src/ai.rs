@@ -16,6 +16,21 @@
 //! Every failure — provider error, unparseable output, Redis down — degrades
 //! to "not sensitive". An LLM outage never takes DLP down; the pattern
 //! detectors keep working on their own.
+//!
+//! Models are reached through OpenRouter only. Each kind (text, image,
+//! audio) has a chain: a primary model and fallbacks, chosen by an
+//! evaluation of accuracy, latency and cost on DLP test cases (Oct 2026):
+//!   - text and images: Mistral Small 2603 (served by Mistral, EU);
+//!   - audio: Gemini 3.1 Flash-Lite (Mistral Small takes no audio).
+//! Resilience, outermost first: each model is retried on 408/425/429/5xx and
+//! network errors with exponential backoff, jitter and Retry-After; when a
+//! model is exhausted the next one in the chain is tried; and every request
+//! also hands OpenRouter the remaining chain (`models`) so it can fail over
+//! upstream on its own. Requests disable reasoning (the classifier answers
+//! in one short JSON object; thinking tokens would eat the max_tokens cap)
+//! and ask OpenRouter to route only to providers that do not retain or
+//! train on prompts (`data_collection: deny`) — DLP sends the most
+//! sensitive data a company has.
 
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
@@ -203,21 +218,14 @@ pub fn parse_vision_output(text: &str) -> Option<VisionVerdict> {
 // ─── Configuration ──────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
-pub struct Provider {
-    pub name: String,
+pub struct AiConfig {
+    /// OpenRouter's OpenAI-compatible API (overridable for tests).
     pub base_url: String,
     pub api_key: String,
-    /// kie.ai serves each model on its own path ({base}/{model}/v1/chat/
-    /// completions) rather than one OpenAI-style endpoint.
-    pub per_model_path: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct AiConfig {
-    pub providers: Vec<Provider>,
-    pub text_model: String,
-    pub vision_model: String,
-    pub audio_model: String,
+    /// Model chains, primary first: tried in order until one answers.
+    pub text_models: Vec<String>,
+    pub vision_models: Vec<String>,
+    pub audio_models: Vec<String>,
     pub text_daily_cap: i64,
     pub vision_daily_cap: i64,
     pub audio_daily_cap: i64,
@@ -229,8 +237,28 @@ pub struct AiConfig {
     /// Larger audio/video is reported unscannable (media_too_large).
     pub audio_max_bytes: usize,
     pub timeout: Duration,
+    /// Attempts per model (1 = no retry).
     pub max_retries: u32,
     pub redis_url: Option<String>,
+}
+
+/// Default model chains (see the module doc for how they were chosen).
+pub const DEFAULT_TEXT_MODEL: &str = "mistralai/mistral-small-2603";
+pub const DEFAULT_TEXT_FALLBACKS: &str = "google/gemini-3.1-flash-lite";
+pub const DEFAULT_VISION_MODEL: &str = "mistralai/mistral-small-2603";
+pub const DEFAULT_VISION_FALLBACKS: &str = "google/gemma-4-26b-a4b-it";
+pub const DEFAULT_AUDIO_MODEL: &str = "google/gemini-3.1-flash-lite";
+pub const DEFAULT_AUDIO_FALLBACKS: &str = "";
+
+/// `primary` then the comma-separated `fallbacks`, de-duplicated, in order.
+pub fn model_chain(primary: &str, fallbacks: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for m in std::iter::once(primary).chain(fallbacks.split(',')).map(str::trim) {
+        if !m.is_empty() && !out.iter().any(|x| x == m) {
+            out.push(m.to_string());
+        }
+    }
+    out
 }
 
 fn env(k: &str) -> Option<String> {
@@ -242,40 +270,21 @@ fn env_num<T: std::str::FromStr>(k: &str, d: T) -> T {
 }
 
 impl AiConfig {
-    /// None when no provider has an API key — the AI tier is then off and
+    /// None when OPENROUTER_API_KEY is unset — the AI tier is then off and
     /// pattern detection runs alone.
     pub fn from_env() -> Option<Self> {
-        let chain = env("LLM_PROVIDER_CHAIN").unwrap_or_else(|| "openrouter,kie_ai".into());
-        let mut providers = Vec::new();
-        for name in chain.split(',').map(str::trim) {
-            let p = match name {
-                "openrouter" => Provider {
-                    name: name.into(),
-                    base_url: env("OPENROUTER_BASE_URL").unwrap_or_else(|| "https://openrouter.ai/api/v1".into()),
-                    api_key: env("OPENROUTER_API_KEY").unwrap_or_default(),
-                    per_model_path: false,
-                },
-                "kie_ai" => Provider {
-                    name: name.into(),
-                    base_url: env("KIE_AI_BASE_URL").unwrap_or_else(|| "https://api.kie.ai".into()),
-                    api_key: env("KIE_AI_API_KEY").unwrap_or_default(),
-                    per_model_path: env("KIE_AI_PATH_STYLE").map(|v| v == "per_model").unwrap_or(true),
-                },
-                _ => continue,
-            };
-            if !p.api_key.is_empty() {
-                providers.push(p);
-            }
-        }
-        if providers.is_empty() {
-            return None;
-        }
+        let api_key = env("OPENROUTER_API_KEY")?;
+        let chain = |model_key: &str, model_default: &str, fb_key: &str, fb_default: &str| {
+            let fallbacks = std::env::var(fb_key).unwrap_or_else(|_| fb_default.to_string());
+            model_chain(&env(model_key).unwrap_or_else(|| model_default.into()), &fallbacks)
+        };
         let day = 30 * 24 * 3600;
         Some(AiConfig {
-            providers,
-            text_model: env("DLP_TEXT_MODEL").unwrap_or_else(|| "google/gemini-2.5-flash-lite".into()),
-            vision_model: env("DLP_VISION_MODEL").unwrap_or_else(|| "google/gemini-2.5-flash".into()),
-            audio_model: env("DLP_AUDIO_MODEL").unwrap_or_else(|| "google/gemini-2.5-flash".into()),
+            base_url: env("OPENROUTER_BASE_URL").unwrap_or_else(|| "https://openrouter.ai/api/v1".into()),
+            api_key,
+            text_models: chain("DLP_TEXT_MODEL", DEFAULT_TEXT_MODEL, "DLP_TEXT_FALLBACK_MODELS", DEFAULT_TEXT_FALLBACKS),
+            vision_models: chain("DLP_VISION_MODEL", DEFAULT_VISION_MODEL, "DLP_VISION_FALLBACK_MODELS", DEFAULT_VISION_FALLBACKS),
+            audio_models: chain("DLP_AUDIO_MODEL", DEFAULT_AUDIO_MODEL, "DLP_AUDIO_FALLBACK_MODELS", DEFAULT_AUDIO_FALLBACKS),
             text_daily_cap: env_num("DLP_TEXT_DAILY_CAP", 20_000),
             vision_daily_cap: env_num("DLP_VISION_DAILY_CAP", 2_000),
             audio_daily_cap: env_num("DLP_AUDIO_DAILY_CAP", 500),
@@ -362,47 +371,62 @@ impl Ai {
         }
     }
 
-    /// One chat-completions call, through the provider chain in order, each
-    /// retried with backoff on transport errors, 429 and 5xx.
-    async fn chat(&self, messages: serde_json::Value, model: &str, max_tokens: u32) -> Result<String, String> {
-        let mut last_err = String::from("no provider");
-        for p in &self.cfg.providers {
-            let url = if p.per_model_path {
-                format!("{}/{}/v1/chat/completions", p.base_url.trim_end_matches('/'), model)
-            } else {
-                format!("{}/chat/completions", p.base_url.trim_end_matches('/'))
-            };
-            let body = json!({"model": model, "messages": messages, "temperature": 0.0, "max_tokens": max_tokens});
+    /// One chat completion through OpenRouter, walking `models` in order.
+    /// Each model is retried on transient failures; a permanent error (4xx
+    /// other than 408/425/429) or exhausted retries moves on to the next.
+    async fn chat(&self, messages: serde_json::Value, models: &[String], max_tokens: u32) -> Result<String, String> {
+        let url = format!("{}/chat/completions", self.cfg.base_url.trim_end_matches('/'));
+        let mut last_err = String::from("no model configured");
+        for (i, model) in models.iter().enumerate() {
+            let body = json!({
+                "model": model,
+                // The rest of the chain, so OpenRouter can fail over upstream too.
+                "models": &models[i..],
+                "messages": messages,
+                "temperature": 0.0,
+                "max_tokens": max_tokens,
+                "reasoning": {"enabled": false},
+                "provider": {"data_collection": "deny", "allow_fallbacks": true},
+            });
+            let mut retry_after: Option<Duration> = None;
             for attempt in 0..self.cfg.max_retries.max(1) {
                 if attempt > 0 {
-                    tokio::time::sleep(Duration::from_secs(1 << (attempt - 1))).await;
+                    tokio::time::sleep(retry_delay(attempt, retry_after)).await;
                 }
+                retry_after = None;
                 let resp = self
                     .http
                     .post(&url)
-                    .bearer_auth(&p.api_key)
+                    .bearer_auth(&self.cfg.api_key)
                     .header("HTTP-Referer", "https://aavishield.com")
-                    .header("X-Title", "AaviShield DLP")
+                    .header("X-Title", "Aavishield DLP")
                     .json(&body)
                     .send()
                     .await;
                 let resp = match resp {
                     Ok(r) => r,
                     Err(e) => {
-                        last_err = format!("{}: {e}", p.name);
+                        last_err = format!("{model}: {e}");
                         continue;
                     }
                 };
                 let status = resp.status();
-                if status.as_u16() == 429 || status.is_server_error() {
-                    last_err = format!("{}: HTTP {status}", p.name);
+                if is_retryable(status.as_u16()) {
+                    retry_after = parse_retry_after(resp.headers().get(reqwest::header::RETRY_AFTER));
+                    last_err = format!("{model}: HTTP {status}");
                     continue;
                 }
                 if !status.is_success() {
-                    last_err = format!("{}: HTTP {status}", p.name);
+                    last_err = format!("{model}: HTTP {status}");
                     break;
                 }
-                let v: serde_json::Value = resp.json().await.map_err(|e| format!("{}: {e}", p.name))?;
+                let v: serde_json::Value = match resp.json().await {
+                    Ok(v) => v,
+                    Err(e) => {
+                        last_err = format!("{model}: {e}");
+                        continue;
+                    }
+                };
                 let content = &v["choices"][0]["message"]["content"];
                 let text = match content {
                     serde_json::Value::String(s) => s.clone(),
@@ -410,8 +434,12 @@ impl Ai {
                     serde_json::Value::Array(parts) => parts.iter().filter_map(|p| p["text"].as_str()).collect::<Vec<_>>().join(""),
                     _ => String::new(),
                 };
+                if i > 0 {
+                    tracing::info!(model, primary = %models[0], "AI answered by fallback model");
+                }
                 return Ok(text);
             }
+            tracing::warn!(model, error = %last_err, "AI model unavailable — trying the next in the chain");
         }
         Err(last_err)
     }
@@ -422,7 +450,7 @@ impl Ai {
             return TextVerdict::none();
         }
         let slice: String = text.chars().take(self.cfg.max_text_chars).collect();
-        let key = format!("dlp:txt:{}:{TEXT_PROMPT_VERSION}:{}", hex::encode(Sha256::digest(slice.as_bytes())), self.cfg.text_model);
+        let key = format!("dlp:txt:{}:{TEXT_PROMPT_VERSION}:{}", hex::encode(Sha256::digest(slice.as_bytes())), self.cfg.text_models.first().map(String::as_str).unwrap_or(""));
         if let Some(hit) = self.cache_get(&key).await.and_then(|s| serde_json::from_str::<TextVerdict>(&s).ok()) {
             return TextVerdict { cached: true, ..hit };
         }
@@ -433,7 +461,7 @@ impl Ai {
             {"role": "system", "content": TEXT_PROMPT},
             {"role": "user", "content": format!("Classify this text:\n\n{slice}")},
         ]);
-        let verdict = match self.chat(messages, &self.cfg.text_model, 250).await {
+        let verdict = match self.chat(messages, &self.cfg.text_models, 250).await {
             Ok(out) => parse_text_output(&out).unwrap_or_else(TextVerdict::none),
             Err(e) => {
                 tracing::warn!(org_id, error = %e, "text classification failed");
@@ -450,7 +478,7 @@ impl Ai {
         if jpeg.is_empty() {
             return VisionVerdict::none();
         }
-        let key = format!("dlp:vis:{}:{VISION_PROMPT_VERSION}:{}", hex::encode(Sha256::digest(jpeg)), self.cfg.vision_model);
+        let key = format!("dlp:vis:{}:{VISION_PROMPT_VERSION}:{}", hex::encode(Sha256::digest(jpeg)), self.cfg.vision_models.first().map(String::as_str).unwrap_or(""));
         if let Some(hit) = self.cache_get(&key).await.and_then(|s| serde_json::from_str::<VisionVerdict>(&s).ok()) {
             return VisionVerdict { cached: true, ..hit };
         }
@@ -464,7 +492,7 @@ impl Ai {
                 {"type": "image_url", "image_url": {"url": format!("data:image/jpeg;base64,{}", B64.encode(jpeg))}},
             ]},
         ]);
-        let verdict = match self.chat(messages, &self.cfg.vision_model, 200).await {
+        let verdict = match self.chat(messages, &self.cfg.vision_models, 200).await {
             Ok(out) => parse_vision_output(&out).unwrap_or_else(VisionVerdict::none),
             Err(e) => {
                 tracing::warn!(org_id, error = %e, "image classification failed");
@@ -484,7 +512,7 @@ impl Ai {
             return None;
         }
         let b64 = B64.encode(audio);
-        let key = format!("dlp:aud:{}:{AUDIO_PROMPT_VERSION}:{}", hex::encode(Sha256::digest(b64.as_bytes())), self.cfg.audio_model);
+        let key = format!("dlp:aud:{}:{AUDIO_PROMPT_VERSION}:{}", hex::encode(Sha256::digest(b64.as_bytes())), self.cfg.audio_models.first().map(String::as_str).unwrap_or(""));
         if let Some(hit) = self.cache_get(&key).await {
             return Some(hit).filter(|t| !t.is_empty());
         }
@@ -498,7 +526,7 @@ impl Ai {
                 {"type": "input_audio", "input_audio": {"data": b64, "format": audio_format(mime)}},
             ]},
         ]);
-        match self.chat(messages, &self.cfg.audio_model, 4000).await {
+        match self.chat(messages, &self.cfg.audio_models, 4000).await {
             Ok(t) if !t.trim().is_empty() => {
                 let t = t.trim().to_string();
                 self.cache_set(&key, &t, self.cfg.audio_cache_ttl).await;
@@ -511,6 +539,29 @@ impl Ai {
             }
         }
     }
+}
+
+/// 408 timeout, 425 too early, 429 rate limited, and any 5xx are worth
+/// retrying; other 4xx (bad request, auth, credits, unknown model) are not.
+fn is_retryable(status: u16) -> bool {
+    matches!(status, 408 | 425 | 429) || (500..600).contains(&status)
+}
+
+/// Retry-After in seconds (the HTTP-date form is not used by OpenRouter).
+fn parse_retry_after(v: Option<&reqwest::header::HeaderValue>) -> Option<Duration> {
+    let secs: f64 = v?.to_str().ok()?.trim().parse().ok()?;
+    (secs.is_finite() && secs >= 0.0).then(|| Duration::from_secs_f64(secs))
+}
+
+/// Wait before retry `attempt` (1-based): the server's Retry-After when it
+/// gave one, otherwise 0.5s doubling per attempt; capped at 10s, with ±25%
+/// jitter so a burst of failed calls doesn't retry in lockstep.
+fn retry_delay(attempt: u32, retry_after: Option<Duration>) -> Duration {
+    const CAP: Duration = Duration::from_secs(10);
+    let base = retry_after.unwrap_or_else(|| Duration::from_millis(500u64.saturating_mul(1 << (attempt - 1).min(5))));
+    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.subsec_nanos()).unwrap_or(0);
+    let jitter = 0.75 + (nanos % 1000) as f64 / 2000.0; // 0.75 ..< 1.25
+    base.mul_f64(jitter).min(CAP)
 }
 
 fn audio_format(mime: &str) -> &'static str {
@@ -574,6 +625,34 @@ mod tests {
         assert!(serde_json::from_str::<TextVerdict>(py).is_ok());
         let py = r#"{"sensitive": true, "doc_type": "aadhaar_card", "confidence": 91, "evidence": "x", "cached": false, "budget_exhausted": false}"#;
         assert!(serde_json::from_str::<VisionVerdict>(py).is_ok());
+    }
+
+    #[test]
+    fn model_chain_keeps_order_and_drops_duplicates() {
+        assert_eq!(model_chain("a/x", "b/y, a/x,,c/z"), vec!["a/x", "b/y", "c/z"]);
+        assert_eq!(model_chain("a/x", ""), vec!["a/x"]);
+    }
+
+    #[test]
+    fn retryable_statuses() {
+        for s in [408, 425, 429, 500, 502, 503, 504] {
+            assert!(is_retryable(s), "{s}");
+        }
+        for s in [200, 400, 401, 402, 403, 404, 422] {
+            assert!(!is_retryable(s), "{s}");
+        }
+    }
+
+    #[test]
+    fn retry_delay_backs_off_and_is_capped() {
+        let d1 = retry_delay(1, None);
+        assert!(d1 >= Duration::from_millis(375) && d1 <= Duration::from_millis(625), "{d1:?}");
+        let d3 = retry_delay(3, None);
+        assert!(d3 >= Duration::from_millis(1500) && d3 <= Duration::from_millis(2500), "{d3:?}");
+        assert!(retry_delay(9, None) <= Duration::from_secs(10));
+        assert!(retry_delay(1, Some(Duration::from_secs(60))) <= Duration::from_secs(10));
+        let h = reqwest::header::HeaderValue::from_static("2");
+        assert_eq!(parse_retry_after(Some(&h)), Some(Duration::from_secs(2)));
     }
 
     #[test]

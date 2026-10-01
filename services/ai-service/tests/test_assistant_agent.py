@@ -124,7 +124,7 @@ async def test_provider_reassembles_streamed_tool_calls():
         {"choices": [{"delta": {"tool_calls": [{"index": 0, "id": "call_a", "function": {"name": "get_", "arguments": '{"con'}}]}}]},
         {"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"name": "incidents", "arguments": 'trol":"dlp"}'}}]}}]},
     ]) + "\ndata: [DONE]\n"
-    p = LLMProvider(ProviderConfig(name="t", base_url="http://llm", api_key="k", default_model="m", path_style="openai"))
+    p = LLMProvider(ProviderConfig(name="t", base_url="http://llm", api_key="k", default_model="m"))
     p._client = httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(200, text=sse)))
     events = [e async for e in p.stream_chat_tools([], tools=TOOLS)]
     assert events[0] == {"type": "content", "text": "Hi"}

@@ -65,7 +65,7 @@ def _provider_error_message(exc: Exception) -> str:
         return (
             "The AI assistant can't reach a working language model. This is a service "
             "configuration issue, not a problem with your request — check OPENROUTER_API_KEY "
-            "and OPENROUTER_DEFAULT_MODEL (or the KIE_AI_* / OLLAMA_* fallback) for the "
+            "and OPENROUTER_DEFAULT_MODEL (or the OLLAMA_* fallback) for the "
             f"AI service. Provider said: {detail[:200]}"
         )
     return f"The AI assistant failed to answer: {detail[:300]}"
@@ -231,14 +231,14 @@ async def list_models():
     return {"models": router.get_available_models()}
 
 
-# ─── Completions (OpenAI-compatible proxy to kie.ai) ──────────────────────────
+# ─── Completions (OpenAI-compatible proxy through OpenRouter) ─────────────────
 
 @app.post("/api/v1/completions")
 async def completions(
     req: dict,
     authorization: str = Header(...),
 ):
-    """OpenAI-compatible completion proxy through kie.ai."""
+    """OpenAI-compatible completion proxy through OpenRouter."""
     token = authorization.replace("Bearer ", "")
     router = get_router()
 

@@ -1,19 +1,27 @@
 """
-Multi-LLM provider system for Aavishield AI service.
-Primary: kie.ai (OpenAI-compatible API)
-Fallback chain configurable via LLM_PROVIDER_CHAIN env var.
+LLM access for the Aavishield AI service, through OpenRouter.
+
+Resilience, outermost first:
+  - a model chain per provider (default model, then OPENROUTER_FALLBACK_MODELS),
+    tried in order until one answers;
+  - each model retried on 408/425/429/5xx and network errors with exponential
+    backoff, jitter and the server's Retry-After (LLM_MAX_RETRIES attempts);
+  - the remaining chain is also sent to OpenRouter as `models`, so it can
+    fail over upstream by itself.
+A local Ollama can be added to LLM_PROVIDER_CHAIN as a further fallback.
 """
 
 from __future__ import annotations
 
+import asyncio
 import os
+import random
 import time
 import logging
 from typing import AsyncIterator, Iterator
 from dataclasses import dataclass, field
 
 import httpx
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 logger = logging.getLogger(__name__)
 
@@ -55,19 +63,49 @@ class ProviderConfig:
     api_key: str
     default_model: str
     timeout: int = 60
+    # Attempts per model (1 = no retry).
     max_retries: int = 3
     enabled: bool = True
-    # kie.ai serves each model on its own path — https://api.kie.ai/{model}/v1/
-    # chat/completions — rather than the single /v1/chat/completions endpoint
-    # OpenAI uses. With "per_model" the model name is spliced into the URL.
-    path_style: str = "openai"  # openai | per_model
+    # Tried in order after the requested/default model fails.
+    fallback_models: list = field(default_factory=list)
     # Extra headers sent on every request (OpenRouter uses HTTP-Referer /
     # X-Title for its dashboard attribution; harmless elsewhere).
     extra_headers: dict = field(default_factory=dict)
+    # Merged into every request body (OpenRouter routing/privacy options).
+    extra_body: dict = field(default_factory=dict)
+    # Send the remaining chain as `models` (an OpenRouter extension).
+    send_models_chain: bool = False
+
+
+RETRYABLE_STATUS = {408, 425, 429}
+MAX_BACKOFF_SECONDS = 10.0
+
+
+def is_retryable(status: int) -> bool:
+    """Timeouts, rate limits and server errors; never auth/credit/bad-request."""
+    return status in RETRYABLE_STATUS or 500 <= status < 600
+
+
+def retry_delay(attempt: int, retry_after: str | None = None) -> float:
+    """Seconds to wait before retry `attempt` (1-based): Retry-After when the
+    server sent one, else 0.5s doubling; capped, with ±25% jitter."""
+    base = None
+    if retry_after:
+        try:
+            base = max(0.0, float(retry_after))
+        except ValueError:
+            base = None
+    if base is None:
+        base = 0.5 * (2 ** min(attempt - 1, 5))
+    return min(base * random.uniform(0.75, 1.25), MAX_BACKOFF_SECONDS)
+
+
+class RetryableError(Exception):
+    """A transient failure worth another attempt on the same model."""
 
 
 class LLMProvider:
-    """OpenAI-compatible LLM provider (works with kie.ai, openai, etc.)"""
+    """OpenAI-compatible chat-completions client (OpenRouter, Ollama)."""
 
     def __init__(self, config: ProviderConfig):
         self.config = config
@@ -80,12 +118,45 @@ class LLMProvider:
             timeout=httpx.Timeout(config.timeout),
         )
 
-    def _completions_url(self, model: str) -> str:
+    def _completions_url(self, model: str | None = None) -> str:
         """Absolute URL for a chat-completions call against this provider."""
-        base = self.config.base_url.rstrip("/")
-        if self.config.path_style == "per_model":
-            return f"{base}/{model}/v1/chat/completions"
-        return f"{base}/chat/completions"
+        return f"{self.config.base_url.rstrip('/')}/chat/completions"
+
+    def model_chain(self, model: str | None) -> list[str]:
+        """The requested model, then the default, then the fallbacks."""
+        chain: list[str] = []
+        for m in [model, self.config.default_model, *self.config.fallback_models]:
+            m = (m or "").strip()
+            if m and m not in chain:
+                chain.append(m)
+        return chain
+
+    def _payload(self, chain: list[str], i: int, **fields) -> dict:
+        payload = {"model": chain[i], **fields, **self.config.extra_body}
+        if self.config.send_models_chain:
+            payload["models"] = chain[i:]
+        return payload
+
+    async def _post_with_retries(self, payload: dict) -> dict:
+        """POST one non-streaming completion, retrying transient failures."""
+        last: Exception | None = None
+        retry_after: str | None = None
+        for attempt in range(max(1, self.config.max_retries)):
+            if attempt:
+                await asyncio.sleep(retry_delay(attempt, retry_after))
+            retry_after = None
+            try:
+                resp = await self._client.post(self._completions_url(), json=payload)
+            except (httpx.TransportError, httpx.TimeoutException) as e:
+                last = e
+                continue
+            if is_retryable(resp.status_code):
+                retry_after = resp.headers.get("retry-after")
+                last = httpx.HTTPStatusError(f"{resp.status_code}", request=resp.request, response=resp)
+                continue
+            resp.raise_for_status()
+            return resp.json()
+        raise last or RuntimeError("no attempt made")
 
     @property
     def is_available(self) -> bool:
@@ -101,21 +172,31 @@ class LLMProvider:
         tool_choice: str | None = None,
         stream: bool = False,
     ) -> ChatResponse:
-        payload = {
-            "model": model or self.config.default_model,
+        fields = {
             "messages": [m.to_dict() for m in messages],
             "temperature": temperature,
             "max_tokens": max_tokens,
             "stream": False,
         }
         if tools:
-            payload["tools"] = tools
+            fields["tools"] = tools
         if tool_choice:
-            payload["tool_choice"] = tool_choice
+            fields["tool_choice"] = tool_choice
 
-        resp = await self._client.post(self._completions_url(payload["model"]), json=payload)
-        resp.raise_for_status()
-        data = resp.json()
+        chain = self.model_chain(model)
+        data, last = None, None
+        for i in range(len(chain)):
+            payload = self._payload(chain, i, **fields)
+            try:
+                data = await self._post_with_retries(payload)
+                if i:
+                    logger.info("LLM answered by fallback model %s (primary %s)", chain[i], chain[0])
+                break
+            except Exception as e:
+                logger.warning("LLM model %s failed on %s: %s", chain[i], self.config.name, e)
+                last = e
+        if data is None:
+            raise last or RuntimeError("no model configured")
 
         choice = data["choices"][0]
         msg = choice["message"]
@@ -138,29 +219,66 @@ class LLMProvider:
         temperature: float = 0.7,
         max_tokens: int = 2048,
     ) -> AsyncIterator[str]:
-        payload = {
-            "model": model or self.config.default_model,
+        import json
+
+        fields = {
             "messages": [m.to_dict() for m in messages],
             "temperature": temperature,
             "max_tokens": max_tokens,
             "stream": True,
         }
+        async for line in self._stream_lines(fields, model):
+            chunk = line[6:]
+            if chunk == "[DONE]":
+                break
+            try:
+                data = json.loads(chunk)
+                delta = data["choices"][0]["delta"]
+                if "content" in delta and delta["content"]:
+                    yield delta["content"]
+            except Exception:
+                continue
 
-        async with self._client.stream("POST", self._completions_url(payload["model"]), json=payload) as resp:
-            resp.raise_for_status()
-            async for line in resp.aiter_lines():
-                if line.startswith("data: "):
-                    chunk = line[6:]
-                    if chunk == "[DONE]":
-                        break
-                    try:
-                        import json
-                        data = json.loads(chunk)
-                        delta = data["choices"][0]["delta"]
-                        if "content" in delta and delta["content"]:
-                            yield delta["content"]
-                    except Exception:
-                        continue
+    async def _stream_lines(self, fields: dict, model: str | None) -> AsyncIterator[str]:
+        """SSE `data:` lines of one streamed completion. Retries and walks the
+        model chain only while nothing has been yielded; once the answer has
+        started streaming, a failure is raised to the caller."""
+        chain = self.model_chain(model)
+        last: Exception | None = None
+        for i in range(len(chain)):
+            payload = self._payload(chain, i, **fields)
+            retry_after: str | None = None
+            for attempt in range(max(1, self.config.max_retries)):
+                if attempt:
+                    await asyncio.sleep(retry_delay(attempt, retry_after))
+                retry_after = None
+                started = False
+                try:
+                    async with self._client.stream("POST", self._completions_url(), json=payload) as resp:
+                        if resp.status_code >= 400:
+                            body = (await resp.aread()).decode(errors="replace")[:300]
+                            err = httpx.HTTPStatusError(f"{resp.status_code}: {body}", request=resp.request, response=resp)
+                            if is_retryable(resp.status_code):
+                                retry_after = resp.headers.get("retry-after")
+                                raise RetryableError(str(err)) from err
+                            raise err
+                        async for line in resp.aiter_lines():
+                            if line.startswith("data: "):
+                                started = True
+                                yield line
+                    if i:
+                        logger.info("LLM stream answered by fallback model %s (primary %s)", chain[i], chain[0])
+                    return
+                except (RetryableError, httpx.TransportError, httpx.TimeoutException) as e:
+                    if started:
+                        raise
+                    last = e
+                    continue
+                except httpx.HTTPStatusError as e:
+                    last = e
+                    break  # permanent for this model: try the next one
+            logger.warning("LLM model %s failed on %s: %s", chain[i], self.config.name, last)
+        raise last or RuntimeError("no model configured")
 
     async def stream_chat_tools(
         self,
@@ -178,8 +296,7 @@ class LLMProvider:
         """
         import json
 
-        payload = {
-            "model": model or self.config.default_model,
+        fields = {
             "messages": [m.to_dict() for m in messages],
             "temperature": temperature,
             "max_tokens": max_tokens,
@@ -188,36 +305,30 @@ class LLMProvider:
             "tool_choice": "auto",
         }
         calls: dict[int, dict] = {}
-        async with self._client.stream("POST", self._completions_url(payload["model"]), json=payload) as resp:
-            if resp.status_code >= 400:
-                body = (await resp.aread()).decode(errors="replace")[:300]
-                raise httpx.HTTPStatusError(f"{resp.status_code}: {body}", request=resp.request, response=resp)
-            async for line in resp.aiter_lines():
-                if not line.startswith("data: "):
-                    continue
-                chunk = line[6:].strip()
-                if chunk == "[DONE]":
-                    break
-                try:
-                    data = json.loads(chunk)
-                except json.JSONDecodeError:
-                    continue
-                if data.get("error"):
-                    raise RuntimeError(str(data["error"])[:300])
-                for choice in data.get("choices") or []:
-                    delta = choice.get("delta") or {}
-                    if delta.get("content"):
-                        yield {"type": "content", "text": delta["content"]}
-                    for tc in delta.get("tool_calls") or []:
-                        c = calls.setdefault(tc.get("index", 0), {"id": "", "type": "function",
-                                                                  "function": {"name": "", "arguments": ""}})
-                        if tc.get("id"):
-                            c["id"] = tc["id"]
-                        fn = tc.get("function") or {}
-                        if fn.get("name"):
-                            c["function"]["name"] += fn["name"]
-                        if fn.get("arguments"):
-                            c["function"]["arguments"] += fn["arguments"]
+        async for line in self._stream_lines(fields, model):
+            chunk = line[6:].strip()
+            if chunk == "[DONE]":
+                break
+            try:
+                data = json.loads(chunk)
+            except json.JSONDecodeError:
+                continue
+            if data.get("error"):
+                raise RuntimeError(str(data["error"])[:300])
+            for choice in data.get("choices") or []:
+                delta = choice.get("delta") or {}
+                if delta.get("content"):
+                    yield {"type": "content", "text": delta["content"]}
+                for tc in delta.get("tool_calls") or []:
+                    c = calls.setdefault(tc.get("index", 0), {"id": "", "type": "function",
+                                                              "function": {"name": "", "arguments": ""}})
+                    if tc.get("id"):
+                        c["id"] = tc["id"]
+                    fn = tc.get("function") or {}
+                    if fn.get("name"):
+                        c["function"]["name"] += fn["name"]
+                    if fn.get("arguments"):
+                        c["function"]["arguments"] += fn["arguments"]
         if calls:
             out = []
             for i, c in sorted(calls.items()):
@@ -242,9 +353,11 @@ class MultiLLMRouter:
 
     def _load_providers(self):
         """Load providers from environment variables."""
-        # OpenRouter is the default primary; kie.ai stays on the chain as a
-        # fallback where a key is still configured.
-        provider_chain = os.getenv("LLM_PROVIDER_CHAIN", "openrouter,kie_ai").split(",")
+        # OpenRouter only by default; a local Ollama can be appended.
+        provider_chain = os.getenv("LLM_PROVIDER_CHAIN", "openrouter").split(",")
+        retries = int(os.getenv("LLM_MAX_RETRIES", "3"))
+        fallbacks = [m.strip() for m in os.getenv(
+            "OPENROUTER_FALLBACK_MODELS", "google/gemma-4-26b-a4b-it,google/gemini-3.1-flash-lite").split(",") if m.strip()]
 
         provider_configs = {
             "openrouter": ProviderConfig(
@@ -253,24 +366,21 @@ class MultiLLMRouter:
                 # {base}/chat/completions endpoint, model passed in the body.
                 base_url=os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
                 api_key=os.getenv("OPENROUTER_API_KEY", ""),
-                default_model=os.getenv("OPENROUTER_DEFAULT_MODEL", "google/gemini-2.5-flash-lite"),
+                # Chosen by evaluation (Oct 2026): best tool selection, fastest,
+                # ~5x cheaper than Gemini 2.5 Flash; served by Mistral (EU).
+                default_model=os.getenv("OPENROUTER_DEFAULT_MODEL", "mistralai/mistral-small-2603"),
+                fallback_models=fallbacks,
                 timeout=int(os.getenv("LLM_TIMEOUT_SECONDS", "60")),
-                path_style="openai",
+                max_retries=retries,
                 extra_headers={
                     "HTTP-Referer": os.getenv("OPENROUTER_REFERER", "https://aavishield.com"),
-                    "X-Title": os.getenv("OPENROUTER_TITLE", "AaviShield DLP"),
+                    "X-Title": os.getenv("OPENROUTER_TITLE", "Aavishield"),
                 },
-            ),
-            "kie_ai": ProviderConfig(
-                name="kie_ai",
-                # Base is the host only: the model and /v1 are appended per call.
-                base_url=os.getenv("KIE_AI_BASE_URL", "https://api.kie.ai"),
-                api_key=os.getenv("KIE_AI_API_KEY", ""),
-                # kie.ai serves Gemini for chat; it does not host gpt-* models,
-                # and asking for one returns "Operation not found".
-                default_model=os.getenv("KIE_AI_DEFAULT_MODEL", "gemini-2.5-flash"),
-                timeout=int(os.getenv("LLM_TIMEOUT_SECONDS", "60")),
-                path_style=os.getenv("KIE_AI_PATH_STYLE", "per_model"),
+                # No thinking tokens (answers stream immediately), and only
+                # providers that neither retain nor train on prompts.
+                extra_body={"reasoning": {"enabled": False},
+                            "provider": {"data_collection": "deny", "allow_fallbacks": True}},
+                send_models_chain=True,
             ),
             # Add more providers here — e.g. a local Ollama instance
             "ollama": ProviderConfig(
@@ -278,6 +388,7 @@ class MultiLLMRouter:
                 base_url=os.getenv("OLLAMA_BASE_URL", "http://ollama:11434/v1"),
                 api_key="ollama",  # Ollama doesn't need a real key
                 default_model=os.getenv("OLLAMA_DEFAULT_MODEL", "llama3.2"),
+                max_retries=retries,
                 enabled=os.getenv("OLLAMA_ENABLED", "false").lower() == "true",
             ),
         }

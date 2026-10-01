@@ -209,19 +209,22 @@ services:
       # ─── AI tier (ai_text / ai_visual / ai_audio) ─────────────────────────
       # Off when no provider key is set; pattern detection then runs alone.
       REDIS_URL: redis://:${REDIS_PASSWORD:-aavishield_redis_dev}@redis:6379/0
-      LLM_PROVIDER_CHAIN: ${LLM_PROVIDER_CHAIN:-openrouter,kie_ai}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
-      KIE_AI_API_KEY: ${KIE_AI_API_KEY:-}
       LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-60}
-      DLP_TEXT_MODEL: ${DLP_TEXT_MODEL:-google/gemini-2.5-flash-lite}
+      LLM_MAX_RETRIES: ${LLM_MAX_RETRIES:-3}
+      # Each tier: a primary model, then comma-separated fallbacks.
+      DLP_TEXT_MODEL: ${DLP_TEXT_MODEL:-mistralai/mistral-small-2603}
+      DLP_TEXT_FALLBACK_MODELS: ${DLP_TEXT_FALLBACK_MODELS:-google/gemini-3.1-flash-lite}
       DLP_TEXT_CACHE_TTL_SECONDS: ${DLP_TEXT_CACHE_TTL_SECONDS:-2592000}
       DLP_TEXT_DAILY_CAP: ${DLP_TEXT_DAILY_CAP:-20000}
       DLP_TEXT_MAX_CHARS: ${DLP_TEXT_MAX_CHARS:-24000}
-      DLP_VISION_MODEL: ${DLP_VISION_MODEL:-google/gemini-2.5-flash}
+      DLP_VISION_MODEL: ${DLP_VISION_MODEL:-mistralai/mistral-small-2603}
+      DLP_VISION_FALLBACK_MODELS: ${DLP_VISION_FALLBACK_MODELS:-google/gemma-4-26b-a4b-it}
       DLP_VISION_CACHE_TTL_SECONDS: ${DLP_VISION_CACHE_TTL_SECONDS:-2592000}
       DLP_VISION_DAILY_CAP: ${DLP_VISION_DAILY_CAP:-2000}
-      DLP_AUDIO_MODEL: ${DLP_AUDIO_MODEL:-google/gemini-2.5-flash}
+      DLP_AUDIO_MODEL: ${DLP_AUDIO_MODEL:-google/gemini-3.1-flash-lite}
+      DLP_AUDIO_FALLBACK_MODELS: ${DLP_AUDIO_FALLBACK_MODELS:-}
       DLP_AUDIO_CACHE_TTL_SECONDS: ${DLP_AUDIO_CACHE_TTL_SECONDS:-2592000}
       DLP_AUDIO_DAILY_CAP: ${DLP_AUDIO_DAILY_CAP:-500}
       DLP_AUDIO_MAX_BYTES: ${DLP_AUDIO_MAX_BYTES:-25165824}
@@ -355,14 +358,15 @@ services:
     environment:
       AI_SERVICE_PORT: "6002"
       ADMIN_API_URL: http://admin-api:6000
-      # ─── LLM provider (OpenRouter is primary; kie.ai stays as fallback) ──
-      LLM_PROVIDER_CHAIN: ${LLM_PROVIDER_CHAIN:-openrouter,kie_ai}
+      # ─── LLM provider: OpenRouter, retried and with a model fallback chain ─
+      LLM_PROVIDER_CHAIN: ${LLM_PROVIDER_CHAIN:-openrouter}
+      LLM_MAX_RETRIES: ${LLM_MAX_RETRIES:-3}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
-      OPENROUTER_DEFAULT_MODEL: ${OPENROUTER_DEFAULT_MODEL:-google/gemini-2.5-flash-lite}
-      # The dashboard assistant picks tools and follows up far more reliably
-      # on flash than flash-lite; other AI features keep the cheaper default.
-      ASSISTANT_MODEL: ${ASSISTANT_MODEL:-google/gemini-2.5-flash}
+      OPENROUTER_DEFAULT_MODEL: ${OPENROUTER_DEFAULT_MODEL:-mistralai/mistral-small-2603}
+      OPENROUTER_FALLBACK_MODELS: ${OPENROUTER_FALLBACK_MODELS:-google/gemma-4-26b-a4b-it,google/gemini-3.1-flash-lite}
+      # 8/8 on the assistant tool-selection eval, cheapest of those that were.
+      ASSISTANT_MODEL: ${ASSISTANT_MODEL:-mistralai/mistral-small-2603}
     ports:
       - "127.0.0.1:7002:6002"
     # python:3.12-slim ships no wget/curl — probe with the interpreter instead.
