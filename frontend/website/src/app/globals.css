@@ -261,9 +261,14 @@ body {
   content: "Aavishield";
 }
 
-/* Fixed film grain; lives on a pointer-events-none fixed layer only. */
+/*
+ * Fixed film grain; lives on a pointer-events-none fixed layer only. A small
+ * pre-rendered noise tile: the previous inline SVG feTurbulence filter was
+ * re-rasterised on the CPU and held back first paint by ~250ms on phones.
+ */
 .grain {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E");
+  background-image: url("/grain.png");
+  background-size: 128px 128px;
   opacity: 0.035;
 }
 .dark .grain {
