@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Footer } from "@/components/footer";
 import { Nav } from "@/components/nav";
+import { SiteLoader, loaderGateScript } from "@/components/site-loader";
 import { ThemeProvider } from "@/components/theme-provider";
 import { JsonLd, SITE_NAME, SITE_URL } from "@/lib/seo";
 import "./globals.css";
@@ -71,7 +72,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
                 "@id": `${SITE_URL}/#org`,
                 name: SITE_NAME,
                 url: SITE_URL,
-                logo: `${SITE_URL}/icon.svg`,
+                logo: `${SITE_URL}/brand/app-icon-512.png`,
                 parentOrganization: { "@type": "Organization", name: "Aavish AI Lab", url: "https://aavishailab.com" },
               },
               { "@type": "WebSite", "@id": `${SITE_URL}/#website`, url: SITE_URL, name: SITE_NAME, publisher: { "@id": `${SITE_URL}/#org` }, inLanguage: "en" },
@@ -79,6 +80,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           }}
         />
         <ThemeProvider>
+          <script dangerouslySetInnerHTML={{ __html: loaderGateScript }} />
+          <SiteLoader />
           <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-full focus:bg-invert-bg focus:px-4 focus:py-2 focus:text-invert-fg">
             Skip to content
           </a>

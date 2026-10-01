@@ -40,7 +40,7 @@ export function ProductTabs({ tabs }: { tabs: ProductTab[] }) {
           <span className="mx-auto hidden truncate rounded-md bg-surface px-3 py-0.5 font-mono text-[11px] text-muted sm:block">{t.shot.url}</span>
           <span className="w-10" />
         </div>
-        <div className="relative bg-bg" style={{ aspectRatio: "16 / 10" }}>
+        <div className="skeleton relative overflow-hidden" style={{ aspectRatio: "16 / 10" }}>
           <AnimatePresence initial={false}>
             <motion.div key={t.id} initial={{ opacity: 0, scale: 1.02 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.5, ease: EASE }} className="absolute inset-0">
               <Image src={t.shot.src} alt={t.shot.alt} fill sizes="(max-width: 1200px) 100vw, 1150px" className="object-cover object-left-top" />

@@ -36,7 +36,7 @@ export function BrowserFrame({
           <span className="w-10" />
         </div>
       )}
-      <div className={`relative overflow-hidden bg-bg ${aspect ?? ""}`} style={aspect ? undefined : { aspectRatio: `${shot.w} / ${shot.h}` }}>
+      <div className={`skeleton relative overflow-hidden ${aspect ?? ""}`} style={aspect ? undefined : { aspectRatio: `${shot.w} / ${shot.h}` }}>
         <Image
           src={shot.src}
           alt={shot.alt}

@@ -26,7 +26,7 @@ export function Footer() {
       <div className="mx-auto grid max-w-6xl gap-12 px-4 py-16 md:px-6 lg:grid-cols-[1.2fr_3fr]">
         <div className="max-w-sm">
           <Link href="/" aria-label="Aavishield home" className="inline-flex">
-            <Logo className="h-14" />
+            <Logo className="h-14" sizes="224px" />
           </Link>
           <p className="mt-4 text-sm leading-relaxed text-muted">
             Endpoint security for companies. One agent on every device enforces web, data, application and device policy, wherever people work.
@@ -60,12 +60,12 @@ export function Footer() {
           ))}
         </ul>
       </div>
-      <p
+      {/* Decorative watermark. The word is drawn by CSS (::before), so it is
+          not text content that assistive tech or contrast checks pick up. */}
+      <div
         aria-hidden
-        className="pointer-events-none select-none px-4 text-center text-[22vw] font-semibold leading-[0.8] tracking-[-0.06em] text-fg opacity-[0.05] md:text-[17vw]"
-      >
-        Aavishield
-      </p>
+        className="footer-watermark pointer-events-none select-none px-4 text-center text-[22vw] font-semibold leading-[0.8] tracking-[-0.06em] text-fg opacity-[0.05] md:text-[17vw]"
+      />
     </footer>
   );
 }

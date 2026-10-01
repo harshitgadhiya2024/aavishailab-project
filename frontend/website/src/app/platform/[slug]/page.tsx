@@ -199,12 +199,12 @@ export default async function ModulePage(props: PageProps<"/platform/[slug]">) {
           <SectionHead eyebrow="Setup" title="Switched on in minutes." accent={["minutes."]} body="No appliance, no network change, no separate agent." />
           <ol className="grid gap-3">
             {ms.setup.map((st, i) => (
-              <Reveal key={st} delay={i * 0.06}>
-                <li className="flex items-center gap-5 rounded-[18px] border border-line bg-surface p-5">
+              <li key={st}>
+                <Reveal delay={i * 0.06} className="flex items-center gap-5 rounded-[18px] border border-line bg-surface p-5">
                   <span className="grid size-10 shrink-0 place-items-center rounded-full bg-brand font-mono text-sm font-semibold text-on-brand">{i + 1}</span>
                   <span className="text-fg-2">{st}</span>
-                </li>
-              </Reveal>
+                </Reveal>
+              </li>
             ))}
           </ol>
         </div>
