@@ -1129,49 +1129,39 @@ func (h *AgentHandler) ScanDLP(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-// dlpDuplicateWindow is how close together two identical findings from one
-// device must be to count as one action.
+// dlpDuplicateWindow is how close together two identical file-upload findings
+// from one device must be to count as one action.
 const dlpDuplicateWindow = 60 * time.Second
 
-// createUnlessDuplicate stores a DLP event unless the same device recorded the
-// same file-upload finding (identical masked matches) within
-// dlpDuplicateWindow. Only uploads are folded: the same card number sent to
-// three people is three messages and three incidents. The
-// check and the insert run under a per-device lock, so two copies of one
-// upload arriving together can't both see "nothing yet". When the earlier
-// event has no file name and this one does, the name is filled in.
+// createUnlessDuplicate stores a DLP event unless it repeats one the device
+// just recorded (see recordDeduped), and reports the kept row when it does.
+//
+//   - File uploads fold on identical masked matches within dlpDuplicateWindow:
+//     Teams uploads one attached image twice (the file, and an inline preview),
+//     and apps retry. When the earlier event has no file name and this one
+//     does, the name is filled in.
+//   - Text folds on the same detectors going to the same site and endpoint
+//     within dlpTextDedupeWindow (sliding): Gmail and Outlook autosave a draft
+//     every few seconds, and each save carries the whole draft, so one email
+//     being written used to become one incident per autosave. The kept row
+//     takes the highest score seen.
 func (h *AgentHandler) createUnlessDuplicate(event *models.ActivityEvent, deviceID uuid.UUID, previews []string, filename string) (uuid.UUID, bool, error) {
-	if event.Operation != OpFileUpload {
-		return uuid.Nil, false, h.db.Create(event).Error
+	if event.Operation == OpFileUpload {
+		matches, _ := json.Marshal(previews)
+		return recordDeduped(h.db, event, "dlp-file|"+string(matches), dlpDuplicateWindow,
+			func(kept, next *models.ActivityEvent) {
+				if kept.Target == "" && filename != "" {
+					kept.Target = filename
+				}
+			})
 	}
-	matches, _ := json.Marshal(previews)
-	var prior models.ActivityEvent
-	dup := false
-	err := h.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtext(?))", "dlp-dedupe:"+deviceID.String()).Error; err != nil {
-			return err
-		}
-		q := tx.Where("device_id = ? AND category = ? AND timestamp > ? AND metadata->'matches' = ?::jsonb",
-			deviceID, "dlp", time.Now().Add(-dlpDuplicateWindow), string(matches)).
-			Order("timestamp DESC").Limit(1).Find(&prior)
-		if q.Error != nil {
-			return q.Error
-		}
-		if q.RowsAffected > 0 {
-			dup = true
-			if prior.Target == "" && filename != "" {
-				return tx.Model(&models.ActivityEvent{}).Where("id = ?", prior.ID).Update("target", filename).Error
-			}
-			return nil
-		}
-		return tx.Create(event).Error
-	})
-	if err != nil {
-		// Never lose an incident to the de-duplication itself.
-		log.Printf("dlp dedupe check failed (%v) — recording anyway", err)
-		return uuid.Nil, false, h.db.Create(event).Error
+	site, _ := event.Metadata["site"].(string)
+	if site == "" {
+		site = event.TargetDomain
 	}
-	return prior.ID, dup, nil
+	path, _ := event.Metadata["path"].(string)
+	detectors, _ := event.Metadata["detectors"].([]string)
+	return recordDeduped(h.db, event, dlpTextDedupeKey(site, path, detectors), dlpTextDedupeWindow, keepWorstDLP)
 }
 
 func truncateRunes(s string, max int) string {

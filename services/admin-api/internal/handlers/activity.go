@@ -413,10 +413,35 @@ func (h *ActivityHandler) BulkCreate(c *gin.Context) {
 		}
 	}
 
-	if err := h.db.CreateInBatches(&events, 100).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to batch insert events"})
-		return
+	// Blocked pages fold per host (see recordDeduped): a browser retries a
+	// blocked page, and http→https redirects hit the block twice. Everything
+	// else in the batch is inserted as-is.
+	var plain, stored []models.ActivityEvent
+	for i := range events {
+		key := ""
+		if events[i].EventType == models.EventTypeWebRequest {
+			key = webDedupeKey(&events[i])
+		}
+		if key == "" {
+			plain = append(plain, events[i])
+			continue
+		}
+		_, dup, err := recordDeduped(h.db, &events[i], key, webBlockDedupeWindow, nil)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to batch insert events"})
+			return
+		}
+		if !dup {
+			stored = append(stored, events[i])
+		}
 	}
+	if len(plain) > 0 {
+		if err := h.db.CreateInBatches(&plain, 100).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to batch insert events"})
+			return
+		}
+	}
+	events = append(stored, plain...)
 
 	// Look up each distinct employee once so live broadcasts can show a name,
 	// not just an ID, in the company dashboard.

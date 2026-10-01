@@ -610,8 +610,19 @@ func (h *AgentHandler) ReportAppBlock(c *gin.Context) {
 		},
 		Timestamp: time.Now(),
 	}
-	if err := h.db.Create(&event).Error; err != nil {
+	// One launch of an app stops several processes (VS Code is Code plus its
+	// Squirrel/ShipIt updater helpers), each reported separately.
+	appKey := in.AppID
+	if appKey == "" {
+		appKey = strings.ToLower(in.AppName)
+	}
+	_, dup, err := recordDeduped(h.db, &event, "app|"+appKey, appBlockDedupeWindow, nil)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to record the event"})
+		return
+	}
+	if dup {
+		c.JSON(http.StatusOK, gin.H{"recorded": true, "duplicate": true})
 		return
 	}
 
@@ -684,8 +695,19 @@ func (h *AgentHandler) ReportBrowserExtension(c *gin.Context) {
 		},
 		Timestamp: time.Now(),
 	}
-	if err := h.db.Create(&event).Error; err != nil {
+	// The agent reports the extension once per browser profile; it is one
+	// extension on one laptop, with the profiles listed on the row.
+	extKey := in.ExtensionID
+	if extKey == "" {
+		extKey = strings.ToLower(name)
+	}
+	_, dup, err := recordDeduped(h.db, &event, "ext|"+extKey+"|"+operation, extensionDedupeWindow, mergeExtensionProfiles)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to record the event"})
+		return
+	}
+	if dup {
+		c.JSON(http.StatusOK, gin.H{"recorded": true, "duplicate": true})
 		return
 	}
 
