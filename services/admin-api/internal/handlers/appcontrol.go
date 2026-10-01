@@ -37,12 +37,15 @@ func activeAppRules(db *gorm.DB, orgID uuid.UUID, employeeID, teamID *uuid.UUID)
 		Where("org_id = ? AND enabled = true", orgID).
 		Find(&rules)
 
+	// An approved access request exempts this employee from the app
+	// entirely: its process rule and its network bundle.
+	granted := approvedGrants(db, employeeID).apps
 	out := rules[:0]
 	for _, r := range rules {
 		if r.Application == nil {
 			continue
 		}
-		if !appRuleCovers(r, employeeID, teamID) {
+		if !appRuleCovers(r, employeeID, teamID) || granted[r.ApplicationID] {
 			continue
 		}
 		out = append(out, r)
@@ -148,6 +151,10 @@ func defaultVPNMatchers(db *gorm.DB, orgID uuid.UUID, employeeID, teamID *uuid.U
 		if appRuleCovers(r, employeeID, teamID) {
 			configured[r.ApplicationID] = true
 		}
+	}
+
+	for id := range approvedGrants(db, employeeID).apps {
+		configured[id] = true
 	}
 
 	var apps []models.ManagedApplication
@@ -537,8 +544,24 @@ func (h *AgentHandler) GetAppControl(c *gin.Context) {
 		// against real Chrome). So the agent's job here is to detect one and
 		// report it, giving the company visibility and the employee a notice,
 		// even where it cannot be blocked outright.
-		"vpn_extensions": vpnBrowserExtensions,
+		"vpn_extensions": vpnExtensionsFor(approvedGrants(h.db, empID).extensions),
 	})
+}
+
+// vpnExtensionsFor is the watch list minus the extensions this employee's
+// company approved for them.
+func vpnExtensionsFor(approved map[string]bool) []gin.H {
+	if len(approved) == 0 {
+		return vpnBrowserExtensions
+	}
+	out := make([]gin.H, 0, len(vpnBrowserExtensions))
+	for _, e := range vpnBrowserExtensions {
+		if id, _ := e["id"].(string); approved[id] {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
 }
 
 // vpnBrowserExtensions is the built-in list of known VPN/proxy browser

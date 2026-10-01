@@ -11,7 +11,7 @@ const navItems = [
   { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
   { href: "/dashboard/download", icon: Download, label: "Download Agent" },
   { href: "/dashboard/devices", icon: Monitor, label: "My Devices" },
-  { href: "/dashboard/activity", icon: Activity, label: "Blocked Activity" },
+  { href: "/dashboard/activity", icon: Activity, label: "My Activity" },
   { href: "/dashboard/profile", icon: UserRound, label: "Profile" },
 ];
 

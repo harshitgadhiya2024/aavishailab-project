@@ -532,6 +532,7 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 		accessRequests.GET("", middleware.RequirePermission(models.PermAccessReqRead), arH.List)
 		accessRequests.POST("/:id/approve", middleware.RequirePermission(models.PermAccessReqWrite), arH.Approve)
 		accessRequests.POST("/:id/deny", middleware.RequirePermission(models.PermAccessReqWrite), arH.Deny)
+		accessRequests.POST("/:id/revoke", middleware.RequirePermission(models.PermAccessReqWrite), arH.Revoke)
 	}
 
 	// Support tickets — any signed-in org member may raise and follow one;
@@ -574,6 +575,7 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 			portalProtected.DELETE("/devices/:id", portalH.DeleteDevice)
 			portalProtected.POST("/access-requests", arH.Create)
 			portalProtected.GET("/access-requests", arH.ListMine)
+			portalProtected.POST("/access-requests/:id/withdraw", arH.Withdraw)
 		}
 	}
 

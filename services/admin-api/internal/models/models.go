@@ -617,12 +617,22 @@ type OrgCACert struct {
 }
 
 // ─── Access Request (employee-requested exception to a blocking policy) ──────
-// An approved request IS the exception: enforcement (agents.go GetRules)
-// excludes any (employee, policy, domain) triple with an approved request
-// here from that employee's effective block list — no separate exception
-// table. Scoped this narrowly (one employee, one domain, one policy) so
-// approving one request can't accidentally open access wider than what was
-// actually asked for.
+// An approved request IS the exception — there is no separate exception
+// table to keep in sync. Each request names one thing for one employee, and
+// approving it opens exactly that:
+//
+//	website            Resource = the host       → an allow rule for that host
+//	                                               (GetRules); a block on a parent
+//	                                               domain stays for everything else
+//	application        Resource = app id          → the app's process and network
+//	                                               rules skip this employee
+//	browser_extension  Resource = extension id    → no longer flagged for them
+//	download           Resource = file sha256     → that exact file is let through
+//	dlp                Resource = the incident id → recorded as a justified
+//	                                               business send (DLP is monitor-
+//	                                               only, so nothing is unblocked)
+//
+// Revoking an approved request removes the exception again.
 
 type AccessRequestStatus string
 
@@ -630,14 +640,33 @@ const (
 	AccessRequestPending  AccessRequestStatus = "pending"
 	AccessRequestApproved AccessRequestStatus = "approved"
 	AccessRequestDenied   AccessRequestStatus = "denied"
+	AccessRequestRevoked  AccessRequestStatus = "revoked"
+)
+
+type AccessRequestKind string
+
+const (
+	AccessKindWebsite     AccessRequestKind = "website"
+	AccessKindApplication AccessRequestKind = "application"
+	AccessKindExtension   AccessRequestKind = "browser_extension"
+	AccessKindDownload    AccessRequestKind = "download"
+	AccessKindDLP         AccessRequestKind = "dlp"
 )
 
 type AccessRequest struct {
 	Base
-	OrgID      uuid.UUID           `gorm:"type:uuid;not null;index" json:"org_id"`
-	EmployeeID uuid.UUID           `gorm:"type:uuid;not null;index" json:"employee_id"`
-	PolicyID   uuid.UUID           `gorm:"type:uuid;not null;index" json:"policy_id"`
-	Domain     string              `gorm:"not null;index" json:"domain"`
+	OrgID      uuid.UUID         `gorm:"type:uuid;not null;index" json:"org_id"`
+	EmployeeID uuid.UUID         `gorm:"type:uuid;not null;index" json:"employee_id"`
+	Kind       AccessRequestKind `gorm:"type:varchar(30);default:'website';index" json:"kind"`
+	// Resource is what is asked for, in the kind's own terms (see above).
+	Resource string `gorm:"index" json:"resource"`
+	// Label is how people read it: "LinkedIn", "Visual Studio Code", "invoice.pdf".
+	Label string `json:"label"`
+	// EventID is the activity row the request was raised from.
+	EventID *uuid.UUID `gorm:"type:uuid;index" json:"event_id"`
+	// PolicyID and Domain predate kinds; Domain is still set for websites.
+	PolicyID   *uuid.UUID          `gorm:"type:uuid;index" json:"policy_id"`
+	Domain     string              `gorm:"index" json:"domain"`
 	Reason     string              `json:"reason"`
 	Status     AccessRequestStatus `gorm:"type:varchar(20);default:'pending';index" json:"status"`
 	ReviewedBy *uuid.UUID          `gorm:"type:uuid" json:"reviewed_by"`

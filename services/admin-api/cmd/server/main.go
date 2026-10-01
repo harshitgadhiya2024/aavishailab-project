@@ -157,6 +157,10 @@ func connectStores() (*gorm.DB, *redis.Client, error) {
 		return nil, nil, fmt.Errorf("failed to migrate support tickets: %w", err)
 	}
 
+	if err := database.MigrateAccessRequests(db); err != nil {
+		return nil, nil, fmt.Errorf("failed to migrate access requests: %w", err)
+	}
+
 	// Category domain lists are real product config (needed for category-based
 	// policy blocking), not dev-only fixture data — unlike SeedDevData below,
 	// this runs in every environment, including production.

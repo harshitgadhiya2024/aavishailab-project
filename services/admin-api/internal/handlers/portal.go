@@ -615,7 +615,9 @@ func (h *PortalHandler) DownloadUninstaller(c *gin.Context) {
 
 // ─── Activity ─────────────────────────────────────────────────────────────────
 
-// Activity handles GET /api/v1/portal/activity
+// Activity handles GET /api/v1/portal/activity — the employee's own trail,
+// with the same source tabs as the company dashboard. Each row carries what
+// the employee can ask for on it ("access") and the state of that request.
 func (h *PortalHandler) Activity(c *gin.Context) {
 	emp, ok := h.portalEmployee(c)
 	if !ok {
@@ -623,49 +625,100 @@ func (h *PortalHandler) Activity(c *gin.Context) {
 	}
 
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
-	action := c.Query("action")
-	search := c.Query("search")
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "25"))
+	search := strings.TrimSpace(c.Query("search"))
 	days, _ := strconv.Atoi(c.Query("days"))
 	if page < 1 {
 		page = 1
 	}
-	if limit > 100 {
-		limit = 100
+	if limit < 1 || limit > 100 {
+		limit = 25
 	}
 
-	q := h.db.Where("employee_id = ?", emp.ID)
-	// "Allowed" — routine, ordinary browsing — is never shown, on either
-	// dashboard. The employee portal calls this page "Blocked Activity" for
-	// exactly that reason: it is a record of what was stopped, not a log of
-	// everything the person did.
-	q = q.Where("action != ?", models.EventActionAllowed)
-	if action != "" {
-		q = q.Where("action = ?", action)
+	q := h.portalEventScope(emp.ID, days)
+	if action := c.Query("action"); action != "" {
+		q = q.Where("action IN ?", splitCSV(action))
 	}
-	if days > 0 {
-		q = q.Where("timestamp >= ?", time.Now().AddDate(0, 0, -days))
+	if f := activitySourceScope(c.Query("source")); f != nil {
+		q = q.Where(f.query, f.args...)
 	}
 	if search != "" {
-		like := "%" + search + "%"
-		q = q.Where("target_domain LIKE ? OR target LIKE ? OR category LIKE ? OR policy_name LIKE ?", like, like, like, like)
+		like := "%" + strings.ToLower(search) + "%"
+		q = q.Where(`(LOWER(target_domain) LIKE ? OR LOWER(target) LIKE ? OR LOWER(category) LIKE ?
+			OR LOWER(policy_name) LIKE ? OR LOWER(operation) LIKE ?)`, like, like, like, like, like)
 	}
 
 	var total int64
-	q.Model(&models.ActivityEvent{}).Count(&total)
+	q.Session(&gorm.Session{}).Model(&models.ActivityEvent{}).Count(&total)
 
 	var events []models.ActivityEvent
-	q.Order("timestamp DESC").
+	q.Session(&gorm.Session{}).Order("timestamp DESC").
 		Offset((page - 1) * limit).Limit(limit).
 		Find(&events)
+	attachTargetApps(c.Request.Context(), emp.OrgID.String(), events)
 
 	c.JSON(http.StatusOK, gin.H{
-		"data":  events,
+		"data":  h.withAccess(emp.ID, events),
 		"total": total,
 		"page":  page,
 		"limit": limit,
 		"pages": (total + int64(limit) - 1) / int64(limit),
 	})
+}
+
+// portalEventScope is every stored row of this employee's in the window.
+// "Allowed" traffic is never stored, and never shown.
+func (h *PortalHandler) portalEventScope(empID uuid.UUID, days int) *gorm.DB {
+	q := h.db.Model(&models.ActivityEvent{}).Where("employee_id = ? AND action != ?", empID, models.EventActionAllowed)
+	if days > 0 {
+		q = q.Where("timestamp >= ?", time.Now().AddDate(0, 0, -days))
+	}
+	return q
+}
+
+// portalEvent is an activity row plus what its employee can do about it.
+type portalEvent struct {
+	models.ActivityEvent
+	Access *portalAccess `json:"access,omitempty"`
+}
+
+type portalAccess struct {
+	Kind      models.AccessRequestKind   `json:"kind"`
+	Label     string                     `json:"label"`
+	Status    models.AccessRequestStatus `json:"status,omitempty"`
+	RequestID *uuid.UUID                 `json:"request_id,omitempty"`
+	Note      string                     `json:"note,omitempty"`
+}
+
+// withAccess attaches, to each row that can be requested on, the latest
+// request for the same thing — so a site blocked ten times shows "Access
+// granted" on all ten rows once one request was approved.
+func (h *PortalHandler) withAccess(empID uuid.UUID, events []models.ActivityEvent) []portalEvent {
+	var requests []models.AccessRequest
+	h.db.Where("employee_id = ?", empID).Order("created_at DESC").Find(&requests)
+	latest := map[string]models.AccessRequest{}
+	for _, r := range requests {
+		k := string(r.Kind) + "|" + r.Resource
+		if _, seen := latest[k]; !seen {
+			latest[k] = r
+		}
+	}
+
+	out := make([]portalEvent, len(events))
+	for i := range events {
+		out[i] = portalEvent{ActivityEvent: events[i]}
+		t, ok := requestableFrom(&events[i])
+		if !ok {
+			continue
+		}
+		a := &portalAccess{Kind: t.Kind, Label: t.Label}
+		if r, found := latest[string(t.Kind)+"|"+t.Resource]; found {
+			id := r.ID
+			a.Status, a.RequestID, a.Note = r.Status, &id, r.ReviewNote
+		}
+		out[i].Access = a
+	}
+	return out
 }
 
 // ActivityStats handles GET /api/v1/portal/activity/stats
@@ -678,9 +731,30 @@ func (h *PortalHandler) ActivityStats(c *gin.Context) {
 	days, _ := strconv.Atoi(c.DefaultQuery("days", "7"))
 	since := time.Now().AddDate(0, 0, -days)
 
-	var blockedCount int64
-	h.db.Model(&models.ActivityEvent{}).
-		Where("employee_id = ? AND timestamp >= ? AND action = 'blocked'", emp.ID, since).Count(&blockedCount)
+	var blockedCount, alertedCount int64
+	h.portalEventScope(emp.ID, days).Where("action = ?", models.EventActionBlocked).Count(&blockedCount)
+	h.portalEventScope(emp.ID, days).Where("action = ?", models.EventActionAlerted).Count(&alertedCount)
+
+	// One count per tab, so the employee sees where their activity is.
+	bySource := map[string]int64{}
+	for _, src := range []string{"web_gateway", "dlp", "application", "malware", "device_posture", "device"} {
+		var n int64
+		f := activitySourceScope(src)
+		h.portalEventScope(emp.ID, days).Where(f.query, f.args...).Count(&n)
+		bySource[src] = n
+	}
+
+	requests := map[string]int64{}
+	type statusCount struct {
+		Status string
+		N      int64
+	}
+	var sc []statusCount
+	h.db.Model(&models.AccessRequest{}).Select("status, COUNT(*) AS n").
+		Where("employee_id = ?", emp.ID).Group("status").Scan(&sc)
+	for _, s := range sc {
+		requests[s.Status] = s.N
+	}
 
 	type DomainCount struct {
 		Domain string `json:"domain"`
@@ -689,10 +763,10 @@ func (h *PortalHandler) ActivityStats(c *gin.Context) {
 	}
 	var topBlocked []DomainCount
 	h.db.Raw(`
-		SELECT target_domain as domain, COUNT(*) as count, MAX(policy_name) as reason
+		SELECT COALESCE(NULLIF(target_domain, ''), target) as domain, COUNT(*) as count, MAX(policy_name) as reason
 		FROM activity_events
-		WHERE employee_id = ? AND timestamp >= ? AND action = 'blocked' AND target_domain != ''
-		GROUP BY target_domain ORDER BY count DESC LIMIT 10`, emp.ID, since).Scan(&topBlocked)
+		WHERE employee_id = ? AND timestamp >= ? AND action = 'blocked' AND COALESCE(NULLIF(target_domain, ''), target) != ''
+		GROUP BY 1 ORDER BY count DESC LIMIT 10`, emp.ID, since).Scan(&topBlocked)
 
 	type DayCount struct {
 		Date    string `json:"date"`
@@ -708,6 +782,9 @@ func (h *PortalHandler) ActivityStats(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"blocked":     blockedCount,
+		"alerted":     alertedCount,
+		"by_source":   bySource,
+		"requests":    requests,
 		"top_blocked": topBlocked,
 		"by_day":      byDay,
 		"period_days": days,

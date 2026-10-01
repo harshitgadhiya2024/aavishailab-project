@@ -50,9 +50,11 @@ export const portalApi = {
     api.get("/api/v1/portal/activity", { params }),
   activityStats: (params?: Record<string, unknown>) =>
     api.get("/api/v1/portal/activity/stats", { params }),
-  requestAccess: (data: { policy_id: string; domain: string; reason?: string }) =>
+  /** Ask the company for an exception to what an activity row stopped. */
+  requestAccess: (data: { event_id: string; reason: string }) =>
     api.post("/api/v1/portal/access-requests", data),
   accessRequests: () => api.get("/api/v1/portal/access-requests"),
+  withdrawAccessRequest: (id: string) => api.post(`/api/v1/portal/access-requests/${id}/withdraw`),
   downloadUninstaller: async (os: "macos" | "windows" | "linux") => {
     const session = await getSession();
     const token = (session as any)?.accessToken;

@@ -261,33 +261,3 @@ func expandPoliciesToDomainRules(db *gorm.DB, orgID uuid.UUID, policies []models
 	return out
 }
 
-// filterApprovedExceptions removes any blocked-domain entry this employee
-// has an approved access request for. An approved AccessRequest IS the
-// exception — scoped to (employee, policy, domain), so approving one
-// request never opens access wider than what was actually asked for (a
-// different policy blocking the same domain string is unaffected).
-func filterApprovedExceptions(db *gorm.DB, rules []models.DomainRule, employeeID uuid.UUID) []models.DomainRule {
-	var approved []models.AccessRequest
-	db.Where("employee_id = ? AND status = ?", employeeID, models.AccessRequestApproved).Find(&approved)
-	if len(approved) == 0 {
-		return rules
-	}
-
-	type key struct {
-		PolicyID uuid.UUID
-		Domain   string
-	}
-	exceptions := make(map[key]bool, len(approved))
-	for _, a := range approved {
-		exceptions[key{PolicyID: a.PolicyID, Domain: strings.ToLower(a.Domain)}] = true
-	}
-
-	filtered := rules[:0]
-	for _, r := range rules {
-		if r.Action == models.PolicyActionBlock && exceptions[key{PolicyID: r.ID, Domain: strings.ToLower(r.Domain)}] {
-			continue
-		}
-		filtered = append(filtered, r)
-	}
-	return filtered
-}

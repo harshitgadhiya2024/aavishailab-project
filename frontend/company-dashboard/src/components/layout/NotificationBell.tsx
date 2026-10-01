@@ -111,7 +111,7 @@ export function NotificationBell() {
       id: `req-${r.id}`,
       kind: "access_request" as const,
       title: `${employeeName(r.employee)} requested access`,
-      detail: r.domain + (r.reason ? ` — "${r.reason}"` : ""),
+      detail: (r.label || r.domain || r.resource || "") + (r.reason ? ` — "${r.reason}"` : ""),
       at: r.created_at,
       href: "/dashboard/access-requests",
     }));

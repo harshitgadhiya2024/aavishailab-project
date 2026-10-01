@@ -736,7 +736,7 @@ func (h *AgentHandler) GetRules(c *gin.Context) {
 	rules = append(rules, appControlDomainRules(h.db, orgID, empID, teamID)...)
 
 	if empID != nil {
-		rules = filterApprovedExceptions(h.db, rules, *empID)
+		rules = filterApprovedExceptions(h.db, rules, orgID, *empID)
 	}
 
 	body, err := json.Marshal(gin.H{"rules": rules})
@@ -820,6 +820,16 @@ func (h *AgentHandler) ScanFile(c *gin.Context) {
 	destination := c.Query("destination")
 
 	v := scanFileStream(c.Request.Context(), orgID.String(), filename, contentType, destination, spool, size)
+
+	// The company approved this exact file for this employee (an access
+	// request raised from the block). Matched on the file's hash, so a
+	// different file with the same name is still scanned and blocked.
+	if (v.action == "block" || v.action == "alert") && v.sha256 != "" && approvedGrants(h.db, empID).downloads[strings.ToLower(v.sha256)] {
+		v.action = "allow"
+		v.band = "allow"
+		v.verdict = "approved"
+		v.infected = false
+	}
 
 	// Log block and alert outcomes (a clean/allow file isn't an incident).
 	if v.action == "block" || v.action == "alert" {

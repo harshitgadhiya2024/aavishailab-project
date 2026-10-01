@@ -153,6 +153,7 @@ export const accessRequestApi = {
   list: (params?: Record<string, any>) => api.get("/api/v1/access-requests", { params }),
   approve: (id: string, note?: string) => api.post(`/api/v1/access-requests/${id}/approve`, { note }),
   deny: (id: string, note?: string) => api.post(`/api/v1/access-requests/${id}/deny`, { note }),
+  revoke: (id: string, note?: string) => api.post(`/api/v1/access-requests/${id}/revoke`, { note }),
 };
 
 // ─── Activity ────────────────────────────────────────────────────────────────

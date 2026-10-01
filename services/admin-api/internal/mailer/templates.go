@@ -182,52 +182,60 @@ func PortalAccessReady(to, firstName, orgName, tempPassword string) {
 // ─── Access requests ──────────────────────────────────────────────────────────
 
 // AccessRequestSubmitted tells admins someone is waiting on a decision.
-func AccessRequestSubmitted(admins []string, employeeName, employeeEmail, domain, reason, policyName string) {
+// kind is the request's noun ("Website", "Application", ...), what the thing
+// asked for, blockedBy the policy or control that stopped it.
+func AccessRequestSubmitted(admins []string, employeeName, employeeEmail, kind, what, reason, blockedBy string) {
 	if reason == "" {
 		reason = "No reason given"
 	}
-	body := statTable(
+	rows := []string{
 		statRow("Employee", employeeName+" ("+employeeEmail+")", ""),
-		statRow("Site", domain, ""),
-		statRow("Blocked by", policyName, ""),
-		statRow("Reason given", reason, ""),
-	) + `<p style="margin:16px 0 0 0;">Approving grants this one employee access to this one site; it does not
-	change the policy for anyone else.</p>`
+		statRow(kind, what, ""),
+	}
+	if blockedBy != "" {
+		rows = append(rows, statRow("Stopped by", blockedBy, ""))
+	}
+	rows = append(rows, statRow("Reason given", reason, ""))
+	body := statTable(rows...) + `<p style="margin:16px 0 0 0;">Approving grants this one employee this one exception; it does not
+	change the policy for anyone else, and you can revoke it at any time.</p>`
 
 	Send(Message{
 		To:      admins,
-		Subject: "Access request: " + employeeName + " wants " + domain,
+		Subject: "Access request: " + employeeName + " wants " + what,
 		HTML: layout(
 			"Access request waiting",
-			html.EscapeString(employeeName)+" asked for access to a site your policies block.",
+			html.EscapeString(employeeName)+" asked for an exception to your security policy.",
 			body, "Review the request", cfg.AppURL+"/dashboard/access-requests", ""),
 	})
 }
 
-// AccessRequestResolved tells the employee the outcome.
-func AccessRequestResolved(to, firstName, domain string, approved bool, note string) {
-	verdict := "approved"
-	heading := "Access approved"
-	intro := "You can now reach " + html.EscapeString(domain) + "."
-	if !approved {
-		verdict = "declined"
-		heading = "Access declined"
-		intro = "Your request for " + html.EscapeString(domain) + " was not approved."
+// AccessRequestResolved tells the employee the outcome. outcome is the new
+// status: approved, denied or revoked.
+func AccessRequestResolved(to, firstName, kind, what, outcome, note string) {
+	var heading, intro, verdict, after string
+	switch outcome {
+	case "approved":
+		verdict, heading = "approved", "Access approved"
+		intro = "Your company approved your request for " + html.EscapeString(what) + "."
+		after = "It can take up to a minute for your device to pick up the change."
+	case "revoked":
+		verdict, heading = "revoked", "Access revoked"
+		intro = "Your company took back the access it had given you for " + html.EscapeString(what) + "."
+		after = "Your device will apply the policy again within a minute."
+	default:
+		verdict, heading = "declined", "Access declined"
+		intro = "Your request for " + html.EscapeString(what) + " was not approved."
+		after = "If you need it for work, talk to your IT team with more detail."
 	}
-	rows := []string{statRow("Site", domain, ""), statRow("Decision", verdict, "")}
+	rows := []string{statRow(kind, what, ""), statRow("Decision", verdict, "")}
 	if note != "" {
-		rows = append(rows, statRow("Note", note, ""))
+		rows = append(rows, statRow("Note from your company", note, ""))
 	}
-	body := statTable(rows...)
-	if approved {
-		body += `<p style="margin:16px 0 0 0;">It may take a minute for your device to pick up the change.</p>`
-	} else {
-		body += `<p style="margin:16px 0 0 0;">If you need this site for work, reply to your IT team with more detail.</p>`
-	}
+	body := statTable(rows...) + `<p style="margin:16px 0 0 0;">` + after + `</p>`
 
 	Send(Message{
 		To:      []string{to},
-		Subject: "Your access request for " + domain + " was " + verdict,
+		Subject: "Your access request for " + what + " was " + verdict,
 		HTML:    layout(heading, "Hi "+html.EscapeString(firstName)+". "+intro, body, "Open the portal", cfg.PortalURL, ""),
 	})
 }
