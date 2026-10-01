@@ -41,7 +41,7 @@ func threadSecret() []byte {
 			return []byte(v)
 		}
 	}
-	return []byte("delsecure-dev-ticket-mail")
+	return []byte("aavishield-dev-ticket-mail")
 }
 
 func threadSig(ticketID, side string) string {

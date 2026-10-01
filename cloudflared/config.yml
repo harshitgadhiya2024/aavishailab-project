@@ -21,6 +21,10 @@ ingress:
   - hostname: aavishield-docs.aavishailab.com
     service: http://docs:1004
   # Public marketing website
+  - hostname: aavishield.aavishailab.com
+    service: http://website:1005
+  # Old website hostname: still routed so the site's own redirect can send
+  # every request to aavishield.aavishailab.com (see next.config.ts).
   - hostname: delsecure.aavishailab.com
     service: http://website:1005
   - service: http_status:404

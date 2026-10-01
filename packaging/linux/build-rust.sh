@@ -157,7 +157,7 @@ Section: net
 Priority: optional
 Architecture: $ARCH
 Maintainer: Aavishield <info@aavishailab.com>
-Homepage: https://delsecure.aavishailab.com
+Homepage: https://aavishield.aavishailab.com
 Installed-Size: $INSTALLED_SIZE
 Depends: $RUNTIME_DEPENDS
 Conflicts: aavishield-agent

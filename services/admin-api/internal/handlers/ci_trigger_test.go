@@ -30,7 +30,7 @@ func stubGitHub(t *testing.T, status int, body string, capture *capturedRequest)
 	}))
 	t.Cleanup(srv.Close)
 	t.Setenv("GITHUB_API_BASE_URL", srv.URL)
-	t.Setenv("GITHUB_REPOSITORY", "aavishield/delsecure")
+	t.Setenv("GITHUB_REPOSITORY", "aavishield/aavishield")
 	t.Setenv("GITHUB_ACTIONS_PAT", "ghp_test_token")
 	return srv
 }
@@ -85,7 +85,7 @@ func TestTriggerBuildSendsCorrectDispatch(t *testing.T) {
 	if cap.method != http.MethodPost {
 		t.Errorf("method = %q, want POST", cap.method)
 	}
-	if !strings.Contains(cap.path, "/repos/aavishield/delsecure/actions/workflows/agent-packages.yml/dispatches") {
+	if !strings.Contains(cap.path, "/repos/aavishield/aavishield/actions/workflows/agent-packages.yml/dispatches") {
 		t.Errorf("path = %q, doesn't hit the agent-packages workflow's dispatches endpoint", cap.path)
 	}
 	if cap.auth != "Bearer ghp_test_token" {
@@ -162,7 +162,7 @@ func TestBuildStatusNotConfiguredReturnsEmptyNotError(t *testing.T) {
 
 func TestBuildStatusParsesRuns(t *testing.T) {
 	stubGitHub(t, http.StatusOK, `{"workflow_runs":[
-		{"id":123,"status":"completed","conclusion":"success","head_branch":"main","display_title":"Agent packages","created_at":"2026-08-20T00:00:00Z","updated_at":"2026-08-20T00:05:00Z","html_url":"https://github.com/aavishield/delsecure/actions/runs/123"}
+		{"id":123,"status":"completed","conclusion":"success","head_branch":"main","display_title":"Agent packages","created_at":"2026-08-20T00:00:00Z","updated_at":"2026-08-20T00:05:00Z","html_url":"https://github.com/aavishield/aavishield/actions/runs/123"}
 	]}`, nil)
 	h := NewCITriggerHandler()
 

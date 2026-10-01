@@ -473,7 +473,8 @@ services:
     networks:
       - aavishield-net
 
-  # Public marketing site (delsecure.aavishailab.com). Static pages plus one
+  # Public marketing site (aavishield.aavishailab.com; the old
+  # delsecure.aavishailab.com hostname 301-redirects here). Static pages plus one
   # /api/contact route, which forwards demo requests to admin-api
   # (stored, emailed to the team, listed in superadmin > Demo Requests).
   website:

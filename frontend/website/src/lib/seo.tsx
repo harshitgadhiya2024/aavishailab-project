@@ -1,4 +1,4 @@
-export const SITE_URL = "https://delsecure.aavishailab.com";
+export const SITE_URL = "https://aavishield.aavishailab.com";
 export const SITE_NAME = "Aavishield";
 
 /** Renders a JSON-LD block. `<` is escaped so content can't close the script tag. */

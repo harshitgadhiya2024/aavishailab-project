@@ -10,6 +10,20 @@ const nextConfig: NextConfig = {
     imageSizes: [96, 160, 256, 320, 480],
     minimumCacheTTL: 60 * 60 * 24 * 30,
   },
+  // The site moved from delsecure.aavishailab.com to aavishield.aavishailab.com
+  // with the rebrand. The old hostname still reaches this app (cloudflared),
+  // and every path on it is permanently redirected to the same path on the
+  // new one, so old links, bookmarks and search results keep working.
+  async redirects() {
+    return [
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "delsecure.aavishailab.com" }],
+        destination: "https://aavishield.aavishailab.com/:path*",
+        permanent: true,
+      },
+    ];
+  },
   async headers() {
     return [
       {
