@@ -36,8 +36,9 @@ mod tests {
         assert_eq!(px.len(), (w * h * 4) as usize);
 
         let (_, w, h) = rgba(LOGO_PNG, None).expect("logo decodes");
-        assert_eq!(w, 840);
-        assert!(h > 150 && h < 250, "logo keeps its wide aspect ratio, got {w}x{h}");
+        // The brand lockup's own canvas is 3:1, margin included (see
+        // scripts/brand/sync-logos.py); it must not be cropped or stretched.
+        assert_eq!((w, h), (840, 280));
 
         let (px, w, h) = rgba(MARK_PNG, Some(64)).expect("mark resizes");
         assert_eq!((w, h, px.len()), (64, 64, 64 * 64 * 4));

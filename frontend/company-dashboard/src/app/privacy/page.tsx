@@ -35,7 +35,7 @@ export default function PrivacyPage() {
       <header className="border-b border-border">
         <div className="max-w-3xl mx-auto px-6 py-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <BrandLogo className="h-12" priority />
+            <BrandLogo className="h-[72px]" priority />
           </div>
           <Link href="/login" className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
             <ArrowLeft className="w-3.5 h-3.5" /> Back to sign in

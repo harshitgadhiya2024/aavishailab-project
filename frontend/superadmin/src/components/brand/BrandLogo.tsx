@@ -5,8 +5,8 @@ import Image from "next/image";
 // this app is always dark, so only the dark-UI version is used.
 
 const LOCKUPS = {
-  plain: { light: ["/brand/logo-horizontal-light.png", 1200, 296], dark: ["/brand/logo-horizontal-dark.png", 1200, 308] },
-  tagline: { light: ["/brand/logo-horizontal-tagline-light.png", 1400, 354], dark: ["/brand/logo-horizontal-tagline-dark.png", 1400, 347] },
+  plain: { light: ["/brand/logo-horizontal-light.png", 1400, 467], dark: ["/brand/logo-horizontal-dark.png", 1400, 506] },
+  tagline: { light: ["/brand/logo-horizontal-tagline-light.png", 1400, 467], dark: ["/brand/logo-horizontal-tagline-dark.png", 1400, 467] },
 } as const;
 
 /** Full Aavishield logo (mark + wordmark + "Secure today. Enable tomorrow."). Size it with a height class, e.g. "h-12". */

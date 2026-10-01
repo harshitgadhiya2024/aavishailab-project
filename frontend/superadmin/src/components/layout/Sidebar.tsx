@@ -56,7 +56,7 @@ export function Sidebar() {
           <BrandMark className="h-8 w-8" />
         ) : (
           <div className="min-w-0">
-            <BrandLogo className="h-12" priority />
+            <BrandLogo className="h-[72px]" priority />
             <p className="mt-1 text-xs text-muted-foreground">Superadmin</p>
           </div>
         )}

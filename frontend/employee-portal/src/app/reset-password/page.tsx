@@ -74,7 +74,7 @@ function ResetPasswordForm() {
 
       <div className="relative w-full max-w-md">
         <div className="text-center mb-8">
-          <BrandLogo className="h-16 mb-2" priority />
+          <BrandLogo className="h-24" priority />
             <h1 className="sr-only">Aavishield</h1>
           <p className="text-muted-foreground mt-1">Employee Security Portal</p>
         </div>

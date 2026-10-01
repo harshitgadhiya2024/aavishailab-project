@@ -16,7 +16,7 @@ export function ogCard({ eyebrow, title }: { eyebrow: string; title: string }) {
         <div style={{ position: "absolute", right: 120, top: 150, width: 300, height: 300, borderRadius: 9999, border: "2px solid rgba(255,112,0,0.6)", display: "flex" }} />
         <div style={{ display: "flex", alignItems: "center" }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={logo} alt="Aavishield" width={320} height={79} />
+          <img src={logo} alt="Aavishield" width={360} height={120} />
         </div>
         <div style={{ display: "flex", flexDirection: "column" }}>
           <div style={{ fontSize: 26, color: "#ff8a2b", marginBottom: 18 }}>{eyebrow}</div>

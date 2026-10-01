@@ -119,7 +119,7 @@ export default function LoginPage() {
       {/* Left — brand content, sits on the same background as the form */}
       <div className="hidden lg:flex lg:w-1/2 relative flex-col justify-between p-12">
         <div className="flex items-center gap-3">
-          <BrandLogo className="h-12" priority />
+          <BrandLogo className="h-[72px]" priority />
         </div>
 
         <div className="space-y-8">
@@ -150,7 +150,7 @@ export default function LoginPage() {
       <div className="w-full lg:w-1/2 relative flex items-center justify-center p-6 sm:p-10">
         <div className="w-full max-w-md">
           <div className="lg:hidden text-center mb-8">
-            <BrandLogo className="h-16 mb-2" priority />
+            <BrandLogo className="h-24" priority />
             <h1 className="sr-only">Aavishield</h1>
             <p className="text-[#A3A3A3] mt-1">Superadmin Console</p>
           </div>

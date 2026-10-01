@@ -28,7 +28,7 @@ export default function HomePage() {
   return (
     <div className="max-w-5xl mx-auto px-8 py-16 lg:px-12">
       <div className="flex items-center gap-3 mb-6">
-        <BrandLogo className="h-14" priority />
+        <BrandLogo className="h-20" priority />
         <span className="text-sm font-medium text-muted-foreground">Documentation</span>
       </div>
 

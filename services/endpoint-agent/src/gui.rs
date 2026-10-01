@@ -80,7 +80,7 @@ struct BrandTextures {
 }
 
 /// Logo width in points at the design width; scaled down with the layout.
-const LOGO_WIDTH: f32 = 200.0;
+const LOGO_WIDTH: f32 = 232.0;
 /// The mark's size inside the status medallion, in points.
 const MARK_SIZE: f32 = 40.0;
 
@@ -215,12 +215,12 @@ impl eframe::App for ConnectorApp {
             // reach.
             egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             ui.vertical_centered(|ui| {
-                ui.add_space(22.0);
+                ui.add_space(10.0);
                 if let Some(brand) = &self.brand {
                     // The full Aavishield logo with tagline, scaled with the
                     // rest of the page so it never crowds a narrow window.
                     ui.add(egui::Image::new((brand.logo.id(), brand.logo_size * scale)));
-                    ui.add_space(20.0);
+                    ui.add_space(6.0);
                 }
                 self.render_medallion(ui, &snap);
                 ui.add_space(14.0);

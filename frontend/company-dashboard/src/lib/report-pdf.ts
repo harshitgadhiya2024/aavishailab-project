@@ -55,8 +55,8 @@ export async function downloadReportPdf(report: Report, opts: { period: string; 
   doc.setFont("helvetica", "bold");
   doc.setTextColor(...INK);
   if (logo) {
-    // Brand lockup with tagline is 1400x354; draw it 30pt tall.
-    doc.addImage(logo, "PNG", margin, 22, 30 * (1400 / 354), 30);
+    // Brand lockup with tagline is 1400x467 (3:1, with its own margin); draw it 44pt tall.
+    doc.addImage(logo, "PNG", margin - 6, 16, 44 * (1400 / 467), 44);
   } else {
     doc.setFontSize(12);
     doc.text("Aavishield", margin, 43);

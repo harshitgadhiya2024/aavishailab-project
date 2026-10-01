@@ -35,8 +35,8 @@ func layout(heading, intro, body, ctaLabel, ctaURL, footer string) string {
       <table role="presentation" width="600" cellpadding="0" cellspacing="0"
              style="max-width:600px;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;">
         <tr><td style="padding:24px 32px;border-bottom:1px solid #e5e7eb;">
-          <img src="%s" width="200" height="51" alt="Aavishield"
-               style="display:block;border:0;outline:none;width:200px;height:51px;font-size:18px;font-weight:700;color:#111827;">
+          <img src="%s" width="240" height="80" alt="Aavishield"
+               style="display:block;border:0;outline:none;width:240px;height:80px;font-size:18px;font-weight:700;color:#111827;">
         </td></tr>
         <tr><td style="padding:28px 32px 8px 32px;">
           <h1 style="margin:0 0 12px 0;font-size:20px;color:#111827;">%s</h1>

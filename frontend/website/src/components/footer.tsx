@@ -26,7 +26,7 @@ export function Footer() {
       <div className="mx-auto grid max-w-6xl gap-12 px-4 py-16 md:px-6 lg:grid-cols-[1.2fr_3fr]">
         <div className="max-w-sm">
           <Link href="/" aria-label="Aavishield home" className="inline-flex">
-            <Logo className="h-14" sizes="224px" />
+            <Logo className="h-20" sizes="240px" />
           </Link>
           <p className="mt-4 text-sm leading-relaxed text-muted">
             Endpoint security for companies. One agent on every device enforces web, data, application and device policy, wherever people work.
