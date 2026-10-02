@@ -9,9 +9,11 @@ explains the steps in the dashboard instead.
 
 from __future__ import annotations
 
+import difflib
 import json
 import logging
 import os
+import re
 from datetime import datetime
 from typing import Any, AsyncIterator
 from zoneinfo import ZoneInfo
@@ -60,7 +62,17 @@ organization's security, and suggest what you can help with. Never answer it any
 - Always call a tool for any fact about the organization. Never guess or invent names,
   numbers, devices or dates. If a tool returns nothing, say so.
 - To answer about a person, first call find_employee to get their id, then use it.
-  If several people match, ask which one.
+  Matching ignores case and small differences, so pass the name exactly as the user
+  wrote it ("harshit patel" is fine). Just pass the name/email, not extra words like
+  "ka record" or "ki report".
+  - If several people match, ask which one.
+  - If find_employee returns no exact match but gives "suggestions" (a likely typo,
+    e.g. the user wrote "harsh patel" but the company has "Harshit Patel"), DO NOT say
+    "not found". Instead ask the company to confirm: "I couldn't find 'harsh patel'.
+    Did you mean **Harshit Patel**?" — list up to 3 suggested names. Only after they
+    confirm, use that person.
+  - If there are no matches and no suggestions, say you couldn't find anyone by that
+    name and ask them to check the spelling.
 - Periods: turn "today", "last week", "this month", "last month" into start/end dates
   (YYYY-MM-DD) relative to today.
 - "Latest DLP" means get_incidents with control=dlp sorted newest first (the default).
@@ -247,6 +259,10 @@ class ToolExecutor:
         self.tz = tz
         self.client = httpx.AsyncClient(
             headers={"Authorization": f"Bearer {access_token}"}, timeout=30)
+        # The one person the current question is about, when it resolves to
+        # exactly one — used to offer quick follow-up actions ("Recent
+        # activity", "Download report") after the answer.
+        self.focused_employee: dict | None = None
 
     async def _get(self, path: str, params: dict | None = None) -> Any:
         clean = {k: v for k, v in (params or {}).items() if v not in (None, "")}
@@ -286,7 +302,8 @@ class ToolExecutor:
     async def _run(self, name: str, a: dict) -> Any:
         match name:
             case "find_employee":
-                emps = await self._get("/api/v1/employees", {"search": a.get("query", ""), "limit": 10})
+                query = (a.get("query") or "").strip()
+                emps = await self._get("/api/v1/employees", {"search": query, "limit": 10})
                 rows = emps.get("data") or emps.get("employees") or []
                 out = []
                 for e in rows[:10]:
@@ -299,7 +316,20 @@ class ToolExecutor:
                         "team": (e.get("team") or {}).get("name"),
                         "devices": [_device(d) for d in (devs.get("data") or [])],
                     })
-                return {"matches": out, "count": len(out)}
+                # Remember who the question is about, for quick follow-up actions.
+                if len(out) == 1:
+                    self.focused_employee = {"id": out[0]["id"], "name": out[0]["name"]}
+                result: dict[str, Any] = {"matches": out, "count": len(out)}
+                # The substring search found nobody (a typo, a reversed order, or
+                # only part of the name). Rank every employee by how close their
+                # name is and offer the best few as "did you mean" suggestions,
+                # rather than claim the person doesn't exist.
+                if not out and query:
+                    sugg = await self._fuzzy_employees(query)
+                    if sugg:
+                        result["no_exact_match"] = True
+                        result["suggestions"] = sugg
+                return result
             case "list_employees":
                 return _slim(await self._get("/api/v1/employees", a))
             case "list_devices":
@@ -369,6 +399,48 @@ class ToolExecutor:
                 return _slim({"organization": org, "ssl_inspection": mitm})
         return {"error": f"Unknown tool {name}"}
 
+    async def _fuzzy_employees(self, query: str, limit: int = 3) -> list[dict]:
+        """Rank all employees by name similarity to a query that matched nobody
+        exactly, so the assistant can suggest the likely intended person. Case-
+        and order-insensitive, and tolerant of typos and partial names."""
+        try:
+            allemp = await self._get("/api/v1/employees", {"limit": 500})
+        except Exception:
+            return []
+        rows = allemp.get("data") or allemp.get("employees") or []
+        q = _norm(query)
+        q_tokens = set(q.split())
+        scored = []
+        for e in rows:
+            first = e.get("first_name") or ""
+            last = e.get("last_name") or ""
+            name = f"{first} {last}".strip()
+            email = e.get("email") or ""
+            local = email.split("@")[0]
+            cands = {
+                _norm(name), _norm(f"{last} {first}"), _norm(first), _norm(last), _norm(local),
+            }
+            cands.discard("")
+            if not cands:
+                continue
+            ratio = max(difflib.SequenceMatcher(None, q, c).ratio() for c in cands)
+            # Token overlap rewards "harsh patel" vs "harshit patel" (shared
+            # surname) and a first-name-only query against a full name.
+            cand_tokens = set(_norm(name).split()) | {_norm(local)}
+            overlap = len(q_tokens & cand_tokens) / max(1, len(q_tokens))
+            score = max(ratio, 0.5 * ratio + 0.5 * overlap)
+            scored.append((score, {
+                "id": e.get("id"), "name": name, "email": email,
+                "department": e.get("department"),
+            }))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        # Keep clearly-close names; if none clear the bar, still offer the single
+        # closest so the user gets a "did you mean" rather than a dead end.
+        strong = [s for sc, s in scored if sc >= 0.6][:limit]
+        if strong:
+            return strong
+        return [s for sc, s in scored[:1] if sc >= 0.4]
+
     async def close(self):
         await self.client.aclose()
 
@@ -376,6 +448,12 @@ class ToolExecutor:
 class _Attachment(Exception):
     def __init__(self, report: dict, summary: dict):
         self.report, self.summary = report, summary
+
+
+def _norm(s: str) -> str:
+    """Lower-case, strip accents-free punctuation and collapse whitespace, so
+    name matching ignores case, extra spaces and stray punctuation."""
+    return re.sub(r"\s+", " ", re.sub(r"[^\w\s]", " ", (s or "").lower())).strip()
 
 
 def _device(d: dict) -> dict:
@@ -441,6 +519,10 @@ class AssistantAgent:
             if not tool_calls:
                 if not text.strip():
                     yield {"type": "chunk", "content": "I couldn't find an answer to that. Could you rephrase?"}
+                else:
+                    qa = self._quick_actions()
+                    if qa:
+                        yield qa
                 yield {"type": "done"}
                 return
 
@@ -464,6 +546,22 @@ class AssistantAgent:
 
         yield {"type": "chunk", "content": "That needed more lookups than I can do in one go. Could you narrow the question?"}
         yield {"type": "done"}
+
+    def _quick_actions(self) -> dict | None:
+        """One-tap follow-ups shown under an answer about a single person. The
+        client renders these as buttons; tapping one sends its query as the next
+        message. Only offered when the question resolved to exactly one employee."""
+        fe = self.executor.focused_employee
+        if not fe or not fe.get("name"):
+            return None
+        name = fe["name"]
+        first = name.split()[0] if name.split() else name
+        return {"type": "suggestions", "items": [
+            {"label": f"{first}'s recent activity",
+             "query": f"Show {name}'s recent activity and incidents"},
+            {"label": "Download report",
+             "query": f"Export {name}'s employee activity report"},
+        ]}
 
     async def close(self):
         await self.executor.close()

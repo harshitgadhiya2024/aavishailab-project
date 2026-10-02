@@ -73,7 +73,9 @@ async def test_answers_from_live_data_and_only_reads():
     await a.close()
 
     types = [e["type"] for e in events]
-    assert types == ["chunk", "reset", "status", "chunk", "chunk", "done"]
+    # "riya" resolves to exactly one person, so quick-action chips are offered
+    # between the answer and done.
+    assert types == ["chunk", "reset", "status", "chunk", "chunk", "suggestions", "done"]
     assert "".join(e["content"] for e in events[3:5]) == "**Riya Patel**'s laptop `Riya-Mac` is online."
     assert set(methods) == {"GET"}
     # History reached the model without tool chatter, and the tool result was fed back.
@@ -131,3 +133,79 @@ async def test_provider_reassembles_streamed_tool_calls():
     tc = events[1]["tool_calls"][0]
     assert tc["id"] == "call_a" and tc["function"]["name"] == "get_incidents"
     assert json.loads(tc["function"]["arguments"]) == {"control": "dlp"}
+
+
+# ─── Case-insensitive / fuzzy employee lookup + quick actions ────────────────
+
+_EMPLOYEES = [
+    {"id": "e1", "first_name": "Harshit", "last_name": "Patel",
+     "email": "harshit@acme.test", "department": "Engineering", "status": "active"},
+    {"id": "e2", "first_name": "Riya", "last_name": "Shah",
+     "email": "riya@acme.test", "department": "Sales", "status": "active"},
+    {"id": "e3", "first_name": "Jay", "last_name": "Patel",
+     "email": "jay@acme.test", "department": "Ops", "status": "active"},
+]
+
+
+def _emp_handler(search_is_case_insensitive=True):
+    """Fakes /employees (substring search over 'first last') and /devices."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/devices":
+            return httpx.Response(200, json={"data": [], "total": 0})
+        if request.url.path == "/api/v1/employees":
+            q = request.url.params.get("search", "")
+            if not q:
+                return httpx.Response(200, json={"data": _EMPLOYEES})
+            needle = q.lower() if search_is_case_insensitive else q
+            hits = []
+            for e in _EMPLOYEES:
+                full = f"{e['first_name']} {e['last_name']}"
+                hay = full.lower() if search_is_case_insensitive else full
+                if needle in hay or needle in e["email"]:
+                    hits.append(e)
+            return httpx.Response(200, json={"data": hits})
+        return httpx.Response(200, json={})
+    return handler
+
+
+@pytest.mark.asyncio
+async def test_find_employee_is_case_insensitive_and_focuses():
+    router = FakeRouter([[{"type": "tool_calls", "tool_calls": [call("find_employee", {"query": "harshit patel"})]}],
+                         [{"type": "content", "text": "Here is Harshit Patel."}]])
+    a = make_agent(router, _emp_handler())
+    events = await collect(a, [{"role": "user", "content": "harshit patel ka record dedo"}])
+    # lower-case query still resolves the person
+    assert a.executor.focused_employee == {"id": "e1", "name": "Harshit Patel"}
+    # quick-action chips are offered for the resolved person
+    sugg = [e for e in events if e.get("type") == "suggestions"]
+    assert sugg and len(sugg[0]["items"]) == 2
+    assert any("recent activity" in i["query"].lower() for i in sugg[0]["items"])
+    assert any("report" in i["query"].lower() for i in sugg[0]["items"])
+
+
+@pytest.mark.asyncio
+async def test_find_employee_suggests_on_typo():
+    # "harsh patel" matches nobody by substring, but should suggest Harshit Patel.
+    out, _ = await _run_tool("find_employee", {"query": "harsh patel"})
+    assert out["count"] == 0
+    assert out.get("no_exact_match") is True
+    names = [s["name"] for s in out["suggestions"]]
+    assert "Harshit Patel" in names
+
+
+async def _run_tool(name, args):
+    from app.core.agent import ToolExecutor
+    ex = ToolExecutor("http://api", "t", "UTC")
+    ex.client = httpx.AsyncClient(transport=httpx.MockTransport(_emp_handler()), headers={"Authorization": "Bearer t"})
+    try:
+        return await ex.execute(name, args)
+    finally:
+        await ex.close()
+
+
+@pytest.mark.asyncio
+async def test_no_quick_actions_when_not_about_one_person():
+    router = FakeRouter([[{"type": "content", "text": "You have 3 employees."}]])
+    a = make_agent(router, _emp_handler())
+    events = await collect(a, [{"role": "user", "content": "how many employees are there"}])
+    assert not any(e.get("type") == "suggestions" for e in events)

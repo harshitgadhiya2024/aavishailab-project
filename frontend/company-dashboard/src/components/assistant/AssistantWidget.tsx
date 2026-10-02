@@ -21,6 +21,7 @@ type Msg = {
   streaming?: boolean;
   status?: string;
   attachments?: ReportAttachment[];
+  suggestions?: { label: string; query: string }[];
   error?: boolean;
 };
 
@@ -51,7 +52,7 @@ function timeAgo(iso: string) {
 }
 
 /** One assistant reply: typed out while streaming, markdown-rendered throughout. */
-function AssistantBubble({ m }: { m: Msg }) {
+function AssistantBubble({ m, onPick }: { m: Msg; onPick?: (q: string) => void }) {
   const text = useTypewriter(m.content, !!m.streaming);
   const typing = m.streaming && text.length < m.content.length;
   return (
@@ -80,6 +81,16 @@ function AssistantBubble({ m }: { m: Msg }) {
           </p>
         )}
         {m.attachments?.map((a, i) => <ReportCard key={i} r={a} />)}
+        {!m.streaming && m.suggestions && m.suggestions.length > 0 && onPick && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {m.suggestions.map((s, i) => (
+              <button key={i} onClick={() => onPick(s.query)}
+                className="rounded-full border border-brand-500/30 bg-brand-500/5 px-3 py-1.5 text-xs font-medium text-brand-600 transition-colors hover:bg-brand-500/15 dark:text-brand-400">
+                {s.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -220,8 +231,8 @@ export function AssistantWidget() {
       return next;
     });
 
-  const send = async () => {
-    const text = input.trim();
+  const send = async (override?: string) => {
+    const text = (typeof override === "string" ? override : input).trim();
     if (!text || busy || !token || !user?.org_id) return;
     setInput("");
     setBusy(true);
@@ -258,6 +269,8 @@ export function AssistantWidget() {
         } else if (ev.type === "attachment" && ev.report) {
           cards.push(ev.report);
           patchLast((m) => ({ ...m, attachments: [...cards] }));
+        } else if (ev.type === "suggestions" && Array.isArray(ev.items)) {
+          patchLast((m) => ({ ...m, suggestions: ev.items }));
         } else if (ev.type === "error") {
           answer = ev.content ?? "The assistant couldn't answer right now.";
           patchLast((m) => ({ ...m, content: answer, error: true }));
@@ -429,7 +442,7 @@ export function AssistantWidget() {
                     <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-tr-sm bg-brand-500 px-3.5 py-2.5 text-sm text-white">{m.content}</p>
                   </div>
                 ) : (
-                  <AssistantBubble key={m.id} m={m} />
+                  <AssistantBubble key={m.id} m={m} onPick={(q) => send(q)} />
                 )
               )}
               </div>
@@ -460,7 +473,7 @@ export function AssistantWidget() {
                     <Square className="h-3.5 w-3.5 fill-current" />
                   </button>
                 ) : (
-                  <button onClick={send} disabled={!input.trim()} aria-label="Send" title="Send (Enter)"
+                  <button onClick={() => send()} disabled={!input.trim()} aria-label="Send" title="Send (Enter)"
                     className="grid h-8 w-8 flex-shrink-0 place-items-center rounded-lg bg-brand-500 text-white transition-colors hover:bg-brand-600 disabled:opacity-40">
                     <ArrowUp className="h-4 w-4" />
                   </button>
