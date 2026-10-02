@@ -11,10 +11,12 @@ import (
 	"github.com/aavishield/admin-api/internal/database"
 	"github.com/aavishield/admin-api/internal/handlers"
 	"github.com/aavishield/admin-api/internal/mailer"
+	"github.com/aavishield/admin-api/internal/mitm"
 	"github.com/aavishield/admin-api/internal/notifier"
 	"github.com/aavishield/admin-api/internal/retention"
 	"github.com/aavishield/admin-api/internal/riskengine"
 	"github.com/aavishield/admin-api/internal/router"
+	"github.com/aavishield/admin-api/internal/secrets"
 	"github.com/aavishield/admin-api/internal/tracing"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
@@ -28,10 +30,15 @@ func main() {
 		_ = godotenv.Load(".env")
 	}
 
+	secrets.MustBeStrongInProduction()
+
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "seed":
 			runSeed()
+			return
+		case "rekey-ca":
+			runRekeyCA()
 			return
 		}
 	}
@@ -190,4 +197,20 @@ func runSeed() {
 	}
 	_ = db
 	log.Println("Seed complete")
+}
+
+// runRekeyCA re-seals every org CA private key after CA_KEY_ENCRYPTION_KEY is
+// rotated: run it once with the new key as CA_KEY_ENCRYPTION_KEY and the
+// outgoing one as CA_KEY_ENCRYPTION_KEY_PREVIOUS, before admin-api serves on
+// the new key.
+func runRekeyCA() {
+	db, err := database.ConnectPostgres()
+	if err != nil {
+		log.Fatalf("rekey-ca: %v", err)
+	}
+	n, err := mitm.RekeyAll(db, os.Getenv("CA_KEY_ENCRYPTION_KEY_PREVIOUS"))
+	if err != nil {
+		log.Fatalf("rekey-ca: nothing changed: %v", err)
+	}
+	log.Printf("rekey-ca: re-sealed %d org CA key(s)", n)
 }

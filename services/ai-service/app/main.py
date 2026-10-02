@@ -7,26 +7,35 @@ from typing import Any
 
 import time
 
-from fastapi import FastAPI, HTTPException, Header, Request
+from fastapi import Depends, FastAPI, HTTPException, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse, StreamingResponse
 from pydantic import BaseModel
 
 from app.core.agent import AssistantAgent
+from app.core.auth import User, access_secret, require_org, require_user
 from app.llm.providers import Message, get_router
 from app.tracing import setup_tracing
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Fail at startup, not on the first request, when production has no secret.
+access_secret()
+
 app = FastAPI(title="Aavishield AI Service", version="1.0.0")
 setup_tracing(app, "ai-service")
 
+# Same allow-list admin-api serves the dashboards with.
+_DEFAULT_CORS_ORIGINS = (
+    "http://localhost:1001,http://localhost:1002,http://localhost:1003,"
+    "http://localhost:5001,http://localhost:5002,http://localhost:5003"
+)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=[o.strip() for o in os.getenv("CORS_ORIGINS", _DEFAULT_CORS_ORIGINS).split(",") if o.strip()],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Authorization", "Content-Type", "x-org-id"],
 )
 
 _METRICS = {"requests_total": 0, "errors_total": 0, "chat_requests_total": 0}
@@ -117,11 +126,12 @@ async def health():
 @app.post("/api/v1/chat")
 async def chat(
     req: ChatRequest,
-    authorization: str = Header(...),
     x_org_id: str = Header(..., alias="x-org-id"),
+    user: User = Depends(require_user),
 ):
     """Non-streaming chat with optional agent mode."""
-    token = authorization.replace("Bearer ", "")
+    require_org(user, x_org_id)
+    token = user.token
 
     messages = [m.model_dump(exclude_none=True) for m in req.messages]
 
@@ -172,11 +182,12 @@ async def chat(
 @app.post("/api/v1/chat/stream")
 async def chat_stream(
     req: ChatRequest,
-    authorization: str = Header(...),
     x_org_id: str = Header(..., alias="x-org-id"),
+    user: User = Depends(require_user),
 ):
     """Streaming chat with SSE. Agent mode sends structured events; simple mode streams tokens."""
-    token = authorization.replace("Bearer ", "")
+    require_org(user, x_org_id)
+    token = user.token
     messages = [m.model_dump(exclude_none=True) for m in req.messages]
 
     async def agent_stream():
@@ -236,10 +247,9 @@ async def list_models():
 @app.post("/api/v1/completions")
 async def completions(
     req: dict,
-    authorization: str = Header(...),
+    user: User = Depends(require_user),
 ):
     """OpenAI-compatible completion proxy through OpenRouter."""
-    token = authorization.replace("Bearer ", "")
     router = get_router()
 
     messages_raw = req.get("messages", [])

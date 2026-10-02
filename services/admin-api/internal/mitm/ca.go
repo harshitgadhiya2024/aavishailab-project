@@ -58,10 +58,14 @@ func encryptionKey() ([]byte, error) {
 	if raw == "" {
 		return nil, errors.New("CA_KEY_ENCRYPTION_KEY is not set — required to protect org CA private keys at rest")
 	}
-	// SHA-256 the configured secret down to exactly 32 bytes, so operators
-	// can set any passphrase length rather than needing an exact-size key.
+	return deriveKey(raw), nil
+}
+
+// deriveKey SHA-256s the configured secret down to exactly 32 bytes, so
+// operators can set any passphrase length rather than needing an exact-size key.
+func deriveKey(raw string) []byte {
 	key := sha256.Sum256([]byte(raw))
-	return key[:], nil
+	return key[:]
 }
 
 // encryptKey seals raw key bytes (a PEM-encoded private key) for storage in
@@ -71,6 +75,10 @@ func encryptKey(plaintext []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return sealWith(key, plaintext)
+}
+
+func sealWith(key, plaintext []byte) (string, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return "", err
@@ -92,6 +100,10 @@ func decryptKey(encoded string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	return openWith(key, encoded)
+}
+
+func openWith(key []byte, encoded string) ([]byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
@@ -109,6 +121,51 @@ func decryptKey(encoded string) ([]byte, error) {
 	}
 	nonce, ciphertext := sealed[:gcm.NonceSize()], sealed[gcm.NonceSize():]
 	return gcm.Open(nil, nonce, ciphertext, nil)
+}
+
+// RekeyAll re-seals every org CA private key from oldSecret (the outgoing
+// CA_KEY_ENCRYPTION_KEY) to the current CA_KEY_ENCRYPTION_KEY, in one
+// transaction. The CAs themselves are unchanged, so devices keep trusting
+// them. Rows that already open under the current key are skipped, so a
+// re-run after a partial failure is safe; any row that opens under neither
+// key aborts the whole rekey. Returns how many rows were re-sealed.
+func RekeyAll(db *gorm.DB, oldSecret string) (int, error) {
+	if oldSecret == "" {
+		return 0, errors.New("old CA_KEY_ENCRYPTION_KEY is empty")
+	}
+	newKey, err := encryptionKey()
+	if err != nil {
+		return 0, err
+	}
+	oldKey := deriveKey(oldSecret)
+
+	rekeyed := 0
+	err = db.Transaction(func(tx *gorm.DB) error {
+		var rows []models.OrgCACert
+		if err := tx.Find(&rows).Error; err != nil {
+			return err
+		}
+		for _, row := range rows {
+			if _, err := openWith(newKey, row.EncryptedKeyPEM); err == nil {
+				continue
+			}
+			plain, err := openWith(oldKey, row.EncryptedKeyPEM)
+			if err != nil {
+				return fmt.Errorf("org %s: CA key opens under neither the old nor the new key: %w", row.OrgID, err)
+			}
+			sealed, err := sealWith(newKey, plain)
+			if err != nil {
+				return err
+			}
+			if err := tx.Model(&models.OrgCACert{}).Where("org_id = ?", row.OrgID).
+				Update("encrypted_key_pem", sealed).Error; err != nil {
+				return err
+			}
+			rekeyed++
+		}
+		return nil
+	})
+	return rekeyed, err
 }
 
 // EnsureOrgCA returns the org's existing root CA, generating and persisting
