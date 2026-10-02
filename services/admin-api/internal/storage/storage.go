@@ -60,19 +60,16 @@ func New() Backend {
 	secret := os.Getenv("SCREENSHOT_R2_SECRET_KEY")
 
 	if endpoint != "" && bucket != "" && access != "" && secret != "" {
-		region := os.Getenv("SCREENSHOT_R2_REGION")
-		if region == "" {
-			region = "auto"
-		}
-		return &r2Backend{
-			endpoint:  strings.TrimRight(endpoint, "/"),
-			bucket:    bucket,
-			accessKey: access,
-			secretKey: secret,
-			region:    region,
-			prefix:    os.Getenv("SCREENSHOT_R2_PREFIX"),
-			client:    &http.Client{Timeout: 30 * time.Second},
-		}
+		return NewS3(S3Config{
+			Kind:      "r2",
+			Endpoint:  endpoint,
+			Bucket:    bucket,
+			AccessKey: access,
+			SecretKey: secret,
+			Region:    os.Getenv("SCREENSHOT_R2_REGION"),
+			Prefix:    os.Getenv("SCREENSHOT_R2_PREFIX"),
+			PathStyle: true,
+		})
 	}
 
 	dir := os.Getenv("SCREENSHOT_LOCAL_DIR")
@@ -202,36 +199,111 @@ func LocalDir() string {
 	return "/data/screenshots"
 }
 
-// ─── R2 / S3 (hand-rolled SigV4) ─────────────────────────────────────────────
+// ─── S3 and S3-compatible stores (hand-rolled SigV4) ─────────────────────────
+//
+// One client serves Cloudflare R2, AWS S3, Google Cloud Storage (through its
+// S3-interoperable XML API with HMAC keys) and anything else that speaks the
+// S3 API — MinIO, Wasabi, Backblaze B2, DigitalOcean Spaces. They differ only
+// in endpoint, region and addressing style.
 
-type r2Backend struct {
+// S3Config describes one bucket.
+type S3Config struct {
+	// Kind is what Backend.Kind reports ("r2", "s3", "gcs", …).
+	Kind     string
+	Endpoint string // scheme://host[:port], no bucket and no trailing slash
+	Region   string // "auto" when empty (R2, GCS)
+	Bucket   string
+	// Prefix namespaces every key, for a bucket shared with other data.
+	Prefix    string
+	AccessKey string
+	SecretKey string
+	// PathStyle addresses objects as endpoint/bucket/key. False uses
+	// virtual-hosted addressing (bucket.endpoint/key), which AWS requires for
+	// buckets in newer regions.
+	PathStyle bool
+	// Client overrides the HTTP client — the data-residency layer passes one
+	// whose dialer refuses private networks.
+	Client *http.Client
+}
+
+// NewS3 returns a Backend for one S3-compatible bucket.
+func NewS3(cfg S3Config) Backend {
+	region := cfg.Region
+	if region == "" {
+		region = "auto"
+	}
+	kind := cfg.Kind
+	if kind == "" {
+		kind = "s3"
+	}
+	client := cfg.Client
+	if client == nil {
+		client = &http.Client{Timeout: 30 * time.Second}
+	}
+	return &s3Backend{
+		kind:      kind,
+		endpoint:  strings.TrimRight(cfg.Endpoint, "/"),
+		bucket:    cfg.Bucket,
+		accessKey: cfg.AccessKey,
+		secretKey: cfg.SecretKey,
+		region:    region,
+		prefix:    cfg.Prefix,
+		pathStyle: cfg.PathStyle,
+		client:    client,
+	}
+}
+
+type s3Backend struct {
+	kind      string
 	endpoint  string
 	bucket    string
 	accessKey string
 	secretKey string
 	region    string
 	// Non-empty when this bucket is shared with another application
-	// (SCREENSHOT_R2_PREFIX) — every key this backend touches gets this
-	// prepended, so our objects live in their own namespace instead of
-	// risking a collision with whatever else is already in the bucket.
-	prefix string
-	client *http.Client
+	// (SCREENSHOT_R2_PREFIX, or a company's own prefix) — every key this
+	// backend touches gets this prepended, so our objects live in their own
+	// namespace instead of risking a collision with whatever else is already
+	// in the bucket.
+	prefix    string
+	pathStyle bool
+	client    *http.Client
 }
 
-func (b *r2Backend) Kind() string { return "r2" }
+func (b *s3Backend) Kind() string { return b.kind }
 
 // fullKey applies the configured prefix. Every method that turns a key into
-// an actual R2 object path goes through this — objectURL (Put/Delete) and
+// an actual object path goes through this — objectURL (Put/Delete) and
 // SignedURL/Open — so there is exactly one place that can get the
 // leading/trailing slash handling wrong.
-func (b *r2Backend) fullKey(key string) string {
+func (b *s3Backend) fullKey(key string) string {
 	if b.prefix == "" {
 		return key
 	}
-	return strings.TrimRight(b.prefix, "/") + "/" + strings.TrimLeft(key, "/")
+	return strings.Trim(b.prefix, "/") + "/" + strings.TrimLeft(key, "/")
 }
 
-func (b *r2Backend) Delete(key string) error {
+// location splits an object's address into the parts SigV4 signs: the
+// scheme://host to send to, the Host header, and the canonical (escaped) path.
+func (b *s3Backend) location(key string) (base, host, path string) {
+	u, err := url.Parse(b.endpoint)
+	if err != nil || u.Host == "" {
+		u = &url.URL{Scheme: "https", Host: b.endpoint}
+	}
+	escaped := s3EscapePath(b.fullKey(key))
+	if b.pathStyle {
+		return u.Scheme + "://" + u.Host, u.Host, "/" + b.bucket + "/" + escaped
+	}
+	host = b.bucket + "." + u.Host
+	return u.Scheme + "://" + host, host, "/" + escaped
+}
+
+func (b *s3Backend) objectURL(key string) string {
+	base, _, path := b.location(key)
+	return base + path
+}
+
+func (b *s3Backend) Delete(key string) error {
 	req, err := http.NewRequest(http.MethodDelete, b.objectURL(key), nil)
 	if err != nil {
 		return err
@@ -243,16 +315,13 @@ func (b *r2Backend) Delete(key string) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 && resp.StatusCode != http.StatusNotFound {
-		return fmt.Errorf("r2 delete %s: %d", key, resp.StatusCode)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Errorf("%s delete %s: %d %s", b.kind, key, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	return nil
 }
 
-func (b *r2Backend) objectURL(key string) string {
-	return b.endpoint + "/" + b.bucket + "/" + s3EscapePath(b.fullKey(key))
-}
-
-func (b *r2Backend) Put(ctx context.Context, key, contentType string, data []byte) error {
+func (b *s3Backend) Put(ctx context.Context, key, contentType string, data []byte) error {
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
@@ -271,14 +340,15 @@ func (b *r2Backend) Put(ctx context.Context, key, contentType string, data []byt
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return fmt.Errorf("r2 put %s: %d %s", key, resp.StatusCode, strings.TrimSpace(string(body)))
+		return fmt.Errorf("%s put %s: %d %s", b.kind, key, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	return nil
 }
 
-// Open is unused for R2 (SignedURL hands out direct presigned links) but must
-// satisfy the interface; fetching through admin-api would defeat the point.
-func (b *r2Backend) Open(ctx context.Context, key string) (io.ReadCloser, string, error) {
+// Open fetches an object through a presigned GET. The dashboard never uses it
+// (SignedURL hands the browser a direct link); it serves server-side copies,
+// such as moving history into a company's own bucket.
+func (b *s3Backend) Open(ctx context.Context, key string) (io.ReadCloser, string, error) {
 	u, err := b.SignedURL(key, 5*time.Minute)
 	if err != nil {
 		return nil, "", err
@@ -290,18 +360,18 @@ func (b *r2Backend) Open(ctx context.Context, key string) (io.ReadCloser, string
 	}
 	if resp.StatusCode/100 != 2 {
 		resp.Body.Close()
-		return nil, "", fmt.Errorf("r2 get %s: %d", key, resp.StatusCode)
+		return nil, "", fmt.Errorf("%s get %s: %d", b.kind, key, resp.StatusCode)
 	}
 	return resp.Body, resp.Header.Get("Content-Type"), nil
 }
 
 // SignedURL builds a presigned GET (query-string SigV4). The browser loads it
-// directly from R2, so screenshot bytes never transit admin-api on read.
-func (b *r2Backend) SignedURL(key string, ttl time.Duration) (string, error) {
+// directly from the bucket, so image bytes never transit admin-api on read.
+func (b *s3Backend) SignedURL(key string, ttl time.Duration) (string, error) {
 	now := time.Now().UTC()
 	amzDate := now.Format("20060102T150405Z")
 	dateStamp := now.Format("20060102")
-	host := hostOf(b.endpoint)
+	base, host, canonicalURI := b.location(key)
 	scope := dateStamp + "/" + b.region + "/s3/aws4_request"
 
 	q := url.Values{}
@@ -311,7 +381,6 @@ func (b *r2Backend) SignedURL(key string, ttl time.Duration) (string, error) {
 	q.Set("X-Amz-Expires", fmt.Sprint(int(ttl.Seconds())))
 	q.Set("X-Amz-SignedHeaders", "host")
 
-	canonicalURI := "/" + b.bucket + "/" + s3EscapePath(b.fullKey(key))
 	canonicalQuery := encodeQuerySorted(q)
 	canonicalHeaders := "host:" + host + "\n"
 	canonicalRequest := strings.Join([]string{
@@ -325,11 +394,11 @@ func (b *r2Backend) SignedURL(key string, ttl time.Duration) (string, error) {
 	signature := hex.EncodeToString(hmacSHA256(b.signingKey(dateStamp), []byte(stringToSign)))
 	q.Set("X-Amz-Signature", signature)
 
-	return b.endpoint + canonicalURI + "?" + encodeQuerySorted(q), nil
+	return base + canonicalURI + "?" + encodeQuerySorted(q), nil
 }
 
-// signV4 signs a request with header-based SigV4 (used for PUT).
-func (b *r2Backend) signV4(req *http.Request, payload []byte) {
+// signV4 signs a request with header-based SigV4 (PUT and DELETE).
+func (b *s3Backend) signV4(req *http.Request, payload []byte) {
 	now := time.Now().UTC()
 	amzDate := now.Format("20060102T150405Z")
 	dateStamp := now.Format("20060102")
@@ -340,13 +409,21 @@ func (b *r2Backend) signV4(req *http.Request, payload []byte) {
 	req.Header.Set("X-Amz-Date", amzDate)
 	req.Header.Set("X-Amz-Content-Sha256", payloadHash)
 
-	signedHeaders := "content-type;host;x-amz-content-sha256;x-amz-date"
-	canonicalHeaders := strings.Join([]string{
-		"content-type:" + req.Header.Get("Content-Type"),
-		"host:" + host,
-		"x-amz-content-sha256:" + payloadHash,
-		"x-amz-date:" + amzDate,
-	}, "\n") + "\n"
+	// Sign only headers the request actually carries: a DELETE has no
+	// Content-Type, and strict S3 implementations refuse a signature that
+	// names a header the request doesn't send.
+	names := []string{"host", "x-amz-content-sha256", "x-amz-date"}
+	values := []string{host, payloadHash, amzDate}
+	if ct := req.Header.Get("Content-Type"); ct != "" {
+		names = append([]string{"content-type"}, names...)
+		values = append([]string{ct}, values...)
+	}
+	signedHeaders := strings.Join(names, ";")
+	var canonical []string
+	for i := range names {
+		canonical = append(canonical, names[i]+":"+values[i])
+	}
+	canonicalHeaders := strings.Join(canonical, "\n") + "\n"
 
 	canonicalURI := req.URL.EscapedPath()
 	canonicalRequest := strings.Join([]string{
@@ -364,7 +441,7 @@ func (b *r2Backend) signV4(req *http.Request, payload []byte) {
 		b.accessKey, scope, signedHeaders, signature))
 }
 
-func (b *r2Backend) signingKey(dateStamp string) []byte {
+func (b *s3Backend) signingKey(dateStamp string) []byte {
 	kDate := hmacSHA256([]byte("AWS4"+b.secretKey), []byte(dateStamp))
 	kRegion := hmacSHA256(kDate, []byte(b.region))
 	kService := hmacSHA256(kRegion, []byte("s3"))
@@ -382,14 +459,6 @@ func hmacSHA256(key, data []byte) []byte {
 func sha256Hex(data []byte) string {
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
-}
-
-func hostOf(endpoint string) string {
-	u, err := url.Parse(endpoint)
-	if err != nil {
-		return endpoint
-	}
-	return u.Host
 }
 
 // s3EscapePath encodes a key the way SigV4 expects: every segment percent-

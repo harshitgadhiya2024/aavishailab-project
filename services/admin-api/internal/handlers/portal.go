@@ -7,17 +7,20 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/aavishield/admin-api/internal/auth"
-	"github.com/aavishield/admin-api/internal/mailer"
-	"github.com/aavishield/admin-api/internal/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
+
+	"github.com/aavishield/admin-api/internal/auth"
+	"github.com/aavishield/admin-api/internal/dataplane"
+	"github.com/aavishield/admin-api/internal/mailer"
+	"github.com/aavishield/admin-api/internal/models"
 )
 
 type PortalHandler struct {
@@ -383,10 +386,12 @@ func (h *PortalHandler) Me(c *gin.Context) {
 	// and a stat reading "0 allowed" is a claim about this employee's
 	// traffic that happens to be false.
 	var blockedCount int64
-	since := time.Now().AddDate(0, 0, -7)
-	h.db.Model(&models.ActivityEvent{}).
-		Where("employee_id = ? AND timestamp >= ? AND action = 'blocked'", emp.ID, since).
-		Count(&blockedCount)
+	if st, err := dataplane.Events(c.Request.Context(), emp.OrgID); err == nil {
+		blockedCount, _ = st.CountEvents(c.Request.Context(), dataplane.EventQuery{
+			OrgID: emp.OrgID, EmployeeID: &emp.ID, Since: time.Now().AddDate(0, 0, -7),
+			Actions: dataplane.Strings(models.EventActionBlocked),
+		})
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"employee": gin.H{
@@ -635,26 +640,32 @@ func (h *PortalHandler) Activity(c *gin.Context) {
 		limit = 25
 	}
 
-	q := h.portalEventScope(emp.ID, days)
+	st, ok := eventStore(c, emp.OrgID.String())
+	if !ok {
+		return
+	}
+	q := portalEventScope(emp, days)
 	if action := c.Query("action"); action != "" {
-		q = q.Where("action IN ?", splitCSV(action))
+		q.Actions = splitCSV(action)
 	}
-	if f := activitySourceScope(c.Query("source")); f != nil {
-		q = q.Where(f.query, f.args...)
-	}
+	q.AnyOf = activitySourceScope(c.Query("source"))
 	if search != "" {
-		like := "%" + strings.ToLower(search) + "%"
-		q = q.Where(`(LOWER(target_domain) LIKE ? OR LOWER(target) LIKE ? OR LOWER(category) LIKE ?
-			OR LOWER(policy_name) LIKE ? OR LOWER(operation) LIKE ?)`, like, like, like, like, like)
+		q.Search = search
+		q.SearchFields = []string{"target_domain", "target", "category", "policy_name", "operation"}
 	}
 
-	var total int64
-	q.Session(&gorm.Session{}).Model(&models.ActivityEvent{}).Count(&total)
-
-	var events []models.ActivityEvent
-	q.Session(&gorm.Session{}).Order("timestamp DESC").
-		Offset((page - 1) * limit).Limit(limit).
-		Find(&events)
+	ctx := c.Request.Context()
+	total, err := st.CountEvents(ctx, q)
+	if err != nil {
+		respondStoreError(c, err)
+		return
+	}
+	q.Offset, q.Limit = (page-1)*limit, limit
+	events, err := st.FindEvents(ctx, q)
+	if err != nil {
+		respondStoreError(c, err)
+		return
+	}
 	attachTargetApps(c.Request.Context(), emp.OrgID.String(), events)
 
 	c.JSON(http.StatusOK, gin.H{
@@ -668,10 +679,14 @@ func (h *PortalHandler) Activity(c *gin.Context) {
 
 // portalEventScope is every stored row of this employee's in the window.
 // "Allowed" traffic is never stored, and never shown.
-func (h *PortalHandler) portalEventScope(empID uuid.UUID, days int) *gorm.DB {
-	q := h.db.Model(&models.ActivityEvent{}).Where("employee_id = ? AND action != ?", empID, models.EventActionAllowed)
+func portalEventScope(emp *models.Employee, days int) dataplane.EventQuery {
+	q := dataplane.EventQuery{
+		OrgID:      emp.OrgID,
+		EmployeeID: &emp.ID,
+		NotActions: dataplane.Strings(models.EventActionAllowed),
+	}
 	if days > 0 {
-		q = q.Where("timestamp >= ?", time.Now().AddDate(0, 0, -days))
+		q.Since = time.Now().AddDate(0, 0, -days)
 	}
 	return q
 }
@@ -729,18 +744,34 @@ func (h *PortalHandler) ActivityStats(c *gin.Context) {
 	}
 
 	days, _ := strconv.Atoi(c.DefaultQuery("days", "7"))
-	since := time.Now().AddDate(0, 0, -days)
+	st, ok := eventStore(c, emp.OrgID.String())
+	if !ok {
+		return
+	}
+	ctx := c.Request.Context()
+	scope := portalEventScope(emp, days)
 
 	var blockedCount, alertedCount int64
-	h.portalEventScope(emp.ID, days).Where("action = ?", models.EventActionBlocked).Count(&blockedCount)
-	h.portalEventScope(emp.ID, days).Where("action = ?", models.EventActionAlerted).Count(&alertedCount)
+	if groups, err := st.GroupEvents(ctx, scope, "action", 0); err == nil {
+		for _, g := range groups {
+			switch g.Key {
+			case string(models.EventActionBlocked):
+				blockedCount = g.Count
+			case string(models.EventActionAlerted):
+				alertedCount = g.Count
+			}
+		}
+	} else {
+		respondStoreError(c, err)
+		return
+	}
 
 	// One count per tab, so the employee sees where their activity is.
 	bySource := map[string]int64{}
 	for _, src := range []string{"web_gateway", "dlp", "application", "malware", "device_posture", "device"} {
-		var n int64
-		f := activitySourceScope(src)
-		h.portalEventScope(emp.ID, days).Where(f.query, f.args...).Count(&n)
+		q := scope
+		q.AnyOf = activitySourceScope(src)
+		n, _ := st.CountEvents(ctx, q)
 		bySource[src] = n
 	}
 
@@ -756,29 +787,74 @@ func (h *PortalHandler) ActivityStats(c *gin.Context) {
 		requests[s.Status] = s.N
 	}
 
+	// Most-blocked destinations and blocks per day, in one pass. Unlike the
+	// counts above this always covers the last `days` days (default 7), as
+	// it did when it was SQL.
 	type DomainCount struct {
 		Domain string `json:"domain"`
 		Count  int    `json:"count"`
 		Reason string `json:"reason"`
 	}
-	var topBlocked []DomainCount
-	h.db.Raw(`
-		SELECT COALESCE(NULLIF(target_domain, ''), target) as domain, COUNT(*) as count, MAX(policy_name) as reason
-		FROM activity_events
-		WHERE employee_id = ? AND timestamp >= ? AND action = 'blocked' AND COALESCE(NULLIF(target_domain, ''), target) != ''
-		GROUP BY 1 ORDER BY count DESC LIMIT 10`, emp.ID, since).Scan(&topBlocked)
-
 	type DayCount struct {
 		Date    string `json:"date"`
 		Blocked int    `json:"blocked"`
 	}
-	var byDay []DayCount
-	h.db.Raw(`
-		SELECT TO_CHAR(DATE(timestamp), 'YYYY-MM-DD') as date,
-		COUNT(*) FILTER (WHERE action = 'blocked') as blocked
-		FROM activity_events
-		WHERE employee_id = ? AND timestamp >= ?
-		GROUP BY DATE(timestamp) ORDER BY date ASC`, emp.ID, since).Scan(&byDay)
+	blockedBy := map[string]*DomainCount{}
+	perDay := map[string]*DayCount{}
+	pass := dataplane.EventQuery{
+		OrgID: emp.OrgID, EmployeeID: &emp.ID, Since: time.Now().AddDate(0, 0, -days),
+		Fields: []string{"action", "target", "target_domain", "policy_name", "timestamp"}, Ascending: true,
+	}
+	if err := st.EachEvent(ctx, pass, func(ev *models.ActivityEvent) error {
+		day := ev.Timestamp.UTC().Format("2006-01-02")
+		d := perDay[day]
+		if d == nil {
+			d = &DayCount{Date: day}
+			perDay[day] = d
+		}
+		if ev.Action != models.EventActionBlocked {
+			return nil
+		}
+		d.Blocked++
+		dest := ev.TargetDomain
+		if dest == "" {
+			dest = ev.Target
+		}
+		if dest == "" {
+			return nil
+		}
+		dc := blockedBy[dest]
+		if dc == nil {
+			dc = &DomainCount{Domain: dest}
+			blockedBy[dest] = dc
+		}
+		dc.Count++
+		if ev.PolicyName > dc.Reason { // MAX(policy_name), as before
+			dc.Reason = ev.PolicyName
+		}
+		return nil
+	}); err != nil {
+		respondStoreError(c, err)
+		return
+	}
+	topBlocked := make([]DomainCount, 0, len(blockedBy))
+	for _, d := range blockedBy {
+		topBlocked = append(topBlocked, *d)
+	}
+	sort.Slice(topBlocked, func(i, j int) bool {
+		if topBlocked[i].Count != topBlocked[j].Count {
+			return topBlocked[i].Count > topBlocked[j].Count
+		}
+		return topBlocked[i].Domain < topBlocked[j].Domain
+	})
+	if len(topBlocked) > 10 {
+		topBlocked = topBlocked[:10]
+	}
+	byDay := make([]DayCount, 0, len(perDay))
+	for _, d := range perDay {
+		byDay = append(byDay, *d)
+	}
+	sort.Slice(byDay, func(i, j int) bool { return byDay[i].Date < byDay[j].Date })
 
 	c.JSON(http.StatusOK, gin.H{
 		"blocked":     blockedCount,

@@ -6,11 +6,13 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/aavishield/admin-api/internal/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
+
+	"github.com/aavishield/admin-api/internal/dataplane"
+	"github.com/aavishield/admin-api/internal/models"
 )
 
 type OrgHandler struct {
@@ -23,27 +25,35 @@ func NewOrgHandler(db *gorm.DB) *OrgHandler {
 
 // List handles GET /superadmin/organizations
 func (h *OrgHandler) List(c *gin.Context) {
-	page, _  := strconv.Atoi(c.DefaultQuery("page", "1"))
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-	search   := c.Query("search")
-	status   := c.Query("status")
-	plan     := c.Query("plan")
+	search := c.Query("search")
+	status := c.Query("status")
+	plan := c.Query("plan")
 
-	if page < 1 { page = 1 }
-	if limit > 100 { limit = 100 }
+	if page < 1 {
+		page = 1
+	}
+	if limit > 100 {
+		limit = 100
+	}
 
 	q := h.db.Model(&models.Organization{})
 	if search != "" {
 		q = q.Where("LOWER(name) LIKE ? OR LOWER(domain) LIKE ?", "%"+search+"%", "%"+search+"%")
 	}
-	if status != "" { q = q.Where("status = ?", status) }
-	if plan != "" { q = q.Where("plan = ?", plan) }
+	if status != "" {
+		q = q.Where("status = ?", status)
+	}
+	if plan != "" {
+		q = q.Where("plan = ?", plan)
+	}
 
 	var total int64
 	q.Count(&total)
 
 	var orgs []models.Organization
-	q.Order("created_at DESC").Offset((page-1)*limit).Limit(limit).Find(&orgs)
+	q.Order("created_at DESC").Offset((page - 1) * limit).Limit(limit).Find(&orgs)
 
 	// Add user counts
 	type OrgWithCounts struct {
@@ -86,13 +96,13 @@ func (h *OrgHandler) List(c *gin.Context) {
 // Create handles POST /superadmin/organizations
 func (h *OrgHandler) Create(c *gin.Context) {
 	var req struct {
-		Name     string `json:"name" binding:"required"`
-		Slug     string `json:"slug"`
-		Domain   string `json:"domain"`
-		Plan     string `json:"plan"`
-		MaxUsers int    `json:"max_users"`
-		AdminEmail    string `json:"admin_email" binding:"required,email"`
-		AdminPassword string `json:"admin_password" binding:"required,min=8"`
+		Name           string `json:"name" binding:"required"`
+		Slug           string `json:"slug"`
+		Domain         string `json:"domain"`
+		Plan           string `json:"plan"`
+		MaxUsers       int    `json:"max_users"`
+		AdminEmail     string `json:"admin_email" binding:"required,email"`
+		AdminPassword  string `json:"admin_password" binding:"required,min=8"`
 		AdminFirstName string `json:"admin_first_name"`
 		AdminLastName  string `json:"admin_last_name"`
 	}
@@ -193,8 +203,14 @@ func (h *OrgHandler) Get(c *gin.Context) {
 	var devices []models.Device
 	h.db.Where("org_id = ?", org.ID).Order("last_seen_at DESC NULLS LAST").Limit(25).Find(&devices)
 
-	var recentActivity []models.ActivityEvent
-	h.db.Where("org_id = ?", org.ID).Order("timestamp DESC").Limit(20).Find(&recentActivity)
+	// Only what Aavishield itself holds: an organization that keeps its
+	// employee data on its own infrastructure is not readable from here, and
+	// the console says so rather than reaching into the company's database.
+	recentActivity := []models.ActivityEvent{}
+	ownStorage := dataplane.IsTenant(c.Request.Context(), org.ID)
+	if !ownStorage {
+		recentActivity, _ = dataplane.Primary().FindEvents(c.Request.Context(), dataplane.EventQuery{OrgID: org.ID, Limit: 20})
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"org":             org,
@@ -205,6 +221,7 @@ func (h *OrgHandler) Get(c *gin.Context) {
 		"users":           userDTOs,
 		"devices":         devices,
 		"recent_activity": recentActivity,
+		"data_residency":  ownStorage,
 	})
 }
 
@@ -232,12 +249,24 @@ func (h *OrgHandler) Update(c *gin.Context) {
 	}
 
 	updates := map[string]any{}
-	if req.Name != "" { updates["name"] = req.Name }
-	if req.Domain != "" { updates["domain"] = req.Domain }
-	if req.Status != "" { updates["status"] = req.Status }
-	if req.Plan != "" { updates["plan"] = req.Plan }
-	if req.MaxUsers > 0 { updates["max_users"] = req.MaxUsers }
-	if req.LogoURL != "" { updates["logo_url"] = req.LogoURL }
+	if req.Name != "" {
+		updates["name"] = req.Name
+	}
+	if req.Domain != "" {
+		updates["domain"] = req.Domain
+	}
+	if req.Status != "" {
+		updates["status"] = req.Status
+	}
+	if req.Plan != "" {
+		updates["plan"] = req.Plan
+	}
+	if req.MaxUsers > 0 {
+		updates["max_users"] = req.MaxUsers
+	}
+	if req.LogoURL != "" {
+		updates["logo_url"] = req.LogoURL
+	}
 
 	h.db.Model(&org).Updates(updates)
 	orgUUID := org.ID
@@ -269,7 +298,10 @@ func (h *OrgHandler) Stats(c *gin.Context) {
 	h.db.Model(&models.Organization{}).Where("status = 'active'").Count(&activeOrgs)
 	h.db.Model(&models.User{}).Where("org_id IS NOT NULL").Count(&totalUsers)
 	h.db.Model(&models.Employee{}).Count(&totalEmployees)
-	h.db.Model(&models.ActivityEvent{}).Where("action != ?", models.EventActionAllowed).Count(&totalEvents)
+	// Events Aavishield holds; companies on their own storage aren't counted.
+	totalEvents, _ = dataplane.Primary().CountEvents(c.Request.Context(), dataplane.EventQuery{
+		NotActions: dataplane.Strings(models.EventActionAllowed),
+	})
 
 	type PlanCount struct {
 		Plan  string `json:"plan"`
@@ -279,12 +311,12 @@ func (h *OrgHandler) Stats(c *gin.Context) {
 	h.db.Raw("SELECT plan, COUNT(*) as count FROM organizations GROUP BY plan").Scan(&byPlan)
 
 	c.JSON(http.StatusOK, gin.H{
-		"total_organizations": totalOrgs,
+		"total_organizations":  totalOrgs,
 		"active_organizations": activeOrgs,
-		"total_users":         totalUsers,
-		"total_employees":     totalEmployees,
-		"total_events":        totalEvents,
-		"by_plan":             byPlan,
+		"total_users":          totalUsers,
+		"total_employees":      totalEmployees,
+		"total_events":         totalEvents,
+		"by_plan":              byPlan,
 	})
 }
 

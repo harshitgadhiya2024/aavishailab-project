@@ -95,6 +95,15 @@ services:
       # with whatever else already lives in the bucket.
       SCREENSHOT_R2_PREFIX: ${SCREENSHOT_R2_PREFIX:-}
       SCREENSHOT_LOCAL_DIR: /data/screenshots
+      # Data residency (Settings → Data residency): companies keep employee
+      # data in their own database and bucket. DATA_RESIDENCY_EGRESS_IPS is
+      # the comma-separated list of public IPs admin-api connects out from —
+      # shown to companies so they can allow it in their firewall.
+      # DATA_RESIDENCY_ALLOW_PRIVATE_NETWORKS lets companies point at private
+      # or internal addresses; leave it unset on the hosted platform (it would
+      # let a company aim admin-api at this server's own network).
+      DATA_RESIDENCY_EGRESS_IPS: ${DATA_RESIDENCY_EGRESS_IPS:-}
+      DATA_RESIDENCY_ALLOW_PRIVATE_NETWORKS: ${DATA_RESIDENCY_ALLOW_PRIVATE_NETWORKS:-}
       MEDIA_SIGNING_SECRET: ${MEDIA_SIGNING_SECRET:-change-this-media-signing-secret-in-production}
       PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:7100}
       MALWARE_SERVICE_URL: http://malware-service:6210

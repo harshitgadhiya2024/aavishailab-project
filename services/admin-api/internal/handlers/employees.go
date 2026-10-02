@@ -9,11 +9,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aavishield/admin-api/internal/middleware"
-	"github.com/aavishield/admin-api/internal/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"github.com/aavishield/admin-api/internal/dataplane"
+	"github.com/aavishield/admin-api/internal/middleware"
+	"github.com/aavishield/admin-api/internal/models"
 )
 
 type EmployeeHandler struct {
@@ -25,12 +27,12 @@ func NewEmployeeHandler(db *gorm.DB) *EmployeeHandler {
 }
 
 type EmployeeRequest struct {
-	FirstName  string     `json:"first_name" binding:"required"`
-	LastName   string     `json:"last_name" binding:"required"`
-	Email      string     `json:"email" binding:"required,email"`
-	Phone      string     `json:"phone"`
-	Department string     `json:"department"`
-	JobTitle   string     `json:"job_title"`
+	FirstName  string `json:"first_name" binding:"required"`
+	LastName   string `json:"last_name" binding:"required"`
+	Email      string `json:"email" binding:"required,email"`
+	Phone      string `json:"phone"`
+	Department string `json:"department"`
+	JobTitle   string `json:"job_title"`
 	EmployeeID string `json:"employee_id"`
 	// A plain string, not *uuid.UUID: the "No team" option in both
 	// dashboard forms submits "" for this field, and binding that
@@ -39,9 +41,9 @@ type EmployeeRequest struct {
 	// raw 400 on an empty "No team" selection) before the handler ever
 	// gets a chance to treat empty as "no team". Parsed defensively
 	// below, the same way EmployeeID already is.
-	TeamID string `json:"team_id"`
-	Status string `json:"status"`
-	AvatarURL  string     `json:"avatar_url"`
+	TeamID    string `json:"team_id"`
+	Status    string `json:"status"`
+	AvatarURL string `json:"avatar_url"`
 }
 
 // List handles GET /employees
@@ -212,12 +214,18 @@ func (h *EmployeeHandler) Get(c *gin.Context) {
 	// foreign-key auto-detection for this association.
 	h.db.Where("employee_id = ?", emp.ID).Find(&emp.Devices)
 
-	// Get recent activity count
-	var activityCount int64
-	h.db.Model(&models.ActivityEvent{}).
-		Where("employee_id = ? AND timestamp > ? AND action != ?",
-			emp.ID, time.Now().AddDate(0, 0, -30), models.EventActionAllowed).
-		Count(&activityCount)
+	// Get recent activity count. -1 when the company's own database can't be
+	// reached: the profile still loads, and the page can say the count is
+	// unavailable rather than show a wrong zero.
+	var activityCount int64 = -1
+	if st, err := dataplane.Events(c.Request.Context(), emp.OrgID); err == nil {
+		if n, err := st.CountEvents(c.Request.Context(), dataplane.EventQuery{
+			OrgID: emp.OrgID, EmployeeID: &emp.ID, Since: time.Now().AddDate(0, 0, -30),
+			NotActions: dataplane.Strings(models.EventActionAllowed),
+		}); err == nil {
+			activityCount = n
+		}
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"employee":       emp,
@@ -452,18 +460,37 @@ func (h *EmployeeHandler) GetActivity(c *gin.Context) {
 		limit = 100
 	}
 
-	var total int64
-	var events []models.ActivityEvent
+	if limit < 1 {
+		limit = 50
+	}
+	st, ok := eventStore(c, orgID)
+	if !ok {
+		return
+	}
+	emp, err := uuid.Parse(empID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid employee id"})
+		return
+	}
 
 	// This is an activity log like any other, so it obeys the same rule: no
 	// allowed rows, and a total that counts exactly what the page lists.
-	h.db.Model(&models.ActivityEvent{}).
-		Where("org_id = ? AND employee_id = ? AND action != ?", orgID, empID, models.EventActionAllowed).
-		Count(&total)
-	h.db.Where("org_id = ? AND employee_id = ? AND action != ?", orgID, empID, models.EventActionAllowed).
-		Order("timestamp DESC").
-		Offset((page - 1) * limit).Limit(limit).
-		Find(&events)
+	q := dataplane.EventQuery{
+		OrgID: orgUUID(c), EmployeeID: &emp,
+		NotActions: dataplane.Strings(models.EventActionAllowed),
+	}
+	ctx := c.Request.Context()
+	total, err := st.CountEvents(ctx, q)
+	if err != nil {
+		respondStoreError(c, err)
+		return
+	}
+	q.Offset, q.Limit = (page-1)*limit, limit
+	events, err := st.FindEvents(ctx, q)
+	if err != nil {
+		respondStoreError(c, err)
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"data":  events,

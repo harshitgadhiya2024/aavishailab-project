@@ -8,7 +8,12 @@ import (
 
 	"time"
 
+	"github.com/joho/godotenv"
+	"github.com/redis/go-redis/v9"
+	"gorm.io/gorm"
+
 	"github.com/aavishield/admin-api/internal/database"
+	"github.com/aavishield/admin-api/internal/dataplane"
 	"github.com/aavishield/admin-api/internal/handlers"
 	"github.com/aavishield/admin-api/internal/mailer"
 	"github.com/aavishield/admin-api/internal/mitm"
@@ -18,9 +23,6 @@ import (
 	"github.com/aavishield/admin-api/internal/router"
 	"github.com/aavishield/admin-api/internal/secrets"
 	"github.com/aavishield/admin-api/internal/tracing"
-	"github.com/joho/godotenv"
-	"github.com/redis/go-redis/v9"
-	"gorm.io/gorm"
 )
 
 func main() {
@@ -50,6 +52,16 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	// Where each organization's employee data lives: Aavishield's database
+	// and bucket, or the company's own (data residency). Must come before
+	// anything below that reads or writes activity, sessions or screenshots.
+	dataplane.Init(db, rdb)
+	// Delivers events held while a company's own database was unreachable,
+	// and re-tests every connected company store, emailing its admins when
+	// one stops (or starts again) answering.
+	dataplane.StartSpoolFlusher()
+	dataplane.StartHealthChecks(5 * time.Minute)
 
 	// Risk engine: sync free/open threat-intel feeds every 6h, and assess
 	// newly-seen domains every 15s so a malicious site gets auto-blocked
@@ -154,6 +166,10 @@ func connectStores() (*gorm.DB, *redis.Client, error) {
 	// no request can read a row this is about to delete.
 	if err := database.PurgeAllowedEvents(db); err != nil {
 		log.Printf("⚠️  Could not purge historical allowed events: %v", err)
+	}
+
+	if err := database.BackfillEventDedupeKeys(db); err != nil {
+		log.Printf("⚠️  Could not backfill event dedupe keys: %v", err)
 	}
 
 	if err := database.MigrateAppControlIndexes(db); err != nil {

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	_ "embed"
 	"encoding/json"
 	"log"
@@ -8,8 +9,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/aavishield/admin-api/internal/models"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+
+	"github.com/aavishield/admin-api/internal/dataplane"
+	"github.com/aavishield/admin-api/internal/models"
 )
 
 //go:embed assets/mitm_platforms.json
@@ -225,11 +229,11 @@ func matchPlatform(query string) *catalogPlatform {
 // domains, so searching "azure" also surfaces the tenant's own
 // contoso.vault.azure.net.
 func (h *AgentHandler) observedDomains(orgID, query string, platform *catalogPlatform) map[string]int {
-	patterns := []string{"%" + query + "%"}
+	patterns := []string{strings.ToLower(query)}
 	if platform != nil {
 		for _, g := range platform.Groups {
 			for _, d := range g.Domains {
-				patterns = append(patterns, "%"+strings.ToLower(d.Domain)+"%")
+				patterns = append(patterns, strings.ToLower(d.Domain))
 			}
 		}
 	}
@@ -238,24 +242,21 @@ func (h *AgentHandler) observedDomains(orgID, query string, platform *catalogPla
 		Domain string
 		Count  int
 	}
+	org, _ := uuid.Parse(orgID)
 	var rows []row
-	q := h.db.Model(&models.ActivityEvent{}).
-		Select("LOWER(target_domain) as domain, COUNT(*) as count").
-		Where("org_id = ? AND target_domain <> '' AND action != ?", orgID, models.EventActionAllowed)
-
-	conds := h.db.Where("LOWER(target_domain) LIKE ?", patterns[0])
-	for _, p := range patterns[1:] {
-		conds = conds.Or("LOWER(target_domain) LIKE ?", p)
+	if st, err := dataplane.Events(context.Background(), org); err == nil {
+		groups, _ := st.GroupEvents(context.Background(), dataplane.EventQuery{
+			OrgID: org, HasTargetDomain: true, DomainContainsAny: patterns,
+			NotActions: dataplane.Strings(models.EventActionAllowed),
+		}, "target_domain", 200)
+		for _, g := range groups {
+			rows = append(rows, row{Domain: strings.ToLower(g.Key), Count: int(g.Count)})
+		}
 	}
-	q.Where(conds).
-		Group("LOWER(target_domain)").
-		Order("count DESC").
-		Limit(200).
-		Scan(&rows)
 
 	out := make(map[string]int, len(rows))
 	for _, r := range rows {
-		out[r.Domain] = r.Count
+		out[r.Domain] += r.Count
 	}
 	return out
 }

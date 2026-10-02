@@ -7,12 +7,16 @@
 package notifier
 
 import (
+	"context"
 	"log"
 	"time"
 
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+
+	"github.com/aavishield/admin-api/internal/dataplane"
 	"github.com/aavishield/admin-api/internal/mailer"
 	"github.com/aavishield/admin-api/internal/models"
-	"gorm.io/gorm"
 )
 
 const (
@@ -131,20 +135,14 @@ func (n *Notifier) checkIncidentDigest(org *models.Organization, admins []string
 		return
 	}
 	since := time.Now().Add(-digestCooldown)
-
-	count := func(where string, args ...any) int {
-		var c int64
-		q := n.db.Model(&models.ActivityEvent{}).
-			Where("org_id = ? AND timestamp >= ?", org.ID, since)
-		if where != "" {
-			q = q.Where(where, args...)
-		}
-		q.Count(&c)
-		return int(c)
+	st, err := dataplane.Events(context.Background(), org.ID)
+	if err != nil {
+		return // the company's own database is unreachable; its health check emails about that
 	}
+	count := eventCounter(st, org.ID, since)
 
-	blocked := count("action = ?", "blocked")
-	alerted := count("action = ?", "alerted")
+	blocked := count(dataplane.EventQuery{Actions: []string{"blocked"}})
+	alerted := count(dataplane.EventQuery{Actions: []string{"alerted"}})
 	if threshold < 1 {
 		threshold = digestThreshold
 	}
@@ -152,22 +150,14 @@ func (n *Notifier) checkIncidentDigest(org *models.Organization, admins []string
 		return
 	}
 
-	dlp := count("category = ?", "dlp")
-	malware := count("category = ?", "malware_detection")
+	dlp := count(dataplane.EventQuery{Categories: []string{"dlp"}})
+	malware := count(dataplane.EventQuery{Categories: []string{"malware_detection"}})
 
 	var pending int64
 	n.db.Model(&models.AccessRequest{}).
 		Where("org_id = ? AND status = ?", org.ID, "pending").Count(&pending)
 
-	type row struct{ Domain string }
-	var rows []row
-	n.db.Raw(`SELECT target_domain as domain FROM activity_events
-		WHERE org_id = ? AND timestamp >= ? AND target_domain <> '' AND action IN ('blocked','alerted')
-		GROUP BY target_domain ORDER BY COUNT(*) DESC LIMIT 5`, org.ID, since).Scan(&rows)
-	top := make([]string, 0, len(rows))
-	for _, r := range rows {
-		top = append(top, r.Domain)
-	}
+	top := topDomains(st, org.ID, since)
 
 	mailer.ActivityDigest(admins, org.Name, int(digestCooldown.Hours()),
 		blocked, alerted, dlp, malware, int(pending), top)
@@ -187,11 +177,16 @@ func (n *Notifier) checkInactivity(org *models.Organization, admins []string) {
 		return
 	}
 
-	var recent int64
-	n.db.Model(&models.ActivityEvent{}).
-		Where("org_id = ? AND timestamp >= ?", org.ID, time.Now().AddDate(0, 0, -inactivityDays)).
-		Count(&recent)
-	if recent > 0 {
+	// Never claim "no activity" without being able to look: a company whose
+	// own database is unreachable hears about that from the health check.
+	st, err := dataplane.Events(context.Background(), org.ID)
+	if err != nil {
+		return
+	}
+	recent, err := st.CountEvents(context.Background(), dataplane.EventQuery{
+		OrgID: org.ID, Since: time.Now().AddDate(0, 0, -inactivityDays), Limit: 1,
+	})
+	if err != nil || recent > 0 {
 		return
 	}
 
@@ -231,35 +226,43 @@ func (n *Notifier) checkWeeklySummary(org *models.Organization, admins []string)
 		return
 	}
 	since := time.Now().AddDate(0, 0, -7)
-
-	count := func(where string, args ...any) int {
-		var c int64
-		q := n.db.Model(&models.ActivityEvent{}).Where("org_id = ? AND timestamp >= ?", org.ID, since)
-		if where != "" {
-			q = q.Where(where, args...)
-		}
-		q.Count(&c)
-		return int(c)
+	st, err := dataplane.Events(context.Background(), org.ID)
+	if err != nil {
+		return
 	}
+	count := eventCounter(st, org.ID, since)
 
 	var employees, devices int64
 	n.db.Model(&models.Employee{}).Where("org_id = ?", org.ID).Count(&employees)
 	n.db.Model(&models.Device{}).Where("org_id = ?", org.ID).Count(&devices)
 
-	type row struct{ Domain string }
-	var rows []row
-	n.db.Raw(`SELECT target_domain as domain FROM activity_events
-		WHERE org_id = ? AND timestamp >= ? AND target_domain <> '' AND action IN ('blocked','alerted')
-		GROUP BY target_domain ORDER BY COUNT(*) DESC LIMIT 5`, org.ID, since).Scan(&rows)
-	top := make([]string, 0, len(rows))
-	for _, r := range rows {
-		top = append(top, r.Domain)
-	}
+	top := topDomains(st, org.ID, since)
 
 	mailer.WeeklySummary(admins, org.Name,
-		count("action = ?", "blocked"), count("action = ?", "alerted"),
-		count("category = ?", "dlp"), int(employees), int(devices), top)
+		count(dataplane.EventQuery{Actions: []string{"blocked"}}), count(dataplane.EventQuery{Actions: []string{"alerted"}}),
+		count(dataplane.EventQuery{Categories: []string{"dlp"}}), int(employees), int(devices), top)
 	n.markSent(org, settingWeeklySentAt)
+}
+
+// eventCounter counts an org's events since a moment, narrowed by f.
+func eventCounter(st dataplane.Store, orgID uuid.UUID, since time.Time) func(f dataplane.EventQuery) int {
+	return func(f dataplane.EventQuery) int {
+		f.OrgID, f.Since = orgID, since
+		n, _ := st.CountEvents(context.Background(), f)
+		return int(n)
+	}
+}
+
+// topDomains is the five sites most often blocked or flagged since a moment.
+func topDomains(st dataplane.Store, orgID uuid.UUID, since time.Time) []string {
+	groups, _ := st.GroupEvents(context.Background(), dataplane.EventQuery{
+		OrgID: orgID, Since: since, HasTargetDomain: true, Actions: []string{"blocked", "alerted"},
+	}, "target_domain", 5)
+	top := make([]string, 0, len(groups))
+	for _, g := range groups {
+		top = append(top, g.Key)
+	}
+	return top
 }
 
 // AdminEmails is the exported lookup handlers use for immediate alerts.

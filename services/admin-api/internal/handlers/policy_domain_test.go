@@ -68,10 +68,10 @@ func TestWebGatewayScopeExcludesOtherSources(t *testing.T) {
 	if scope == nil {
 		t.Fatal("web_gateway scope is nil")
 	}
-	excluded, ok := scope.args[1].([]string)
-	if !ok {
-		t.Fatalf("expected an exclusion list, got %T", scope.args[1])
+	if len(scope) != 1 {
+		t.Fatalf("expected one clause, got %d", len(scope))
 	}
+	excluded := scope[0].NotCategories
 	for _, want := range []string{"dlp", "malware", "device_posture", "application_control"} {
 		found := false
 		for _, e := range excluded {

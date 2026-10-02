@@ -70,6 +70,7 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	auditH := handlers.NewAuditHandler(db)
 	saTeamH := handlers.NewSuperAdminTeamHandler(db)
 	settingsH := handlers.NewPlatformSettingsHandler(db)
+	residencyH := handlers.NewDataResidencyHandler(db)
 	healthH := handlers.NewPlatformHealthHandler()
 	seatAlertH := handlers.NewSeatAlertHandler(db)
 	billingH := handlers.NewBillingHandler(db)
@@ -524,6 +525,22 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 		// hostnames (curated + what this org actually saw), pick a few.
 		settings.GET("/mitm/platforms", middleware.RequirePermission(models.PermSettingsRead), agentH.ListBypassPlatforms)
 		settings.GET("/mitm/discover", middleware.RequirePermission(models.PermSettingsRead), agentH.DiscoverBypassDomains)
+
+		// Data residency: keep employee data in the company's own database
+		// and object storage. Reading the page takes settings:read; anything
+		// that changes where data goes, or hands over credentials, takes
+		// settings:write (org admins). Connection tests reach out to an
+		// address the company supplies, so they are throttled.
+		residencyTestLimit := middleware.RateLimit(rdb, "data-residency-test", 20, time.Minute)
+		settings.GET("/data-residency", middleware.RequirePermission(models.PermSettingsRead), residencyH.Get)
+		settings.PUT("/data-residency", middleware.RequirePermission(models.PermSettingsWrite), residencyH.SetEnabled)
+		settings.POST("/data-residency/database/test", middleware.RequirePermission(models.PermSettingsWrite), residencyTestLimit, residencyH.TestDatabase)
+		settings.PUT("/data-residency/database", middleware.RequirePermission(models.PermSettingsWrite), residencyTestLimit, residencyH.SaveDatabase)
+		settings.DELETE("/data-residency/database", middleware.RequirePermission(models.PermSettingsWrite), residencyH.DisconnectDatabase)
+		settings.POST("/data-residency/files/test", middleware.RequirePermission(models.PermSettingsWrite), residencyTestLimit, residencyH.TestFiles)
+		settings.PUT("/data-residency/files", middleware.RequirePermission(models.PermSettingsWrite), residencyTestLimit, residencyH.SaveFiles)
+		settings.DELETE("/data-residency/files", middleware.RequirePermission(models.PermSettingsWrite), residencyH.DisconnectFiles)
+		settings.POST("/data-residency/move-history", middleware.RequirePermission(models.PermSettingsWrite), residencyH.MoveHistory)
 	}
 
 	// Access requests (employee-requested exceptions to a blocking policy)

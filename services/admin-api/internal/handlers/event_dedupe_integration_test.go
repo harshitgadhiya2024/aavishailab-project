@@ -7,10 +7,12 @@ package handlers
 //   EVENTS_IT_DSN="host=127.0.0.1 port=56790 user=postgres password=it dbname=it sslmode=disable" go test ./internal/handlers -run TestEventDedupe
 
 import (
+	"context"
 	"os"
 	"testing"
 	"time"
 
+	"github.com/aavishield/admin-api/internal/dataplane"
 	"github.com/aavishield/admin-api/internal/models"
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
@@ -38,7 +40,9 @@ func TestEventDedupeIntegration(t *testing.T) {
 	must(err)
 	must(db.Exec(string(enums)).Error)
 	must(db.Exec(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`).Error)
-	must(db.AutoMigrate(&models.ActivityEvent{}))
+	must(db.AutoMigrate(&models.ActivityEvent{}, &models.OrgDataResidency{}))
+	dataplane.Init(db, nil)
+	ctx := context.Background()
 
 	org := uuid.New()
 	dev := uuid.New()
@@ -60,14 +64,14 @@ func TestEventDedupeIntegration(t *testing.T) {
 		e := ev(dev, models.EventTypePolicyViol, models.EventActionAlerted, t0.Add(time.Duration(i*8)*time.Second),
 			map[string]any{"score": score, "band": "alert"})
 		e.RiskScore = score
-		_, _, err := recordDeduped(db, e, key, dlpTextDedupeWindow, keepWorstDLP)
+		_, _, err := dataplane.RecordDeduped(ctx, org, e, key, dlpTextDedupeWindow, keepWorstDLP)
 		must(err)
 	}
 	got := rows(key)
 	if len(got) != 1 {
 		t.Fatalf("autosaved draft stored %d rows, want 1", len(got))
 	}
-	if repeatCount(got[0].Metadata) != 6 || got[0].RiskScore != 92 {
+	if dataplane.RepeatCount(got[0].Metadata) != 6 || got[0].RiskScore != 92 {
 		t.Fatalf("kept row: repeat=%v score=%v, want 6 and 92", got[0].Metadata["repeat_count"], got[0].RiskScore)
 	}
 	if !got[0].Timestamp.Equal(t0) && got[0].Timestamp.Sub(t0).Abs() > time.Millisecond {
@@ -75,19 +79,19 @@ func TestEventDedupeIntegration(t *testing.T) {
 	}
 
 	// The window slides from the last repeat, but a real gap starts a new row.
-	_, dup, err := recordDeduped(db, ev(dev, models.EventTypePolicyViol, models.EventActionAlerted, t0.Add(40*time.Second+dlpTextDedupeWindow-time.Second), map[string]any{}), key, dlpTextDedupeWindow, keepWorstDLP)
+	_, dup, err := dataplane.RecordDeduped(ctx, org, ev(dev, models.EventTypePolicyViol, models.EventActionAlerted, t0.Add(40*time.Second+dlpTextDedupeWindow-time.Second), map[string]any{}), key, dlpTextDedupeWindow, keepWorstDLP)
 	must(err)
 	if !dup {
 		t.Fatal("a repeat inside the sliding window should fold")
 	}
-	_, dup, err = recordDeduped(db, ev(dev, models.EventTypePolicyViol, models.EventActionAlerted, t0.Add(30*time.Minute), map[string]any{}), key, dlpTextDedupeWindow, keepWorstDLP)
+	_, dup, err = dataplane.RecordDeduped(ctx, org, ev(dev, models.EventTypePolicyViol, models.EventActionAlerted, t0.Add(30*time.Minute), map[string]any{}), key, dlpTextDedupeWindow, keepWorstDLP)
 	must(err)
 	if dup || len(rows(key)) != 2 {
 		t.Fatal("the same finding half an hour later is a new incident")
 	}
 
 	// Same key on another device is never folded.
-	_, dup, err = recordDeduped(db, ev(other, models.EventTypePolicyViol, models.EventActionAlerted, t0, map[string]any{}), key, dlpTextDedupeWindow, keepWorstDLP)
+	_, dup, err = dataplane.RecordDeduped(ctx, org, ev(other, models.EventTypePolicyViol, models.EventActionAlerted, t0, map[string]any{}), key, dlpTextDedupeWindow, keepWorstDLP)
 	must(err)
 	if dup {
 		t.Fatal("events from different devices must not fold")
@@ -96,7 +100,7 @@ func TestEventDedupeIntegration(t *testing.T) {
 	// VPN extension found in three Chrome profiles → one row listing them.
 	extKey := "ext|majdfhpaihoncoakbjgbdhglocklcgno|installed"
 	for i, p := range []string{"Default", "Profile 2", "Profile 10"} {
-		_, _, err := recordDeduped(db, ev(dev, models.EventTypeProcessStart, models.EventActionAlerted, t0.Add(time.Duration(i)*500*time.Millisecond),
+		_, _, err := dataplane.RecordDeduped(ctx, org, ev(dev, models.EventTypeProcessStart, models.EventActionAlerted, t0.Add(time.Duration(i)*500*time.Millisecond),
 			map[string]any{"profile": p}), extKey, extensionDedupeWindow, mergeExtensionProfiles)
 		must(err)
 	}
@@ -116,10 +120,10 @@ func TestEventDedupeIntegration(t *testing.T) {
 		t.Fatalf("webDedupeKey = %q", webKey)
 	}
 	for _, d := range []time.Duration{0, 8 * time.Second} {
-		_, _, err := recordDeduped(db, ev(dev, models.EventTypeWebRequest, models.EventActionBlocked, t0.Add(d), nil), webKey, webBlockDedupeWindow, nil)
+		_, _, err := dataplane.RecordDeduped(ctx, org, ev(dev, models.EventTypeWebRequest, models.EventActionBlocked, t0.Add(d), nil), webKey, webBlockDedupeWindow, nil)
 		must(err)
 	}
-	_, dup, err = recordDeduped(db, ev(dev, models.EventTypeWebRequest, models.EventActionAlerted, t0.Add(9*time.Second), nil), webKey, webBlockDedupeWindow, nil)
+	_, dup, err = dataplane.RecordDeduped(ctx, org, ev(dev, models.EventTypeWebRequest, models.EventActionAlerted, t0.Add(9*time.Second), nil), webKey, webBlockDedupeWindow, nil)
 	must(err)
 	if dup || len(rows(webKey)) != 2 {
 		t.Fatalf("web rows = %d (dup=%v), want 2: one folded block, one alert", len(rows(webKey)), dup)

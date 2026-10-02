@@ -1,15 +1,12 @@
 package handlers
 
 import (
-	"log"
 	"net/url"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/aavishield/admin-api/internal/models"
-	"github.com/google/uuid"
-	"gorm.io/gorm"
 )
 
 // One action on a laptop often reaches us as several reports: Gmail autosaves
@@ -18,15 +15,17 @@ import (
 // stopped, and a browser retries a blocked page. Stored one row each, the
 // Activity tab showed the same thing 2–6 times in a row.
 //
-// recordDeduped folds such a report into the matching recent row instead:
-// same device, same event type and action, same dedupe key, and the previous
-// copy (or the last one folded into it) within `window`. The row keeps its
-// first timestamp and gains metadata.repeat_count / metadata.last_seen_at, so
-// nothing is lost — "6 times in 40 seconds" is still visible. The window
-// slides: a draft being written for five minutes stays one incident.
+// dataplane.RecordDeduped folds such a report into the matching recent row
+// instead: same device, same event type and action, same dedupe key, and the
+// previous copy (or the last one folded into it) within `window`. The row
+// keeps its first timestamp and gains metadata.repeat_count /
+// metadata.last_seen_at, so nothing is lost — "6 times in 40 seconds" is
+// still visible. The window slides: a draft being written for five minutes
+// stays one incident.
 //
-// merge, when set, lets the caller fold details of the new report into the
-// kept row (e.g. a higher DLP score, another browser profile).
+// This file holds what decides "the same report": the dedupe keys, and the
+// merges that carry details of the new report onto the kept row (e.g. a
+// higher DLP score, another browser profile).
 
 const (
 	webBlockDedupeWindow  = 60 * time.Second
@@ -34,69 +33,6 @@ const (
 	extensionDedupeWindow = 10 * time.Minute
 	dlpTextDedupeWindow   = 2 * time.Minute
 )
-
-type dedupeMerge func(kept *models.ActivityEvent, next *models.ActivityEvent)
-
-func recordDeduped(db *gorm.DB, ev *models.ActivityEvent, key string, window time.Duration, merge dedupeMerge) (uuid.UUID, bool, error) {
-	if ev.DeviceID == nil || key == "" {
-		return uuid.Nil, false, db.Create(ev).Error
-	}
-	if ev.Timestamp.IsZero() {
-		ev.Timestamp = time.Now()
-	}
-	if ev.Metadata == nil {
-		ev.Metadata = map[string]any{}
-	}
-	ev.Metadata["dedupe_key"] = key
-
-	var kept models.ActivityEvent
-	dup := false
-	err := db.Transaction(func(tx *gorm.DB) error {
-		// Two copies arriving together must not both see "nothing yet".
-		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtext(?))", "event-dedupe:"+ev.DeviceID.String()+":"+key).Error; err != nil {
-			return err
-		}
-		since := ev.Timestamp.Add(-window)
-		q := tx.Where(`device_id = ? AND event_type = ? AND action = ? AND metadata->>'dedupe_key' = ?
-			AND timestamp > ? AND COALESCE((metadata->>'last_seen_at')::timestamptz, timestamp) > ?`,
-			*ev.DeviceID, ev.EventType, ev.Action, key, ev.Timestamp.Add(-24*time.Hour), since).
-			Order("timestamp DESC").Limit(1).Find(&kept)
-		if q.Error != nil {
-			return q.Error
-		}
-		if q.RowsAffected == 0 {
-			return tx.Create(ev).Error
-		}
-		dup = true
-		if kept.Metadata == nil {
-			kept.Metadata = map[string]any{}
-		}
-		kept.Metadata["repeat_count"] = repeatCount(kept.Metadata) + 1
-		kept.Metadata["last_seen_at"] = ev.Timestamp.UTC().Format(time.RFC3339Nano)
-		if merge != nil {
-			merge(&kept, ev)
-		}
-		return tx.Model(&kept).Select("metadata", "risk_score", "target", "policy_id", "policy_name").Updates(&kept).Error
-	})
-	if err != nil {
-		// Never lose an event to the de-duplication itself.
-		log.Printf("event dedupe failed (%v) — recording anyway", err)
-		return uuid.Nil, false, db.Create(ev).Error
-	}
-	return kept.ID, dup, nil
-}
-
-// repeatCount is how many reports a row already stands for (1 when none were
-// folded into it yet). JSON numbers come back as float64.
-func repeatCount(meta map[string]any) int {
-	switch v := meta["repeat_count"].(type) {
-	case float64:
-		return int(v)
-	case int:
-		return v
-	}
-	return 1
-}
 
 // webDedupeKey: the blocked host, so http://x, https://x and https://www.x/
 // retried seconds apart are one block.

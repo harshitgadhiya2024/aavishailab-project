@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aavishield/admin-api/internal/dataplane"
 	"github.com/aavishield/admin-api/internal/middleware"
 	"github.com/aavishield/admin-api/internal/models"
 	"github.com/gin-gonic/gin"
@@ -46,7 +47,9 @@ func TestAccessRequestFlowIntegration(t *testing.T) {
 	must(db.Exec(string(enums)).Error)
 	must(db.Exec(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`).Error)
 	must(db.AutoMigrate(&models.Organization{}, &models.User{}, &models.Employee{}, &models.ActivityEvent{},
-		&models.AccessRequest{}, &models.AuditLog{}, &models.ManagedApplication{}, &models.AppControlRule{}, &models.Policy{}))
+		&models.AccessRequest{}, &models.AuditLog{}, &models.ManagedApplication{}, &models.AppControlRule{}, &models.Policy{},
+		&models.OrgDataResidency{}))
+	dataplane.Init(db, nil)
 
 	org := models.Organization{Name: "Delphic", Slug: "delphic-" + uuid.NewString()[:8]}
 	must(db.Create(&org).Error)

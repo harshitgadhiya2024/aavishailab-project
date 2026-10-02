@@ -45,6 +45,7 @@ var ticketCategories = map[string]string{
 	"data_protection": "Data protection",
 	"billing":         "Billing & plans",
 	"account":         "Account & access",
+	"data_residency":  "Data residency & storage",
 	"other":           "Something else",
 }
 

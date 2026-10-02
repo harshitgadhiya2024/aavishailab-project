@@ -6,13 +6,15 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+
+	"github.com/aavishield/admin-api/internal/dataplane"
 	"github.com/aavishield/admin-api/internal/middleware"
 	"github.com/aavishield/admin-api/internal/models"
 	"github.com/aavishield/admin-api/internal/riskengine"
 	"github.com/aavishield/admin-api/internal/threatintelclient"
-	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
-	"gorm.io/gorm"
 )
 
 type SWGHandler struct {
@@ -211,25 +213,42 @@ func (h *SWGHandler) Stats(c *gin.Context) {
 		Category string `json:"category"`
 		Count    int    `json:"count"`
 	}
-	var topBlocked []CategoryStat
-	h.db.Raw(`SELECT category, COUNT(*) as count
-		FROM activity_events
-		WHERE org_id = ? AND action = 'blocked' AND category != ''
-		GROUP BY category ORDER BY count DESC LIMIT 10`, orgID).Scan(&topBlocked)
+	st, ok := eventStore(c, orgID)
+	if !ok {
+		return
+	}
+	ctx := c.Request.Context()
+	blocked := dataplane.EventQuery{OrgID: orgUUID(c), Actions: dataplane.Strings(models.EventActionBlocked)}
 
-	var topBlockedDomains []struct {
+	topBlocked := []CategoryStat{}
+	if groups, err := st.GroupEvents(ctx, blocked, "category", 11); err == nil {
+		for _, g := range groups {
+			if g.Key != "" && len(topBlocked) < 10 {
+				topBlocked = append(topBlocked, CategoryStat{g.Key, int(g.Count)})
+			}
+		}
+	}
+
+	type domainStat struct {
 		Domain string `json:"domain"`
 		Count  int    `json:"count"`
 	}
-	h.db.Raw(`SELECT target_domain as domain, COUNT(*) as count
-		FROM activity_events
-		WHERE org_id = ? AND action = 'blocked' AND target_domain != ''
-		GROUP BY target_domain ORDER BY count DESC LIMIT 10`, orgID).Scan(&topBlockedDomains)
+	topBlockedDomains := []domainStat{}
+	byDomain := blocked
+	byDomain.HasTargetDomain = true
+	if groups, err := st.GroupEvents(ctx, byDomain, "target_domain", 10); err == nil {
+		for _, g := range groups {
+			topBlockedDomains = append(topBlockedDomains, domainStat{g.Key, int(g.Count)})
+		}
+	}
 
-	var totalBlocked int64
-	h.db.Model(&models.ActivityEvent{}).
-		Where("org_id = ? AND event_type IN ('web_request', 'dns_query') AND action = 'blocked'", orgID).
-		Count(&totalBlocked)
+	web := blocked
+	web.EventTypes = dataplane.Strings(models.EventTypeWebRequest, models.EventTypeDNSQuery)
+	totalBlocked, err := st.CountEvents(ctx, web)
+	if err != nil {
+		respondStoreError(c, err)
+		return
+	}
 
 	var ruleCount int64
 	h.db.Model(&models.DomainRule{}).Where("org_id = ? OR org_id IS NULL", orgID).Count(&ruleCount)

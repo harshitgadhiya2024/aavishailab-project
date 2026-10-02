@@ -1,17 +1,20 @@
 package handlers
 
 import (
+	"context"
+	"log"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/aavishield/admin-api/internal/middleware"
-	"github.com/aavishield/admin-api/internal/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"github.com/aavishield/admin-api/internal/middleware"
+	"github.com/aavishield/admin-api/internal/models"
 )
 
 // Software inventory: the agent reports what is installed, the company sees it
@@ -217,13 +220,8 @@ func (h *InventoryHandler) recordInstallEvent(row models.InstalledApplication, n
 		},
 		Timestamp: now,
 	}
-	if err := h.db.Create(&event).Error; err != nil {
-		return
-	}
-	events := []models.ActivityEvent{event}
-	attachEmployees(h.db, events)
-	if h.hub != nil {
-		h.hub.BroadcastActivityEvent(events[0])
+	if err := recordAndBroadcast(context.Background(), h.db, h.hub, &event); err != nil {
+		log.Printf("install event not stored: %v", err)
 	}
 }
 

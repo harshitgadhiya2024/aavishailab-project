@@ -9,10 +9,11 @@ import (
 	"time"
 	_ "time/tzdata" // report periods are computed in the viewer's zone; the alpine image has no zoneinfo
 
-	"github.com/aavishield/admin-api/internal/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"github.com/aavishield/admin-api/internal/models"
 )
 
 // ReportHandler backs the dashboard overview and the Reports section.
@@ -39,18 +40,10 @@ type reportWindow struct {
 	// Hourly is true for spans of two days or less, where a per-day chart
 	// would be one or two bars.
 	Hourly bool
-	// EmployeeID narrows a report to one person (?employee_id=). It is a
-	// parsed UUID, so emp can put it straight into SQL.
+	// EmployeeID narrows a report to one person (?employee_id=), as a
+	// parsed UUID string.
 	EmployeeID   string
 	EmployeeName string
-}
-
-// emp returns " AND <col> = '<uuid>'" when the report is for one employee.
-func (w reportWindow) emp(col string) string {
-	if w.EmployeeID == "" {
-		return ""
-	}
-	return " AND " + col + " = '" + w.EmployeeID + "'"
 }
 
 const maxReportSpan = 366 * 24 * time.Hour
@@ -191,22 +184,6 @@ func controlLabel(id string) string {
 	return id
 }
 
-// controlSQL maps an activity_events row (aliased ae) to the control that
-// produced it. VPN is carved out of app control because a bypass attempt is
-// a different conversation with an employee than a blocked chat app.
-const controlSQL = `(CASE
-	WHEN ae.category = 'dlp' THEN 'dlp'
-	WHEN ae.category IN ('malware_detection','threat_intelligence') THEN 'threats'
-	WHEN ae.category = 'vpn' OR ae.operation ILIKE '%vpn%'
-	  OR (ae.category = 'application_control' AND ae.target ILIKE '%vpn%') THEN 'vpn'
-	WHEN ae.category = 'application_control' THEN 'apps'
-	WHEN ae.category IN ('device','device_posture') THEN 'devices'
-	ELSE 'web' END)`
-
-// incidentSQL is what counts as an incident: something was stopped or
-// flagged. Routine "logged" device events are context, not incidents.
-const incidentSQL = `ae.action IN ('blocked','alerted')`
-
 func validControl(id string) bool {
 	for _, c := range controls {
 		if c.ID == id {
@@ -214,28 +191,6 @@ func validControl(id string) bool {
 		}
 	}
 	return false
-}
-
-type controlCount struct {
-	Control string
-	N       int64
-	Blocked int64
-	Alerted int64
-}
-
-func (h *ReportHandler) countByControl(orgID string, from, to time.Time) map[string]controlCount {
-	var rows []controlCount
-	h.db.Raw(`SELECT `+controlSQL+` AS control, COUNT(*) AS n,
-		COUNT(*) FILTER (WHERE ae.action = 'blocked') AS blocked,
-		COUNT(*) FILTER (WHERE ae.action = 'alerted') AS alerted
-		FROM activity_events ae
-		WHERE ae.org_id = ? AND ae.timestamp >= ? AND ae.timestamp < ? AND `+incidentSQL+`
-		GROUP BY 1`, orgID, from, to).Scan(&rows)
-	out := make(map[string]controlCount, len(rows))
-	for _, r := range rows {
-		out[r.Control] = r
-	}
-	return out
 }
 
 type controlStat struct {
@@ -248,18 +203,35 @@ type controlStat struct {
 	Delta   *float64 `json:"delta"`
 }
 
-func (h *ReportHandler) controlStats(orgID string, w reportWindow) ([]controlStat, int64, int64) {
-	cur := h.countByControl(orgID, w.Start, w.End)
-	prev := h.countByControl(orgID, w.PrevStart, w.PrevEnd)
+func controlStats(d *reportData) ([]controlStat, int64, int64) {
+	type counts struct{ n, blocked, alerted int64 }
+	cur := map[string]*counts{}
+	for _, e := range d.incidents(nil) {
+		c := cur[e.Control]
+		if c == nil {
+			c = &counts{}
+			cur[e.Control] = c
+		}
+		c.n++
+		if e.Action == string(models.EventActionBlocked) {
+			c.blocked++
+		} else {
+			c.alerted++
+		}
+	}
 	out := make([]controlStat, 0, len(controls))
 	var total, prevTotal int64
 	for _, c := range controls {
-		n, p := cur[c.ID], prev[c.ID]
-		total += n.N
-		prevTotal += p.N
+		n := cur[c.ID]
+		if n == nil {
+			n = &counts{}
+		}
+		p := d.prev[c.ID]
+		total += n.n
+		prevTotal += p
 		out = append(out, controlStat{
-			ID: c.ID, Label: c.Label, Count: n.N, Blocked: n.Blocked, Alerted: n.Alerted,
-			Prev: p.N, Delta: delta(n.N, p.N),
+			ID: c.ID, Label: c.Label, Count: n.n, Blocked: n.blocked, Alerted: n.alerted,
+			Prev: p, Delta: delta(n.n, p),
 		})
 	}
 	return out, total, prevTotal
@@ -268,40 +240,18 @@ func (h *ReportHandler) controlStats(orgID string, w reportWindow) ([]controlSta
 // trend returns one point per day (or hour) in the window, including empty
 // ones, with a count per control. A chart that skips empty days draws a quiet
 // weekend as a straight line between two busy weekdays.
-func (h *ReportHandler) trend(orgID string, w reportWindow, where string, args ...any) []map[string]any {
-	unit := "day"
-	if w.Hourly {
-		unit = "hour"
-	}
-	type row struct {
-		Bucket  time.Time
-		Control string
-		N       int
-	}
-	var rows []row
-	q := `SELECT date_trunc('` + unit + `', ae.timestamp AT TIME ZONE ?) AS bucket, ` + controlSQL + ` AS control, COUNT(*) AS n
-		FROM activity_events ae
-		WHERE ae.org_id = ? AND ae.timestamp >= ? AND ae.timestamp < ?` + w.emp("ae.employee_id") + ` AND ` + incidentSQL
-	params := []any{w.Loc.String(), orgID, w.Start, w.End}
-	if where != "" {
-		q += " AND " + where
-		params = append(params, args...)
-	}
-	h.db.Raw(q+" GROUP BY 1, 2", params...).Scan(&rows)
-
+func trend(d *reportData, w reportWindow, keep func(*reportEvent) bool) []map[string]any {
 	layout := "2006-01-02"
 	if w.Hourly {
 		layout = "2006-01-02T15:00"
 	}
-	// AT TIME ZONE yields a zone-less wall-clock time, which the driver hands
-	// back as UTC; its fields are the local fields, so format them as-is.
-	byKey := map[string]map[string]any{}
-	for _, r := range rows {
-		k := r.Bucket.UTC().Format(layout)
+	byKey := map[string]map[string]int{}
+	for _, e := range d.incidents(keep) {
+		k := e.At.In(w.Loc).Format(layout)
 		if byKey[k] == nil {
-			byKey[k] = map[string]any{}
+			byKey[k] = map[string]int{}
 		}
-		byKey[k][r.Control] = r.N
+		byKey[k][e.Control]++
 	}
 
 	step := func(t time.Time) time.Time { return t.AddDate(0, 0, 1) }
@@ -314,10 +264,10 @@ func (h *ReportHandler) trend(orgID string, w reportWindow, where string, args .
 	out := []map[string]any{}
 	for ; cur.Before(w.End) && len(out) < 400; cur = step(cur) {
 		k := cur.Format(layout)
-		p := map[string]any{"t": k, "total": 0}
+		p := map[string]any{"t": k}
 		total := 0
 		for _, c := range controls {
-			n, _ := byKey[k][c.ID].(int)
+			n := byKey[k][c.ID]
 			p[c.ID] = n
 			total += n
 		}
@@ -474,7 +424,7 @@ func plural(n int64, one, many string) string {
 
 // attention is the short list of things an admin should act on, most urgent
 // first. Each item links to the page where it gets fixed.
-func (h *ReportHandler) attention(orgID string, w reportWindow, hl health, stats []controlStat) []attentionItem {
+func attention(d *reportData, hl health, stats []controlStat) []attentionItem {
 	items := []attentionItem{}
 	if hl.Policies > 0 && hl.PoliciesEnabled == 0 {
 		items = append(items, attentionItem{"high", "No policy is switched on", "Devices are enrolled but nothing is being enforced.", "/dashboard/swg"})
@@ -493,8 +443,11 @@ func (h *ReportHandler) attention(orgID string, w reportWindow, hl health, stats
 	}
 
 	var highDLP int64
-	h.db.Raw(`SELECT COUNT(*) FROM activity_events ae WHERE ae.org_id = ? AND ae.timestamp >= ? AND ae.timestamp < ?
-		AND ae.category = 'dlp' AND (ae.metadata->>'band' = 'block' OR ae.risk_score >= 80)`, orgID, w.Start, w.End).Scan(&highDLP)
+	for i := range d.cur {
+		if d.cur[i].highDLP() {
+			highDLP++
+		}
+	}
 	if highDLP > 0 {
 		items = append(items, attentionItem{"high", plural(highDLP, "high-severity data leak", "high-severity data leaks") + " flagged", "Sensitive data that would normally be blocked left through a monitored channel.", "/dashboard/dlp"})
 	}
@@ -523,27 +476,33 @@ func (h *ReportHandler) attention(orgID string, w reportWindow, hl health, stats
 func (h *ReportHandler) Overview(c *gin.Context) {
 	orgID := c.GetString("scoped_org_id")
 	w := h.parseWindow(c, orgID)
+	d, err := h.loadReport(c.Request.Context(), orgID, w)
+	if err != nil {
+		respondStoreError(c, err)
+		return
+	}
 
-	stats, total, prevTotal := h.controlStats(orgID, w)
+	stats, total, prevTotal := controlStats(d)
 	hl := h.health(orgID)
 
-	var affected int64
-	h.db.Raw(`SELECT COUNT(DISTINCT ae.employee_id) FROM activity_events ae
-		WHERE ae.org_id = ? AND ae.timestamp >= ? AND ae.timestamp < ? AND `+incidentSQL+` AND ae.employee_id IS NOT NULL`,
-		orgID, w.Start, w.End).Scan(&affected)
+	affected := employeeSet{}
+	for _, e := range d.incidents(nil) {
+		affected.add(e.Employee)
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"period":       w.meta(),
 		"health":       hl,
-		"attention":    h.attention(orgID, w, hl, stats),
+		"attention":    attention(d, hl, stats),
 		"controls":     stats,
-		"totals":       gin.H{"incidents": total, "prev": prevTotal, "delta": delta(total, prevTotal), "affected_employees": affected},
-		"trend":        h.trend(orgID, w, ""),
-		"top_apps":     h.topApps(orgID, w, 6),
-		"top_sites":    h.topSites(orgID, w, 6),
-		"dlp_services": h.dlpServices(orgID, w, 6),
-		"dlp_types":    h.dlpTypes(orgID, w, 6),
-		"top_users":    h.topUsers(orgID, w, 6),
+		"totals":       gin.H{"incidents": total, "prev": prevTotal, "delta": delta(total, prevTotal), "affected_employees": len(affected)},
+		"trend":        trend(d, w, nil),
+		"top_apps":     topApps(d, 6),
+		"top_sites":    topSites(d, 6),
+		"dlp_services": dlpServices(d, 6),
+		"dlp_types":    dlpTypes(d, 6),
+		"top_users":    h.topUsers(d, 6),
+		"truncated":    d.truncated,
 	})
 }
 
@@ -557,14 +516,36 @@ type appRow struct {
 	Last      time.Time `json:"last"`
 }
 
-func (h *ReportHandler) topApps(orgID string, w reportWindow, limit int) []appRow {
-	var rows []appRow
-	h.db.Raw(`SELECT ae.target AS name, `+controlSQL+` AS control, COUNT(*) AS count,
-		COUNT(DISTINCT ae.employee_id) AS employees, MAX(ae.timestamp) AS last
-		FROM activity_events ae
-		WHERE ae.org_id = ? AND ae.timestamp >= ? AND ae.timestamp < ?`+w.emp("ae.employee_id")+` AND `+incidentSQL+`
-		  AND ae.category = 'application_control' AND ae.target <> ''
-		GROUP BY 1, 2 ORDER BY count DESC LIMIT ?`, orgID, w.Start, w.End, limit).Scan(&rows)
+func topApps(d *reportData, limit int) []appRow {
+	type agg struct {
+		row  appRow
+		emps employeeSet
+	}
+	groups := map[string]*agg{}
+	for _, e := range d.incidents(func(e *reportEvent) bool {
+		return e.Category == "application_control" && e.Target != ""
+	}) {
+		k := e.Target + "\x00" + e.Control
+		g := groups[k]
+		if g == nil {
+			g = &agg{row: appRow{Name: e.Target, Control: e.Control}, emps: employeeSet{}}
+			groups[k] = g
+		}
+		g.row.Count++
+		g.emps.add(e.Employee)
+		if e.At.After(g.row.Last) {
+			g.row.Last = e.At
+		}
+	}
+	rows := make([]appRow, 0, len(groups))
+	for _, g := range groups {
+		g.row.Employees = len(g.emps)
+		rows = append(rows, g.row)
+	}
+	sortByCountThenName(rows, func(r appRow) int { return r.Count }, func(r appRow) string { return r.Name })
+	if len(rows) > limit {
+		rows = rows[:limit]
+	}
 	return rows
 }
 
@@ -576,18 +557,41 @@ type siteRow struct {
 	Last      time.Time `json:"last"`
 }
 
-// siteCategorySQL names why a site was blocked. Web events carry the policy
-// ("Policy: Social media") rather than a separate category field.
-const siteCategorySQL = `COALESCE(NULLIF(TRIM(REGEXP_REPLACE(MAX(ae.policy_name), '^Policy:\s*', '', 'i')), ''), MAX(ae.category), '')`
-
-func (h *ReportHandler) topSites(orgID string, w reportWindow, limit int) []siteRow {
-	var rows []siteRow
-	h.db.Raw(`SELECT ae.target_domain AS domain, `+siteCategorySQL+` AS category, COUNT(*) AS count,
-		COUNT(DISTINCT ae.employee_id) AS employees, MAX(ae.timestamp) AS last
-		FROM activity_events ae
-		WHERE ae.org_id = ? AND ae.timestamp >= ? AND ae.timestamp < ?`+w.emp("ae.employee_id")+` AND `+incidentSQL+`
-		  AND `+controlSQL+` = 'web' AND ae.target_domain <> ''
-		GROUP BY ae.target_domain ORDER BY count DESC LIMIT ?`, orgID, w.Start, w.End, limit).Scan(&rows)
+func topSites(d *reportData, limit int) []siteRow {
+	type agg struct {
+		row               siteRow
+		emps              employeeSet
+		maxPolicy, maxCat string
+	}
+	groups := map[string]*agg{}
+	for _, e := range d.incidents(func(e *reportEvent) bool { return e.Control == "web" && e.Domain != "" }) {
+		g := groups[e.Domain]
+		if g == nil {
+			g = &agg{row: siteRow{Domain: e.Domain}, emps: employeeSet{}}
+			groups[e.Domain] = g
+		}
+		g.row.Count++
+		g.emps.add(e.Employee)
+		if e.At.After(g.row.Last) {
+			g.row.Last = e.At
+		}
+		if e.Policy > g.maxPolicy {
+			g.maxPolicy = e.Policy
+		}
+		if e.Category > g.maxCat {
+			g.maxCat = e.Category
+		}
+	}
+	rows := make([]siteRow, 0, len(groups))
+	for _, g := range groups {
+		g.row.Employees = len(g.emps)
+		g.row.Category = siteCategory(g.maxPolicy, g.maxCat)
+		rows = append(rows, g.row)
+	}
+	sortByCountThenName(rows, func(r siteRow) int { return r.Count }, func(r siteRow) string { return r.Domain })
+	if len(rows) > limit {
+		rows = rows[:limit]
+	}
 	return rows
 }
 
@@ -597,17 +601,31 @@ type serviceRow struct {
 	High    int    `json:"high"`
 }
 
-// dlpServiceSQL is where sensitive data was going: the service DLP recognised
-// (Gmail, ChatGPT...), else the destination domain.
-const dlpServiceSQL = `COALESCE(NULLIF(ae.metadata->>'service',''), NULLIF(ae.metadata->>'app_name',''), NULLIF(ae.target_domain,''), 'Unknown')`
-
-func (h *ReportHandler) dlpServices(orgID string, w reportWindow, limit int) []serviceRow {
-	var rows []serviceRow
-	h.db.Raw(`SELECT `+dlpServiceSQL+` AS service, COUNT(*) AS count,
-		COUNT(*) FILTER (WHERE ae.metadata->>'band' = 'block' OR ae.risk_score >= 80) AS high
-		FROM activity_events ae
-		WHERE ae.org_id = ? AND ae.timestamp >= ? AND ae.timestamp < ?`+w.emp("ae.employee_id")+` AND ae.category = 'dlp'
-		GROUP BY 1 ORDER BY count DESC LIMIT ?`, orgID, w.Start, w.End, limit).Scan(&rows)
+func dlpServices(d *reportData, limit int) []serviceRow {
+	groups := map[string]*serviceRow{}
+	for i := range d.cur {
+		e := &d.cur[i]
+		if e.Category != "dlp" {
+			continue
+		}
+		g := groups[e.Service]
+		if g == nil {
+			g = &serviceRow{Service: e.Service}
+			groups[e.Service] = g
+		}
+		g.Count++
+		if e.highDLP() {
+			g.High++
+		}
+	}
+	rows := make([]serviceRow, 0, len(groups))
+	for _, g := range groups {
+		rows = append(rows, *g)
+	}
+	sortByCountThenName(rows, func(r serviceRow) int { return r.Count }, func(r serviceRow) string { return r.Service })
+	if len(rows) > limit {
+		rows = rows[:limit]
+	}
 	return rows
 }
 
@@ -616,13 +634,19 @@ type labelCount struct {
 	Count int    `json:"count"`
 }
 
-func (h *ReportHandler) dlpTypes(orgID string, w reportWindow, limit int) []labelCount {
-	var rows []labelCount
-	h.db.Raw(`SELECT d AS label, COUNT(*) AS count
-		FROM activity_events ae, LATERAL jsonb_array_elements_text(
-			CASE WHEN jsonb_typeof(ae.metadata->'detectors') = 'array' THEN ae.metadata->'detectors' ELSE '[]'::jsonb END) AS d
-		WHERE ae.org_id = ? AND ae.timestamp >= ? AND ae.timestamp < ?`+w.emp("ae.employee_id")+` AND ae.category = 'dlp'
-		GROUP BY 1 ORDER BY count DESC LIMIT ?`, orgID, w.Start, w.End, limit).Scan(&rows)
+func dlpTypes(d *reportData, limit int) []labelCount {
+	counts := map[string]int{}
+	for i := range d.cur {
+		if d.cur[i].Category == "dlp" {
+			for _, det := range d.cur[i].Detectors {
+				counts[det]++
+			}
+		}
+	}
+	rows := sortedLabels(counts)
+	if len(rows) > limit {
+		rows = rows[:limit]
+	}
 	for i := range rows {
 		rows[i].Label = detectorLabel(rows[i].Label)
 	}
@@ -668,26 +692,61 @@ type userRisk struct {
 	LastSeen   time.Time `json:"last_incident"`
 }
 
-func (h *ReportHandler) topUsers(orgID string, w reportWindow, limit int) []userRisk {
-	var rows []userRisk
-	h.db.Raw(`SELECT e.id AS employee_id,
-		TRIM(TRIM(COALESCE(e.first_name,'')) || ' ' || TRIM(COALESCE(e.last_name,''))) AS name,
-		e.email, e.department,
-		COUNT(*) AS incidents,
-		COUNT(*) FILTER (WHERE `+controlSQL+` = 'dlp') AS dlp,
-		COUNT(*) FILTER (WHERE `+controlSQL+` = 'web') AS web,
-		COUNT(*) FILTER (WHERE `+controlSQL+` = 'apps') AS apps,
-		COUNT(*) FILTER (WHERE `+controlSQL+` = 'vpn') AS vpn,
-		COUNT(*) FILTER (WHERE `+controlSQL+` = 'threats') AS threats,
-		COUNT(*) FILTER (WHERE `+controlSQL+` = 'devices') AS devices,
-		COUNT(*) FILTER (WHERE ae.category = 'dlp' AND (ae.metadata->>'band' = 'block' OR ae.risk_score >= 80)) AS high_dlp,
-		MAX(ae.timestamp) AS last_seen
-		FROM activity_events ae
-		JOIN employees e ON e.id = ae.employee_id
-		WHERE ae.org_id = ? AND ae.timestamp >= ? AND ae.timestamp < ?`+w.emp("ae.employee_id")+` AND `+incidentSQL+`
-		GROUP BY e.id, e.first_name, e.last_name, e.email, e.department
-		ORDER BY high_dlp DESC, incidents DESC LIMIT ?`,
-		orgID, w.Start, w.End, limit).Scan(&rows)
+func (h *ReportHandler) topUsers(d *reportData, limit int) []userRisk {
+	incidents := d.incidents(nil)
+	people := peopleFor(h.db, incidents)
+	byEmp := map[uuid.UUID]*userRisk{}
+	for _, e := range incidents {
+		if e.Employee == nil {
+			continue
+		}
+		p, known := people[*e.Employee]
+		if !known {
+			continue // the employee was removed; the SQL JOIN dropped these too
+		}
+		u := byEmp[*e.Employee]
+		if u == nil {
+			u = &userRisk{EmployeeID: e.Employee.String(), Name: p.Name, Email: p.Email, Department: p.Department}
+			byEmp[*e.Employee] = u
+		}
+		u.Incidents++
+		switch e.Control {
+		case "dlp":
+			u.DLP++
+		case "web":
+			u.Web++
+		case "apps":
+			u.Apps++
+		case "vpn":
+			u.VPN++
+		case "threats":
+			u.Threats++
+		case "devices":
+			u.Devices++
+		}
+		if e.highDLP() {
+			u.HighDLP++
+		}
+		if e.At.After(u.LastSeen) {
+			u.LastSeen = e.At
+		}
+	}
+	rows := make([]userRisk, 0, len(byEmp))
+	for _, u := range byEmp {
+		rows = append(rows, *u)
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		if rows[i].HighDLP != rows[j].HighDLP {
+			return rows[i].HighDLP > rows[j].HighDLP
+		}
+		if rows[i].Incidents != rows[j].Incidents {
+			return rows[i].Incidents > rows[j].Incidents
+		}
+		return rows[i].Name < rows[j].Name
+	})
+	if len(rows) > limit {
+		rows = rows[:limit]
+	}
 	return rows
 }
 

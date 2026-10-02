@@ -2,23 +2,28 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
 
-	"github.com/aavishield/admin-api/internal/models"
-	"github.com/aavishield/admin-api/internal/storage"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"github.com/aavishield/admin-api/internal/dataplane"
+	"github.com/aavishield/admin-api/internal/models"
 )
 
 // MonitoringIngestHandler receives sessions, screenshots and activity from the
 // agent. It shares the agent auth (device_id:agent_key) with the other
 // /internal/agent routes.
+//
+// Sessions and screenshot records go to the org's data store and images to
+// its file storage (see internal/dataplane) — Aavishield's own, or the
+// company's when it keeps its data itself.
 type MonitoringIngestHandler struct {
 	db      *gorm.DB
-	store   storage.Backend
 	agentH  *AgentHandler
 	maxSize int64
 }
@@ -26,7 +31,6 @@ type MonitoringIngestHandler struct {
 func NewMonitoringIngestHandler(db *gorm.DB, agentH *AgentHandler) *MonitoringIngestHandler {
 	return &MonitoringIngestHandler{
 		db:      db,
-		store:   storage.New(),
 		agentH:  agentH,
 		maxSize: 8 * 1024 * 1024, // a full-screen webp is well under this
 	}
@@ -88,12 +92,22 @@ func (h *MonitoringIngestHandler) StartSession(c *gin.Context) {
 	// while one that went quiet long enough for the sweep to be about to
 	// close anyway is genuinely over, and the work resuming now deserves a
 	// row of its own.
-	var existing models.WorkSession
-	err := h.db.Where("device_id = ? AND ended_at IS NULL AND updated_at >= ?", deviceID, time.Now().Add(-StaleSessionAfter)).
-		Order("updated_at DESC").
-		First(&existing).Error
-	if err == nil {
-		c.JSON(http.StatusOK, gin.H{"session_id": existing.ID, "resumed": true})
+	st, ok := eventStore(c, orgID.String())
+	if !ok {
+		return
+	}
+	ctx := c.Request.Context()
+	open := true
+	existing, err := st.FindSessions(ctx, dataplane.SessionQuery{
+		OrgID: orgID, DeviceID: &deviceID, Open: &open,
+		UpdatedSince: time.Now().Add(-StaleSessionAfter), OrderBy: "updated_at_desc", Limit: 1,
+	})
+	if err != nil {
+		respondStoreError(c, err)
+		return
+	}
+	if len(existing) > 0 {
+		c.JSON(http.StatusOK, gin.H{"session_id": existing[0].ID, "resumed": true})
 		return
 	}
 
@@ -107,8 +121,8 @@ func (h *MonitoringIngestHandler) StartSession(c *gin.Context) {
 		Project:    "Default Project",
 		Task:       "Default Task",
 	}
-	if err := h.db.Create(&session).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to open session"})
+	if err := st.InsertSession(ctx, &session); err != nil {
+		respondStoreError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"session_id": session.ID})
@@ -134,9 +148,22 @@ func (h *MonitoringIngestHandler) EndSession(c *gin.Context) {
 			ended = t
 		}
 	}
-	h.db.Model(&models.WorkSession{}).
-		Where("id = ? AND org_id = ? AND ended_at IS NULL", in.SessionID, orgID).
-		Update("ended_at", ended)
+	sid, err := uuid.Parse(in.SessionID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid session_id"})
+		return
+	}
+	st, ok := eventStore(c, orgID.String())
+	if !ok {
+		return
+	}
+	open := true
+	if _, err := st.UpdateSessions(c.Request.Context(),
+		dataplane.SessionQuery{OrgID: orgID, IDs: []uuid.UUID{sid}, Open: &open},
+		map[string]any{"ended_at": ended}); err != nil {
+		respondStoreError(c, err)
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"ended": true})
 }
 
@@ -189,6 +216,14 @@ func (h *MonitoringIngestHandler) UploadScreenshot(c *gin.Context) {
 		state = "idle"
 	}
 
+	// Resolved before the image is stored, so an unreachable company
+	// database doesn't leave an orphaned image in its bucket.
+	st, ok := eventStore(c, orgID.String())
+	if !ok {
+		return
+	}
+	ctx := c.Request.Context()
+
 	// Key layout groups by org/employee/day so retention and per-person
 	// listing are cheap prefix scans.
 	key := screenshotKey(orgID, empID, capturedAt)
@@ -196,7 +231,12 @@ func (h *MonitoringIngestHandler) UploadScreenshot(c *gin.Context) {
 	if contentType == "" {
 		contentType = "image/webp"
 	}
-	if err := h.store.Put(context.Background(), key, contentType, data); err != nil {
+	storedKey, err := dataplane.PutFile(ctx, orgID, key, contentType, data)
+	if err != nil {
+		if errors.Is(err, dataplane.ErrUnavailable) {
+			respondStoreError(c, err)
+			return
+		}
 		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to store the image"})
 		return
 	}
@@ -209,7 +249,7 @@ func (h *MonitoringIngestHandler) UploadScreenshot(c *gin.Context) {
 		CapturedAt:      capturedAt,
 		IntervalStart:   intervalStart,
 		IntervalEnd:     intervalEnd,
-		StorageKey:      key,
+		StorageKey:      storedKey,
 		Width:           atoiOr(q.Get("width"), 0),
 		Height:          atoiOr(q.Get("height"), 0),
 		Bytes:           len(data),
@@ -222,13 +262,14 @@ func (h *MonitoringIngestHandler) UploadScreenshot(c *gin.Context) {
 		State:           state,
 		OpenApps:        parseOpenApps(q.Get("open_apps")),
 	}
-	if err := h.db.Create(&shot).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to record the screenshot"})
+	if err := st.InsertScreenshot(ctx, &shot); err != nil {
+		_ = dataplane.DeleteFile(context.Background(), orgID, storedKey)
+		respondStoreError(c, err)
 		return
 	}
 
 	if sessionID != nil {
-		h.refreshSessionRollup(*sessionID)
+		refreshSessionRollup(ctx, st, *sessionID)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"screenshot_id": shot.ID, "activity_percent": percent})
@@ -269,23 +310,16 @@ func parseOpenApps(raw string) []string {
 
 // refreshSessionRollup recomputes the session's totals from its screenshots so
 // list views never have to aggregate on read.
-func (h *MonitoringIngestHandler) refreshSessionRollup(sessionID uuid.UUID) {
-	var agg struct {
-		Count   int
-		Active  int
-		Tracked int
-		Avg     float64
+func refreshSessionRollup(ctx context.Context, st dataplane.Store, sessionID uuid.UUID) {
+	agg, err := st.SessionRollup(ctx, sessionID)
+	if err != nil {
+		return
 	}
-	h.db.Model(&models.Screenshot{}).
-		Select("COUNT(*) as count, COALESCE(SUM(active_seconds),0) as active, "+
-			"COALESCE(SUM(interval_seconds),0) as tracked, COALESCE(AVG(activity_percent),0) as avg").
-		Where("session_id = ?", sessionID).Scan(&agg)
-
-	h.db.Model(&models.WorkSession{}).Where("id = ?", sessionID).Updates(map[string]any{
+	st.UpdateSessions(ctx, dataplane.SessionQuery{IDs: []uuid.UUID{sessionID}}, map[string]any{
 		"screenshot_count": agg.Count,
 		"active_seconds":   agg.Active,
 		"tracked_seconds":  agg.Tracked,
-		"avg_activity":     agg.Avg,
+		"avg_activity":     agg.AvgActivity,
 	})
 }
 

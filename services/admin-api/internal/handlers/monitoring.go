@@ -1,25 +1,31 @@
 package handlers
 
 import (
+	"context"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
 
-	"github.com/aavishield/admin-api/internal/models"
-	"github.com/aavishield/admin-api/internal/storage"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"github.com/aavishield/admin-api/internal/dataplane"
+	"github.com/aavishield/admin-api/internal/models"
+	"github.com/aavishield/admin-api/internal/storage"
 )
 
+// MonitoringHandler reads sessions and screenshots from the org's data store
+// and signs image links against wherever each image lives (see
+// internal/dataplane).
 type MonitoringHandler struct {
-	db    *gorm.DB
-	store storage.Backend
+	db *gorm.DB
 }
 
 func NewMonitoringHandler(db *gorm.DB) *MonitoringHandler {
-	return &MonitoringHandler{db: db, store: storage.New()}
+	return &MonitoringHandler{db: db}
 }
 
 // ─── small parsing helpers (shared with the ingest handler) ──────────────────
@@ -139,10 +145,18 @@ func (h *MonitoringHandler) Screenshots(c *gin.Context) {
 	from := base.Add(time.Duration(dayReset) * time.Hour)
 	to := from.Add(24 * time.Hour)
 
-	var shots []models.Screenshot
-	h.db.Where("org_id = ? AND employee_id = ? AND captured_at >= ? AND captured_at < ?",
-		orgID, employeeID, from.UTC(), to.UTC()).
-		Order("captured_at ASC").Find(&shots)
+	st, ok := eventStore(c, orgID.String())
+	if !ok {
+		return
+	}
+	ctx := c.Request.Context()
+	shots, err := st.FindScreenshots(ctx, dataplane.ScreenshotQuery{
+		OrgID: orgID, EmployeeID: &employeeID, CapturedSince: from, CapturedBefore: to,
+	})
+	if err != nil {
+		respondStoreError(c, err)
+		return
+	}
 
 	// Group by session, minting a signed URL per image. Both start as
 	// non-nil — same reasoning as the nil-slice fix below this function:
@@ -151,7 +165,9 @@ func (h *MonitoringHandler) Screenshots(c *gin.Context) {
 	orphans := []screenshotOut{}
 	for i := range shots {
 		s := &shots[i]
-		url, _ := h.store.SignedURL(s.StorageKey, 15*time.Minute)
+		// Empty when the image's bucket can't be reached; the card then shows
+		// its "image unavailable" state rather than a broken link.
+		url, _ := dataplane.SignedURL(ctx, orgID, s.StorageKey, 15*time.Minute)
 		out := screenshotOut{
 			ID: s.ID, CapturedAt: s.CapturedAt,
 			IntervalStart: s.IntervalStart, IntervalEnd: s.IntervalEnd,
@@ -167,10 +183,13 @@ func (h *MonitoringHandler) Screenshots(c *gin.Context) {
 		}
 	}
 
-	var sessions []models.WorkSession
-	h.db.Where("org_id = ? AND employee_id = ? AND started_at < ? AND (ended_at IS NULL OR ended_at >= ?)",
-		orgID, employeeID, to.UTC(), from.UTC()).
-		Order("started_at ASC").Find(&sessions)
+	sessions, err := st.FindSessions(ctx, dataplane.SessionQuery{
+		OrgID: orgID, EmployeeID: &employeeID, StartedBefore: to, ActiveAfter: from,
+	})
+	if err != nil {
+		respondStoreError(c, err)
+		return
+	}
 
 	out := make([]sessionOut, 0, len(sessions))
 	for i := range sessions {
@@ -250,9 +269,15 @@ func buildTimeline(shots []models.Screenshot, from, to time.Time) []timelineSegm
 func (h *MonitoringHandler) Employees(c *gin.Context) {
 	orgID, _ := uuid.Parse(c.GetString("scoped_org_id"))
 
-	var ids []uuid.UUID
-	h.db.Model(&models.Screenshot{}).Distinct("employee_id").
-		Where("org_id = ? AND employee_id IS NOT NULL", orgID).Pluck("employee_id", &ids)
+	st, ok := eventStore(c, orgID.String())
+	if !ok {
+		return
+	}
+	ids, err := st.ScreenshotEmployees(c.Request.Context(), orgID)
+	if err != nil {
+		respondStoreError(c, err)
+		return
+	}
 
 	var employees []models.Employee
 	if len(ids) > 0 {
@@ -266,19 +291,42 @@ func (h *MonitoringHandler) Employees(c *gin.Context) {
 func (h *MonitoringHandler) DeleteSession(c *gin.Context) {
 	orgID, _ := uuid.Parse(c.GetString("scoped_org_id"))
 
-	var session models.WorkSession
-	if err := h.db.Where("id = ? AND org_id = ?", c.Param("id"), orgID).First(&session).Error; err != nil {
+	sid, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Session not found"})
+		return
+	}
+	st, ok := eventStore(c, orgID.String())
+	if !ok {
+		return
+	}
+	ctx := c.Request.Context()
+	found, err := st.FindSessions(ctx, dataplane.SessionQuery{OrgID: orgID, IDs: []uuid.UUID{sid}})
+	if err != nil {
+		respondStoreError(c, err)
+		return
+	}
+	if len(found) == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Session not found"})
 		return
 	}
 
-	var shots []models.Screenshot
-	h.db.Where("session_id = ?", session.ID).Find(&shots)
-	for i := range shots {
-		_ = h.deleteObject(shots[i].StorageKey)
+	shots, err := st.FindScreenshots(ctx, dataplane.ScreenshotQuery{OrgID: orgID, SessionID: &sid})
+	if err != nil {
+		respondStoreError(c, err)
+		return
 	}
-	h.db.Where("session_id = ?", session.ID).Delete(&models.Screenshot{})
-	h.db.Delete(&session)
+	for i := range shots {
+		deleteObject(ctx, orgID, shots[i].StorageKey)
+	}
+	if _, err := st.DeleteScreenshots(ctx, dataplane.ScreenshotQuery{OrgID: orgID, SessionID: &sid}); err != nil {
+		respondStoreError(c, err)
+		return
+	}
+	if _, err := st.DeleteSessions(ctx, dataplane.SessionQuery{OrgID: orgID, IDs: []uuid.UUID{sid}}); err != nil {
+		respondStoreError(c, err)
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Session and its screenshots removed"})
 }
@@ -287,26 +335,43 @@ func (h *MonitoringHandler) DeleteSession(c *gin.Context) {
 func (h *MonitoringHandler) DeleteScreenshot(c *gin.Context) {
 	orgID, _ := uuid.Parse(c.GetString("scoped_org_id"))
 
-	var shot models.Screenshot
-	if err := h.db.Where("id = ? AND org_id = ?", c.Param("id"), orgID).First(&shot).Error; err != nil {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Screenshot not found"})
 		return
 	}
-	_ = h.deleteObject(shot.StorageKey)
-	h.db.Delete(&shot)
+	st, ok := eventStore(c, orgID.String())
+	if !ok {
+		return
+	}
+	ctx := c.Request.Context()
+	found, err := st.FindScreenshots(ctx, dataplane.ScreenshotQuery{OrgID: orgID, IDs: []uuid.UUID{id}})
+	if err != nil {
+		respondStoreError(c, err)
+		return
+	}
+	if len(found) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Screenshot not found"})
+		return
+	}
+	shot := found[0]
+	deleteObject(ctx, orgID, shot.StorageKey)
+	if _, err := st.DeleteScreenshots(ctx, dataplane.ScreenshotQuery{OrgID: orgID, IDs: []uuid.UUID{id}}); err != nil {
+		respondStoreError(c, err)
+		return
+	}
 	if shot.SessionID != nil {
-		(&MonitoringIngestHandler{db: h.db, store: h.store}).refreshSessionRollup(*shot.SessionID)
+		refreshSessionRollup(ctx, st, *shot.SessionID)
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "Screenshot removed"})
 }
 
 // deleteObject best-effort removes the stored image. A storage miss must not
 // block the row deletion — the row is the record of truth for the UI.
-func (h *MonitoringHandler) deleteObject(key string) error {
-	if d, ok := h.store.(interface{ Delete(string) error }); ok {
-		return d.Delete(key)
+func deleteObject(ctx context.Context, orgID uuid.UUID, key string) {
+	if err := dataplane.DeleteFile(ctx, orgID, key); err != nil {
+		log.Printf("screenshot image %s not deleted: %v", key, err)
 	}
-	return nil
 }
 
 // ─── Settings ────────────────────────────────────────────────────────────────
@@ -315,7 +380,11 @@ func (h *MonitoringHandler) deleteObject(key string) error {
 func (h *MonitoringHandler) GetSettings(c *gin.Context) {
 	orgID, _ := uuid.Parse(c.GetString("scoped_org_id"))
 	s := screenshotSettingsFor(h.db, orgID)
-	c.JSON(http.StatusOK, gin.H{"settings": s, "storage": h.store.Kind()})
+	kind := dataplane.PrimaryFiles().Kind()
+	if r, err := dataplane.Residency(c.Request.Context(), orgID); err == nil && r.FilesActive() {
+		kind = "company:" + r.FilesProvider
+	}
+	c.JSON(http.StatusOK, gin.H{"settings": s, "storage": kind})
 }
 
 // UpdateSettings handles PUT /monitoring/settings.
@@ -376,29 +445,38 @@ func (h *MonitoringHandler) UpdateSettings(c *gin.Context) {
 // has to enforce it or object storage grows without bound. Runs on a slow
 // timer; a missed tick just means images linger a few more hours.
 func StartScreenshotRetentionSweep(db *gorm.DB, interval time.Duration) {
-	store := storage.New()
 	go func() {
 		ticker := time.NewTicker(interval)
 		for range ticker.C {
 			var settings []models.ScreenshotSettings
 			db.Where("retention_days > 0").Find(&settings)
 			for _, s := range settings {
-				cutoff := time.Now().AddDate(0, 0, -s.RetentionDays)
-				var old []models.Screenshot
-				db.Where("org_id = ? AND captured_at < ?", s.OrgID, cutoff).
-					Limit(2000).Find(&old)
-				for i := range old {
-					if d, ok := store.(interface{ Delete(string) error }); ok {
-						_ = d.Delete(old[i].StorageKey)
-					}
-					db.Delete(&old[i])
-				}
-				// Drop sessions that ended before the cutoff and have no images left.
-				db.Where("org_id = ? AND ended_at IS NOT NULL AND ended_at < ? AND screenshot_count = 0",
-					s.OrgID, cutoff).Delete(&models.WorkSession{})
+				sweepScreenshots(context.Background(), s.OrgID, time.Now().AddDate(0, 0, -s.RetentionDays))
 			}
 		}
 	}()
+}
+
+// sweepScreenshots applies one org's retention wherever its screenshots live.
+// The company chose the retention period, so it is enforced in its own
+// storage too.
+func sweepScreenshots(ctx context.Context, orgID uuid.UUID, cutoff time.Time) {
+	st, err := dataplane.Events(ctx, orgID)
+	if err != nil {
+		return // unreachable company store: try again next sweep
+	}
+	old, err := st.FindScreenshots(ctx, dataplane.ScreenshotQuery{OrgID: orgID, CapturedBefore: cutoff, Limit: 2000})
+	if err != nil || len(old) == 0 {
+		return
+	}
+	ids := make([]uuid.UUID, 0, len(old))
+	for i := range old {
+		deleteObject(ctx, orgID, old[i].StorageKey)
+		ids = append(ids, old[i].ID)
+	}
+	st.DeleteScreenshots(ctx, dataplane.ScreenshotQuery{OrgID: orgID, IDs: ids})
+	// Drop sessions that ended before the cutoff and have no images left.
+	st.DeleteSessions(ctx, dataplane.SessionQuery{OrgID: orgID, EndedBefore: cutoff, NoScreenshots: true})
 }
 
 // StartStaleSessionSweep closes any WorkSession stuck open (ended_at still
@@ -436,11 +514,15 @@ const StaleSessionAfter = 15 * time.Minute
 
 func StartStaleSessionSweep(db *gorm.DB, interval, staleAfter time.Duration) {
 	sweep := func() {
+		ctx := context.Background()
 		cutoff := time.Now().Add(-staleAfter)
-		var stale []models.WorkSession
-		db.Where("ended_at IS NULL AND updated_at < ?", cutoff).Find(&stale)
-		for i := range stale {
-			db.Model(&stale[i]).Update("ended_at", stale[i].UpdatedAt)
+		closeStale(ctx, dataplane.Primary(), uuid.Nil, cutoff)
+		// Companies on their own database: same rule, in their database.
+		orgs, _ := dataplane.TenantOrgs(ctx)
+		for _, org := range orgs {
+			if st, err := dataplane.Events(ctx, org); err == nil {
+				closeStale(ctx, st, org, cutoff)
+			}
 		}
 	}
 	go func() {
@@ -450,6 +532,18 @@ func StartStaleSessionSweep(db *gorm.DB, interval, staleAfter time.Duration) {
 			sweep()
 		}
 	}()
+}
+
+func closeStale(ctx context.Context, st dataplane.Store, orgID uuid.UUID, cutoff time.Time) {
+	open := true
+	stale, err := st.FindSessions(ctx, dataplane.SessionQuery{OrgID: orgID, Open: &open, UpdatedBefore: cutoff, Limit: 1000})
+	if err != nil {
+		return
+	}
+	for i := range stale {
+		st.UpdateSessions(ctx, dataplane.SessionQuery{IDs: []uuid.UUID{stale[i].ID}, Open: &open},
+			map[string]any{"ended_at": stale[i].UpdatedAt})
+	}
 }
 
 // ─── Public media route (local backend only) ─────────────────────────────────

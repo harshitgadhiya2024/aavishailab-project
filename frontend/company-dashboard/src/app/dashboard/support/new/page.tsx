@@ -16,8 +16,11 @@ function NewRequestForm() {
   const params = useSearchParams();
   const initial = TOPICS.find((t) => t.id === params.get("topic"))?.id ?? "";
   const [topic, setTopic] = useState<TopicId | "">(initial);
-  const [subject, setSubject] = useState("");
-  const [body, setBody] = useState("");
+  // Other pages can open this form already filled in (e.g. Settings → Data
+  // residency → "Request a custom integration"); the person still reviews
+  // and submits it themselves.
+  const [subject, setSubject] = useState(() => (params.get("subject") ?? "").slice(0, 200));
+  const [body, setBody] = useState(() => (params.get("body") ?? "").slice(0, 5000));
   const [priority, setPriority] = useState("normal");
   const [files, setFiles] = useState<File[]>([]);
   const [drag, setDrag] = useState(false);

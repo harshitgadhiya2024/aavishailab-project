@@ -2,14 +2,20 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"encoding/csv"
 	"fmt"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+
+	"github.com/aavishield/admin-api/internal/dataplane"
+	"github.com/aavishield/admin-api/internal/models"
 )
 
 // ─── Catalog ──────────────────────────────────────────────────────────────────
@@ -96,30 +102,45 @@ func (h *ReportHandler) Report(c *gin.Context) {
 		limit = exportRowLimit
 	}
 
+	// Reports built from activity share one scan of the period.
+	var d *reportData
+	switch reportType {
+	case "executive", "incidents", "dlp", "web", "apps", "employee-risk", "policies":
+		var err error
+		if d, err = h.loadReport(c.Request.Context(), orgID, w); err != nil {
+			respondStoreError(c, err)
+			return
+		}
+	}
+
 	var t reportTable
 	switch reportType {
 	case "executive":
-		t = h.executiveReport(orgID, w)
+		t = h.executiveReport(orgID, w, d)
 	case "incidents":
 		ctrl := c.Query("control")
 		if !validControl(ctrl) {
 			ctrl = ""
 		}
-		t = h.incidentsReport(orgID, w, ctrl, limit)
+		t = h.incidentsReport(d, w, ctrl, limit)
 	case "dlp":
-		t = h.dlpReport(orgID, w, limit)
+		t = h.dlpReport(d, w, limit)
 	case "web":
-		t = h.webReport(orgID, w, limit)
+		t = webReport(d, w, limit)
 	case "apps":
-		t = h.appsReport(orgID, w, limit)
+		t = appsReport(d, w, limit)
 	case "employee-risk":
-		t = h.employeeRiskReport(orgID, w, limit)
+		t = h.employeeRiskReport(orgID, d, w, limit)
 	case "employee-activity":
-		t = h.employeeActivityReport(orgID, w)
+		var err error
+		if t, err = h.employeeActivityReport(c.Request.Context(), orgID, w); err != nil {
+			respondStoreError(c, err)
+			return
+		}
 	case "devices":
 		t = h.devicesReport(orgID, w)
 	case "policies":
-		t = h.policiesReport(orgID, w)
+		t = h.policiesReport(orgID, w, d)
 	case "access-requests":
 		t = h.accessRequestsReport(orgID, w, limit)
 	default:
@@ -135,7 +156,7 @@ func (h *ReportHandler) Report(c *gin.Context) {
 	if t.Summary == nil {
 		t.Summary = []summaryItem{}
 	}
-	t.Truncated = len(t.Rows) >= limit
+	t.Truncated = len(t.Rows) >= limit || (d != nil && d.truncated)
 
 	switch format {
 	case "csv":
@@ -309,8 +330,8 @@ func fmtDelta(d *float64) string {
 	return fmt.Sprintf("%.1f%%", *d)
 }
 
-func (h *ReportHandler) executiveReport(orgID string, w reportWindow) reportTable {
-	stats, total, prevTotal := h.controlStats(orgID, w)
+func (h *ReportHandler) executiveReport(orgID string, w reportWindow, d *reportData) reportTable {
+	stats, total, prevTotal := controlStats(d)
 	hl := h.health(orgID)
 
 	rows := [][]any{}
@@ -333,7 +354,7 @@ func (h *ReportHandler) executiveReport(orgID string, w reportWindow) reportTabl
 		[]any{"Governance", "Access requests waiting", hl.PendingRequests, "", ""},
 	)
 
-	top := h.topUsers(orgID, w, 5)
+	top := h.topUsers(d, 5)
 	users := make([]labelCount, 0, len(top))
 	for _, u := range top {
 		name := u.Name
@@ -350,17 +371,17 @@ func (h *ReportHandler) executiveReport(orgID string, w reportWindow) reportTabl
 			{"Incidents", total, fmtDelta(delta(total, prevTotal)) + " vs previous period"},
 			{"Devices protected", fmt.Sprintf("%d of %d online", hl.Online, hl.Devices), ""},
 			{"Employee coverage", coverage, ""},
-			{"Needs attention", len(h.attention(orgID, w, hl, stats)), "open items"},
+			{"Needs attention", len(attention(d, hl, stats)), "open items"},
 		},
 		Charts: []reportChart{
-			{"trend", "Incidents over time, by control", h.trend(orgID, w, "")},
+			{"trend", "Incidents over time, by control", trend(d, w, nil)},
 			{"bars", "Employees with the most incidents", users},
 		},
 	}
 }
 
-// incidentRows lists incidents newest first. where narrows it (with args).
-func (h *ReportHandler) incidentRows(orgID string, w reportWindow, where string, limit int, args ...any) []struct {
+// incidentRow is one incident with its employee and device named.
+type incidentRow struct {
 	Timestamp time.Time
 	Name      string
 	Email     string
@@ -376,56 +397,41 @@ func (h *ReportHandler) incidentRows(orgID string, w reportWindow, where string,
 	Band      string
 	Detectors string
 	Kind      string
-} {
-	var rows []struct {
-		Timestamp time.Time
-		Name      string
-		Email     string
-		Hostname  string
-		Control   string
-		Target    string
-		Domain    string
-		Operation string
-		Action    string
-		Policy    string
-		Risk      float64
-		Service   string
-		Band      string
-		Detectors string
-		Kind      string
+}
+
+// incidentRows lists incidents newest first; keep narrows them.
+func (h *ReportHandler) incidentRows(d *reportData, keep func(*reportEvent) bool, limit int) []incidentRow {
+	events := d.incidents(keep)
+	if len(events) > limit {
+		events = events[:limit]
 	}
-	q := `SELECT ae.timestamp,
-		TRIM(TRIM(COALESCE(e.first_name,'')) || ' ' || TRIM(COALESCE(e.last_name,''))) AS name,
-		COALESCE(e.email,'') AS email, COALESCE(d.hostname,'') AS hostname,
-		` + controlSQL + ` AS control,
-		COALESCE(ae.target,'') AS target, COALESCE(ae.target_domain,'') AS domain,
-		COALESCE(ae.operation,'') AS operation, ae.action::text AS action,
-		COALESCE(ae.policy_name,'') AS policy, COALESCE(ae.risk_score,0) AS risk,
-		` + dlpServiceSQL + ` AS service,
-		COALESCE(ae.metadata->>'band','') AS band,
-		COALESCE((SELECT string_agg(x, ',') FROM jsonb_array_elements_text(
-			CASE WHEN jsonb_typeof(ae.metadata->'detectors') = 'array' THEN ae.metadata->'detectors' ELSE '[]'::jsonb END) x), '') AS detectors,
-		COALESCE(ae.metadata->>'content_kind','') AS kind
-		FROM activity_events ae
-		LEFT JOIN employees e ON e.id = ae.employee_id
-		LEFT JOIN devices d ON d.id = ae.device_id
-		WHERE ae.org_id = ? AND ae.timestamp >= ? AND ae.timestamp < ?` + w.emp("ae.employee_id") + ` AND ` + incidentSQL
-	params := []any{orgID, w.Start, w.End}
-	if where != "" {
-		q += " AND " + where
-		params = append(params, args...)
-	}
-	params = append(params, limit)
-	h.db.Raw(q+" ORDER BY ae.timestamp DESC LIMIT ?", params...).Scan(&rows)
-	for i := range rows {
-		if rows[i].Detectors == "" {
-			continue
+	people := peopleFor(h.db, events)
+	hosts := hostnamesFor(h.db, events)
+	rows := make([]incidentRow, 0, len(events))
+	for _, e := range events {
+		r := incidentRow{
+			Timestamp: e.At, Control: e.Control, Target: e.Target, Domain: e.Domain,
+			Operation: e.Operation, Action: e.Action, Policy: e.Policy, Risk: e.Risk,
+			Service: e.Service, Band: e.Band, Kind: e.Kind,
 		}
-		ids := strings.Split(rows[i].Detectors, ",")
-		for j, id := range ids {
-			ids[j] = detectorLabel(id)
+		if e.Category == "dlp" && r.Service == "" {
+			r.Service = "Unknown"
 		}
-		rows[i].Detectors = strings.Join(ids, ", ")
+		if e.Employee != nil {
+			p := people[*e.Employee]
+			r.Name, r.Email = p.Name, p.Email
+		}
+		if e.Device != nil {
+			r.Hostname = hosts[*e.Device]
+		}
+		if len(e.Detectors) > 0 {
+			names := make([]string, len(e.Detectors))
+			for i, id := range e.Detectors {
+				names[i] = detectorLabel(id)
+			}
+			r.Detectors = strings.Join(names, ", ")
+		}
+		rows = append(rows, r)
 	}
 	return rows
 }
@@ -440,12 +446,12 @@ func actionLabel(a string) string {
 	return a
 }
 
-func (h *ReportHandler) incidentsReport(orgID string, w reportWindow, ctrl string, limit int) reportTable {
-	where, args := "", []any{}
+func (h *ReportHandler) incidentsReport(d *reportData, w reportWindow, ctrl string, limit int) reportTable {
+	var keep func(*reportEvent) bool
 	if ctrl != "" {
-		where, args = controlSQL+" = ?", []any{ctrl}
+		keep = func(e *reportEvent) bool { return e.Control == ctrl }
 	}
-	rows := h.incidentRows(orgID, w, where, limit, args...)
+	rows := h.incidentRows(d, keep, limit)
 	out := make([][]any, 0, len(rows))
 	byControl := map[string]int{}
 	blocked := 0
@@ -472,14 +478,14 @@ func (h *ReportHandler) incidentsReport(orgID string, w reportWindow, ctrl strin
 			{"Flagged", len(out) - blocked, ""},
 		},
 		Charts: []reportChart{
-			{"trend", "Incidents over time", h.trend(orgID, w, where, args...)},
+			{"trend", "Incidents over time", trend(d, w, keep)},
 			{"bars", "Incidents by control", sortedLabels(byControl)},
 		},
 	}
 }
 
-func (h *ReportHandler) dlpReport(orgID string, w reportWindow, limit int) reportTable {
-	rows := h.incidentRows(orgID, w, "ae.category = 'dlp'", limit)
+func (h *ReportHandler) dlpReport(d *reportData, w reportWindow, limit int) reportTable {
+	rows := h.incidentRows(d, func(e *reportEvent) bool { return e.Category == "dlp" }, limit)
 	out := make([][]any, 0, len(rows))
 	high, people := 0, map[string]bool{}
 	for _, r := range rows {
@@ -496,7 +502,7 @@ func (h *ReportHandler) dlpReport(orgID string, w reportWindow, limit int) repor
 			people[r.Email] = true
 		}
 	}
-	services := h.dlpServices(orgID, w, 10)
+	services := dlpServices(d, 10)
 	svc := make([]labelCount, 0, len(services))
 	for _, s := range services {
 		svc = append(svc, labelCount{s.Service, s.Count})
@@ -511,13 +517,13 @@ func (h *ReportHandler) dlpReport(orgID string, w reportWindow, limit int) repor
 		},
 		Charts: []reportChart{
 			{"bars", "Where sensitive data went", svc},
-			{"bars", "What kind of data", h.dlpTypes(orgID, w, 10)},
+			{"bars", "What kind of data", dlpTypes(d, 10)},
 		},
 	}
 }
 
-func (h *ReportHandler) webReport(orgID string, w reportWindow, limit int) reportTable {
-	sites := h.topSites(orgID, w, limit)
+func webReport(d *reportData, w reportWindow, limit int) reportTable {
+	sites := topSites(d, limit)
 	out := make([][]any, 0, len(sites))
 	cats := map[string]int{}
 	total := 0
@@ -549,8 +555,8 @@ func (h *ReportHandler) webReport(orgID string, w reportWindow, limit int) repor
 	}
 }
 
-func (h *ReportHandler) appsReport(orgID string, w reportWindow, limit int) reportTable {
-	apps := h.topApps(orgID, w, limit)
+func appsReport(d *reportData, w reportWindow, limit int) reportTable {
+	apps := topApps(d, limit)
 	out := make([][]any, 0, len(apps))
 	total, vpn := 0, 0
 	bars := []labelCount{}
@@ -573,14 +579,14 @@ func (h *ReportHandler) appsReport(orgID string, w reportWindow, limit int) repo
 			{"Applications", len(out), ""},
 		},
 		Charts: []reportChart{
-			{"trend", "Attempts over time", h.trend(orgID, w, controlSQL+" IN ('apps','vpn')")},
+			{"trend", "Attempts over time", trend(d, w, func(e *reportEvent) bool { return e.Control == "apps" || e.Control == "vpn" })},
 			{"bars", "Most-blocked applications", bars},
 		},
 	}
 }
 
-func (h *ReportHandler) employeeRiskReport(orgID string, w reportWindow, limit int) reportTable {
-	users := h.topUsers(orgID, w, limit)
+func (h *ReportHandler) employeeRiskReport(orgID string, d *reportData, w reportWindow, limit int) reportTable {
+	users := h.topUsers(d, limit)
 	out := make([][]any, 0, len(users))
 	bars := []labelCount{}
 	for _, u := range users {
@@ -616,8 +622,8 @@ func fmtDuration(seconds int64) string {
 	return fmt.Sprintf("%dh %02dm", h, m)
 }
 
-func (h *ReportHandler) employeeActivityReport(orgID string, w reportWindow) reportTable {
-	var rows []struct {
+func (h *ReportHandler) employeeActivityReport(ctx context.Context, orgID string, w reportWindow) (reportTable, error) {
+	type actRow struct {
 		Name        string
 		Email       string
 		Department  string
@@ -630,19 +636,78 @@ func (h *ReportHandler) employeeActivityReport(orgID string, w reportWindow) rep
 		First       time.Time
 		Last        time.Time
 	}
-	h.db.Raw(`SELECT TRIM(TRIM(COALESCE(e.first_name,'')) || ' ' || TRIM(COALESCE(e.last_name,''))) AS name,
-		e.email, e.department,
-		COUNT(ws.id) AS sessions,
-		COALESCE(SUM(ws.tracked_seconds),0) AS tracked,
-		COALESCE(SUM(ws.active_seconds),0) AS active,
-		COALESCE(AVG(NULLIF(ws.avg_activity,0)),0) AS avg_activity,
-		COALESCE(SUM(ws.screenshot_count),0) AS screenshots,
-		COUNT(DISTINCT DATE(ws.started_at AT TIME ZONE ?)) AS days,
-		MIN(ws.started_at) AS first, MAX(COALESCE(ws.ended_at, ws.started_at)) AS last
-		FROM work_sessions ws JOIN employees e ON e.id = ws.employee_id
-		WHERE ws.org_id = ? AND ws.started_at >= ? AND ws.started_at < ? AND ws.deleted_at IS NULL`+w.emp("ws.employee_id")+`
-		GROUP BY e.id, e.first_name, e.last_name, e.email, e.department
-		ORDER BY tracked DESC`, w.Loc.String(), orgID, w.Start, w.End).Scan(&rows)
+	st, err := dataplane.EventsFor(ctx, orgID)
+	if err != nil {
+		return reportTable{}, err
+	}
+	org, _ := uuid.Parse(orgID)
+	q := dataplane.SessionQuery{OrgID: org, StartedSince: w.Start, StartedBefore: w.End}
+	if w.EmployeeID != "" {
+		id, _ := uuid.Parse(w.EmployeeID)
+		q.EmployeeID = &id
+	}
+	sessions, err := st.FindSessions(ctx, q)
+	if err != nil {
+		return reportTable{}, err
+	}
+
+	type acc struct {
+		row         actRow
+		days        map[string]bool
+		actSum      float64
+		actN        int
+		first, last time.Time
+	}
+	byEmp := map[uuid.UUID]*acc{}
+	var empIDs []uuid.UUID
+	for _, s := range sessions {
+		if s.EmployeeID == nil {
+			continue
+		}
+		a := byEmp[*s.EmployeeID]
+		if a == nil {
+			a = &acc{days: map[string]bool{}}
+			byEmp[*s.EmployeeID] = a
+			empIDs = append(empIDs, *s.EmployeeID)
+		}
+		a.row.Sessions++
+		a.row.Tracked += int64(s.TrackedSeconds)
+		a.row.Active += int64(s.ActiveSeconds)
+		a.row.Screenshots += s.ScreenshotCount
+		if s.AvgActivity != 0 {
+			a.actSum += s.AvgActivity
+			a.actN++
+		}
+		a.days[s.StartedAt.In(w.Loc).Format("2006-01-02")] = true
+		end := s.StartedAt
+		if s.EndedAt != nil {
+			end = *s.EndedAt
+		}
+		if a.first.IsZero() || s.StartedAt.Before(a.first) {
+			a.first = s.StartedAt
+		}
+		if end.After(a.last) {
+			a.last = end
+		}
+	}
+	var emps []models.Employee
+	if len(empIDs) > 0 {
+		h.db.Select("id", "first_name", "last_name", "email", "department").Where("id IN ?", empIDs).Find(&emps)
+	}
+	rows := make([]actRow, 0, len(emps))
+	for _, e := range emps {
+		a := byEmp[e.ID]
+		r := a.row
+		r.Name = strings.TrimSpace(strings.TrimSpace(e.FirstName) + " " + strings.TrimSpace(e.LastName))
+		r.Email, r.Department = e.Email, e.Department
+		r.Days = len(a.days)
+		r.First, r.Last = a.first, a.last
+		if a.actN > 0 {
+			r.AvgActivity = a.actSum / float64(a.actN)
+		}
+		rows = append(rows, r)
+	}
+	sort.SliceStable(rows, func(i, j int) bool { return rows[i].Tracked > rows[j].Tracked })
 
 	out := make([][]any, 0, len(rows))
 	bars := []labelCount{}
@@ -680,7 +745,7 @@ func (h *ReportHandler) employeeActivityReport(orgID string, w reportWindow) rep
 			{"Active share", activeShare, "of tracked time"},
 		},
 		Charts: []reportChart{{"bars", "Tracked hours by employee", bars}},
-	}
+	}, nil
 }
 
 func (h *ReportHandler) devicesReport(orgID string, w reportWindow) reportTable {
@@ -703,8 +768,8 @@ func (h *ReportHandler) devicesReport(orgID string, w reportWindow) reportTable 
 		COALESCE((SELECT string_agg(f, ',') FROM jsonb_array_elements_text(`+postureFailedSQL+`) f), '') AS failed,
 		d.last_seen_at, d.enrolled_at
 		FROM devices d LEFT JOIN employees e ON e.id = d.employee_id
-		WHERE d.org_id = ? AND d.deleted_at IS NULL`+w.emp("d.employee_id")+`
-		ORDER BY d.last_seen_at ASC NULLS FIRST`, orgID).Scan(&rows)
+		WHERE d.org_id = ? AND d.deleted_at IS NULL AND (? = '' OR CAST(d.employee_id AS TEXT) = ?)
+		ORDER BY d.last_seen_at ASC NULLS FIRST`, orgID, w.EmployeeID, w.EmployeeID).Scan(&rows)
 
 	staleBefore := time.Now().Add(-staleAfter)
 	out := make([][]any, 0, len(rows))
@@ -756,10 +821,10 @@ func (h *ReportHandler) devicesReport(orgID string, w reportWindow) reportTable 
 	}
 }
 
-func (h *ReportHandler) policiesReport(orgID string, w reportWindow) reportTable {
+func (h *ReportHandler) policiesReport(orgID string, w reportWindow, d *reportData) reportTable {
 	// Most events carry only the policy's name (policy_id is often unset by the
 	// agent), so hits are matched on id first and name second.
-	var rows []struct {
+	type polRow struct {
 		Name     string
 		Type     string
 		Action   string
@@ -769,15 +834,48 @@ func (h *ReportHandler) policiesReport(orgID string, w reportWindow) reportTable
 		Users    int
 		Last     *time.Time
 	}
-	h.db.Raw(`SELECT p.name, p.type::text AS type, p.action::text AS action, p.priority, p.enabled,
-		COUNT(ae.id) AS hits, COUNT(DISTINCT ae.employee_id) AS users, MAX(ae.timestamp) AS last
-		FROM policies p
-		LEFT JOIN activity_events ae ON ae.org_id = p.org_id
-		  AND ae.timestamp >= ? AND ae.timestamp < ? AND ae.action IN ('blocked','alerted')
-		  AND (ae.policy_id = p.id OR (ae.policy_id IS NULL AND (ae.policy_name = p.name OR ae.policy_name = 'Policy: ' || p.name)))
-		WHERE p.org_id = ? AND p.deleted_at IS NULL
-		GROUP BY p.id, p.name, p.type, p.action, p.priority, p.enabled
-		ORDER BY hits DESC, p.priority ASC`, w.Start, w.End, orgID).Scan(&rows)
+	var policies []models.Policy
+	h.db.Where("org_id = ?", orgID).Find(&policies)
+
+	byID := map[uuid.UUID]int{}
+	byName := map[string]int{}
+	rows := make([]polRow, len(policies))
+	users := make([]employeeSet, len(policies))
+	for i, p := range policies {
+		rows[i] = polRow{Name: p.Name, Type: string(p.Type), Action: string(p.Action), Priority: p.Priority, Enabled: p.Enabled}
+		users[i] = employeeSet{}
+		byID[p.ID] = i
+		if _, dup := byName[p.Name]; !dup {
+			byName[p.Name] = i
+		}
+	}
+	for _, e := range d.incidents(nil) {
+		i, ok := -1, false
+		if e.PolicyID != nil {
+			i, ok = byID[*e.PolicyID]
+		} else if i, ok = byName[e.Policy]; !ok {
+			i, ok = byName[strings.TrimPrefix(e.Policy, "Policy: ")]
+			ok = ok && strings.HasPrefix(e.Policy, "Policy: ")
+		}
+		if !ok {
+			continue
+		}
+		rows[i].Hits++
+		users[i].add(e.Employee)
+		at := e.At
+		if rows[i].Last == nil || at.After(*rows[i].Last) {
+			rows[i].Last = &at
+		}
+	}
+	for i := range rows {
+		rows[i].Users = len(users[i])
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		if rows[i].Hits != rows[j].Hits {
+			return rows[i].Hits > rows[j].Hits
+		}
+		return rows[i].Priority < rows[j].Priority
+	})
 
 	out := make([][]any, 0, len(rows))
 	silent := 0
@@ -824,8 +922,9 @@ func (h *ReportHandler) accessRequestsReport(orgID string, w reportWindow, limit
 		TRIM(TRIM(COALESCE(e.first_name,'')) || ' ' || TRIM(COALESCE(e.last_name,''))) AS name,
 		COALESCE(e.email,'') AS email, ar.domain, ar.reason, ar.status::text AS status, ar.reviewed_at
 		FROM access_requests ar LEFT JOIN employees e ON e.id = ar.employee_id
-		WHERE ar.org_id = ? AND ar.created_at >= ? AND ar.created_at < ?`+w.emp("ar.employee_id")+`
-		ORDER BY ar.created_at DESC LIMIT ?`, orgID, w.Start, w.End, limit).Scan(&rows)
+		WHERE ar.org_id = ? AND ar.created_at >= ? AND ar.created_at < ?
+		  AND (? = '' OR CAST(ar.employee_id AS TEXT) = ?)
+		ORDER BY ar.created_at DESC LIMIT ?`, orgID, w.Start, w.End, w.EmployeeID, w.EmployeeID, limit).Scan(&rows)
 
 	out := make([][]any, 0, len(rows))
 	byStatus := map[string]int{}

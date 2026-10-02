@@ -2,17 +2,20 @@ package handlers
 
 import (
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+
+	"github.com/aavishield/admin-api/internal/dataplane"
 	"github.com/aavishield/admin-api/internal/mailer"
 	"github.com/aavishield/admin-api/internal/middleware"
 	"github.com/aavishield/admin-api/internal/models"
 	"github.com/aavishield/admin-api/internal/notifier"
-	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
-	"gorm.io/gorm"
 )
 
 // AccessRequestHandler manages employee requests for an exception to
@@ -80,26 +83,37 @@ func (h *AccessRequestHandler) Create(c *gin.Context) {
 		req.Reason = string([]rune(req.Reason)[:1000])
 	}
 
-	var ev models.ActivityEvent
-	q := h.db.Where("employee_id = ? AND org_id = ?", empID, orgID)
+	st, ok := eventStore(c, orgID.String())
+	if !ok {
+		return
+	}
+	q := dataplane.EventQuery{OrgID: orgID, EmployeeID: &empID, Limit: 1}
 	switch {
 	case req.EventID != "":
-		if _, err := uuid.Parse(req.EventID); err != nil {
+		id, err := uuid.Parse(req.EventID)
+		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid event_id"})
 			return
 		}
-		q = q.Where("id = ?", req.EventID)
+		q.IDs = []uuid.UUID{id}
 	case req.Domain != "":
-		q = q.Where("event_type = ? AND action = ? AND target_domain = ?",
-			models.EventTypeWebRequest, models.EventActionBlocked, normDomain(req.Domain)).Order("timestamp DESC")
+		q.EventTypes = dataplane.Strings(models.EventTypeWebRequest)
+		q.Actions = dataplane.Strings(models.EventActionBlocked)
+		q.TargetDomain = normDomain(req.Domain)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "event_id is required"})
 		return
 	}
-	if err := q.First(&ev).Error; err != nil {
+	found, err := st.FindEvents(c.Request.Context(), q)
+	if err != nil {
+		respondStoreError(c, err)
+		return
+	}
+	if len(found) == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "That activity was not found on your account"})
 		return
 	}
+	ev := found[0]
 	target, ok := requestableFrom(&ev)
 	if !ok {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "There is nothing to request for this activity"})
@@ -283,16 +297,45 @@ func (h *AccessRequestHandler) BlockedEmployees(c *gin.Context) {
 		TargetDomain  string    `json:"target_domain"`
 		LastBlockedAt time.Time `json:"last_blocked_at"`
 	}
-	var rows []blockedEmp
-	h.db.Raw(`
-		SELECT DISTINCT ON (ae.employee_id, ae.target_domain)
-			ae.employee_id, e.first_name, e.last_name, e.email, ae.target_domain,
-			ae.timestamp as last_blocked_at
-		FROM activity_events ae
-		JOIN employees e ON e.id = ae.employee_id
-		WHERE ae.policy_id = ? AND ae.action = 'blocked' AND ae.employee_id IS NOT NULL
-		ORDER BY ae.employee_id, ae.target_domain, ae.timestamp DESC
-	`, policyID).Scan(&rows)
+	st, ok := eventStore(c, orgID)
+	if !ok {
+		return
+	}
+	// Newest first, so the first row seen for each (employee, site) is the
+	// latest block — what DISTINCT ON picked when this was one SQL query.
+	events, err := st.FindEvents(c.Request.Context(), dataplane.EventQuery{
+		OrgID: orgUUID(c), PolicyID: &policy.ID, HasEmployee: true,
+		Actions: dataplane.Strings(models.EventActionBlocked),
+		Fields:  []string{"id", "employee_id", "target_domain", "timestamp"},
+		Limit:   5000,
+	})
+	if err != nil {
+		respondStoreError(c, err)
+		return
+	}
+	attachEmployees(h.db, events)
+	rows := []blockedEmp{}
+	seen := map[string]bool{}
+	for _, ev := range events {
+		if ev.Employee == nil {
+			continue // employee since removed
+		}
+		k := ev.EmployeeID.String() + "|" + ev.TargetDomain
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		rows = append(rows, blockedEmp{
+			EmployeeID: *ev.EmployeeID, FirstName: ev.Employee.FirstName, LastName: ev.Employee.LastName,
+			Email: ev.Employee.Email, TargetDomain: ev.TargetDomain, LastBlockedAt: ev.Timestamp,
+		})
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].EmployeeID != rows[j].EmployeeID {
+			return rows[i].EmployeeID.String() < rows[j].EmployeeID.String()
+		}
+		return rows[i].TargetDomain < rows[j].TargetDomain
+	})
 
 	c.JSON(http.StatusOK, gin.H{"data": rows})
 }

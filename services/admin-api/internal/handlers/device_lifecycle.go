@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"context"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -11,6 +13,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
+	"github.com/aavishield/admin-api/internal/dataplane"
 	"github.com/aavishield/admin-api/internal/mailer"
 	"github.com/aavishield/admin-api/internal/models"
 )
@@ -65,9 +68,9 @@ func loadDeviceLifecycleContext(db *gorm.DB, deviceID, orgID uuid.UUID) (deviceL
 // recordDeviceLifecycleEvent writes the row the dashboard's activity view
 // reads. Target carries the hostname so the event reads sensibly even if the
 // device row is later deleted.
-func recordDeviceLifecycleEvent(db *gorm.DB, ctx deviceLifecycleContext,
+func recordDeviceLifecycleEvent(ctx deviceLifecycleContext,
 	eventType models.EventType, operation string) {
-	db.Create(&models.ActivityEvent{
+	err := dataplane.RecordEvents(context.Background(), ctx.Device.OrgID, &models.ActivityEvent{
 		OrgID:      ctx.Device.OrgID,
 		EmployeeID: ctx.Device.EmployeeID,
 		DeviceID:   &ctx.Device.ID,
@@ -78,6 +81,9 @@ func recordDeviceLifecycleEvent(db *gorm.DB, ctx deviceLifecycleContext,
 		Category:   "device",
 		Timestamp:  time.Now(),
 	})
+	if err != nil {
+		log.Printf("device lifecycle event not stored: %v", err)
+	}
 }
 
 // ReportDeviceConnected handles POST /internal/agent/lifecycle/connected —
@@ -93,7 +99,7 @@ func (h *AgentHandler) ReportDeviceConnected(c *gin.Context) {
 		return
 	}
 
-	recordDeviceLifecycleEvent(h.db, ctx, models.EventTypeDeviceConnect, "Connector connected")
+	recordDeviceLifecycleEvent(ctx, models.EventTypeDeviceConnect, "Connector connected")
 	go mailer.DeviceConnected(ctx.AdminEmails, ctx.OrgName, ctx.EmployeeName,
 		ctx.Device.Hostname, time.Now().Format("2 Jan 2006, 15:04"))
 
@@ -118,7 +124,7 @@ func (h *AgentHandler) ReportDeviceDisconnected(c *gin.Context) {
 	}
 
 	h.db.Model(&models.Device{}).Where("id = ?", deviceID).Update("status", "offline")
-	recordDeviceLifecycleEvent(h.db, ctx, models.EventTypeDeviceDisconnect, "Connector disconnected")
+	recordDeviceLifecycleEvent(ctx, models.EventTypeDeviceDisconnect, "Connector disconnected")
 	go mailer.DeviceDisconnected(ctx.AdminEmails, ctx.OrgName, ctx.EmployeeName,
 		ctx.Device.Hostname, time.Now().Format("2 Jan 2006, 15:04"))
 
@@ -178,7 +184,7 @@ func (h *AgentHandler) AuthorizeUninstall(c *gin.Context) {
 		approvedBy = admin.Email
 	}
 
-	recordDeviceLifecycleEvent(h.db, ctx, models.EventTypeDeviceUninstall,
+	recordDeviceLifecycleEvent(ctx, models.EventTypeDeviceUninstall,
 		"Connector uninstalled (approved by "+approvedBy+")")
 	// The credential dies here, not just the status. Before this, nothing
 	// ever invalidated the device's agent token on uninstall — only its
@@ -222,12 +228,23 @@ func (h *AgentHandler) ListDeviceActivity(c *gin.Context) {
 		}
 	}
 
-	var events []models.ActivityEvent
-	h.db.Where("org_id = ? AND event_type IN ?", orgID, []models.EventType{
-		models.EventTypeDeviceConnect,
-		models.EventTypeDeviceDisconnect,
-		models.EventTypeDeviceUninstall,
-	}).Order("timestamp DESC").Limit(limit).Find(&events)
+	st, ok := eventStore(c, orgID.String())
+	if !ok {
+		return
+	}
+	events, err := st.FindEvents(c.Request.Context(), dataplane.EventQuery{
+		OrgID: orgID,
+		EventTypes: dataplane.Strings(
+			models.EventTypeDeviceConnect,
+			models.EventTypeDeviceDisconnect,
+			models.EventTypeDeviceUninstall,
+		),
+		Limit: limit,
+	})
+	if err != nil {
+		respondStoreError(c, err)
+		return
+	}
 
 	// Employee names in one query rather than per row.
 	ids := make([]uuid.UUID, 0, len(events))

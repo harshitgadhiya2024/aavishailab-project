@@ -6,8 +6,9 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { authApi, companyApi, enforcementApi, mfaApi, monitoringApi, settingsApi } from "@/lib/api";
 import {
   Lock, ShieldCheck, Bell, Loader2, Save, ArrowRight, KeyRound,
-  LogOut, AlertTriangle, ChevronRight, Building2, Clock, Trash2, Camera, Eye, EyeOff, ShieldAlert,
+  LogOut, AlertTriangle, ChevronRight, Building2, Clock, Trash2, Camera, Eye, EyeOff, ShieldAlert, Server,
 } from "lucide-react";
+import { DataResidencyPanel } from "@/components/settings/data-residency/DataResidencyPanel";
 import { ScheduleEditor, EnforcementBadge, defaultSchedule, type ScheduleValue } from "@/components/enforcement/ScheduleEditor";
 import { cn } from "@/lib/utils";
 import { usePermissions, PERMISSIONS } from "@/lib/permissions";
@@ -476,7 +477,9 @@ function MonitoringPanel({ canWrite }: { canWrite: boolean }) {
               Capture follows <b className="text-body">Working hours</b>: on a personal device outside its
               window, or while enforcement is paused, nothing is captured — this switch only decides
               <i> whether</i>, not <i>when</i>. Screens are stored in
-              {" "}<b className="text-body">{storage === "r2" ? "Cloudflare R2" : "local storage"}</b>.
+              {" "}<b className="text-body">{typeof storage === "string" && storage.startsWith("company:")
+                ? "your company's own storage"
+                : storage === "r2" ? "Cloudflare R2" : "local storage"}</b>.
             </p>
           </div>
         </div>
@@ -671,7 +674,7 @@ function BlockPagePanel({ canWrite }: { canWrite: boolean }) {
   );
 }
 
-type TabId = "password" | "two-factor" | "notifications" | "working-hours" | "monitoring" | "block-page" | "org-security" | "sessions";
+type TabId = "password" | "two-factor" | "notifications" | "working-hours" | "monitoring" | "block-page" | "org-security" | "data-residency" | "sessions";
 
 const TABS: { id: TabId; label: string; description: string; icon: React.ElementType; orgLevel?: boolean }[] = [
   { id: "password", label: "Password", description: "Sign-in credentials", icon: Lock },
@@ -681,6 +684,7 @@ const TABS: { id: TabId; label: string; description: string; icon: React.Element
   { id: "monitoring", label: "Monitoring", description: "Screenshots & activity", icon: Camera, orgLevel: true },
   { id: "block-page", label: "Block page", description: "What employees see", icon: ShieldAlert, orgLevel: true },
   { id: "org-security", label: "Organization security", description: "Org-wide rules", icon: Building2, orgLevel: true },
+  { id: "data-residency", label: "Data residency", description: "Keep data on your own servers", icon: Server, orgLevel: true },
   { id: "sessions", label: "Sessions", description: "Signed-in devices", icon: LogOut },
 ];
 
@@ -776,6 +780,7 @@ export default function SettingsPage() {
           {active === "monitoring" && <MonitoringPanel canWrite={canWriteSettings} />}
           {active === "block-page" && <BlockPagePanel canWrite={canWriteSettings} />}
           {active === "org-security" && <OrgSecurityPanel canManageUsers={canManageUsers} />}
+          {active === "data-residency" && <DataResidencyPanel canWrite={canWriteSettings} />}
           {active === "sessions" && (
             <Panel title="Sessions" description="Sign out of this browser">
               <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -793,7 +798,7 @@ export default function SettingsPage() {
             </Panel>
           )}
 
-          {(active === "notifications" || active === "org-security" || active === "working-hours" || active === "monitoring") && !canWriteSettings && (
+          {(active === "notifications" || active === "org-security" || active === "working-hours" || active === "monitoring" || active === "data-residency") && !canWriteSettings && (
             <div className="bg-brand-500/10 border border-brand-500/30 rounded-xl p-4 flex items-start gap-3">
               <AlertTriangle className="w-4 h-4 text-brand-500 flex-shrink-0 mt-0.5" />
               <p className="text-sm text-muted-foreground">

@@ -634,3 +634,38 @@ func DemoRequestConfirmation(to, name string) {
 			"You're receiving this because you booked a demo on aavishield.aavishailab.com."),
 	})
 }
+
+// ─── Data residency ───────────────────────────────────────────────────────────
+
+// DataStoreUnreachable tells admins their own database or bucket stopped
+// answering. what is "database" or "file storage".
+func DataStoreUnreachable(admins []string, orgName, what, detail string) {
+	body := `<p style="margin:0;">While it is unreachable:</p>
+	<ul style="margin:8px 0 0 0;padding-left:20px;color:#4b5563;font-size:14px;">
+	  <li>The dashboard can't show activity, reports or screenshots.</li>
+	  <li>New security events are held encrypted for up to 72 hours and delivered automatically once it is back. Screenshots taken meanwhile are not kept.</li>
+	  <li>Nothing is written to Aavishield's own storage instead.</li>
+	</ul>
+	<p style="margin:16px 0 0 0;font-size:13px;color:#6b7280;">Last error: ` + html.EscapeString(detail) + `</p>`
+	Send(Message{
+		To:      admins,
+		Subject: "Action needed: Aavishield can't reach your " + what,
+		HTML: layout(
+			"Your "+html.EscapeString(what)+" is unreachable",
+			html.EscapeString(orgName)+" keeps employee data in its own "+html.EscapeString(what)+", and Aavishield could not connect to it.",
+			body, "Check the connection", cfg.AppURL+"/dashboard/settings#data-residency",
+			"You get this because your organization stores its data on its own infrastructure."),
+	})
+}
+
+// DataStoreRecovered is the all-clear after DataStoreUnreachable.
+func DataStoreRecovered(admins []string, orgName, what string) {
+	Send(Message{
+		To:      admins,
+		Subject: "Resolved: Aavishield is connected to your " + what + " again",
+		HTML: layout(
+			"Your "+html.EscapeString(what)+" is back",
+			"Aavishield can reach "+html.EscapeString(orgName)+"'s "+html.EscapeString(what)+" again. Any held security events are being delivered to it now.",
+			"", "Open settings", cfg.AppURL+"/dashboard/settings#data-residency", ""),
+	})
+}

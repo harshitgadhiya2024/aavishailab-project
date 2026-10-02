@@ -26,6 +26,12 @@ export function createApiClient(): AxiosInstance {
     (res) => res,
     async (error: AxiosError) => {
       const originalRequest = error.config as (typeof error.config & { _retry?: boolean });
+      // The company keeps its employee data on its own servers and they can't
+      // be reached: every page shows the same banner (DataStoreBanner) rather
+      // than each one inventing its own empty state.
+      if (error.response?.status === 503 && (error.response.data as any)?.code === "data_store_unavailable" && typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("aavishield:data-store-unavailable"));
+      }
       if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
         originalRequest._retry = true;
         const session = await getSession();
@@ -265,6 +271,29 @@ export const settingsApi = {
   mitmPlatforms: () => api.get("/api/v1/settings/mitm/platforms"),
   discoverBypass: (query: string) =>
     api.get("/api/v1/settings/mitm/discover", { params: { query } }),
+};
+
+// ─── Data residency (company-owned database & storage) ───────────────────────
+// Connection tests reach out to the company's server, create tables and
+// round-trip a probe row or file, so they get a longer timeout than the default.
+const residencyTimeout = { timeout: 120000 };
+export const residencyApi = {
+  get: () => api.get("/api/v1/settings/data-residency"),
+  setEnabled: (enabled: boolean, confirm?: string) =>
+    api.put("/api/v1/settings/data-residency", { enabled, confirm }),
+  testDatabase: (cfg: Record<string, any>) =>
+    api.post("/api/v1/settings/data-residency/database/test", cfg, residencyTimeout),
+  saveDatabase: (cfg: Record<string, any>) =>
+    api.put("/api/v1/settings/data-residency/database", cfg, residencyTimeout),
+  disconnectDatabase: () =>
+    api.delete("/api/v1/settings/data-residency/database", { data: { confirm: "DISCONNECT" } }),
+  testFiles: (cfg: Record<string, any>) =>
+    api.post("/api/v1/settings/data-residency/files/test", cfg, residencyTimeout),
+  saveFiles: (cfg: Record<string, any>) =>
+    api.put("/api/v1/settings/data-residency/files", cfg, residencyTimeout),
+  disconnectFiles: () =>
+    api.delete("/api/v1/settings/data-residency/files", { data: { confirm: "DISCONNECT" } }),
+  moveHistory: () => api.post("/api/v1/settings/data-residency/move-history", { confirm: "MOVE" }),
 };
 
 // ─── AI Chat ─────────────────────────────────────────────────────────────────

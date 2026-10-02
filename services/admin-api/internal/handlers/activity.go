@@ -3,10 +3,12 @@ package handlers
 import (
 	"context"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/aavishield/admin-api/internal/dataplane"
 	"github.com/aavishield/admin-api/internal/models"
 	"github.com/aavishield/admin-api/internal/shadowitclient"
 	"github.com/gin-gonic/gin"
@@ -39,9 +41,15 @@ func (h *ActivityHandler) List(c *gin.Context) {
 
 	if page < 1 { page = 1 }
 	if limit > 200 { limit = 200 }
+	if limit < 1 { limit = 50 }
 
-	q := h.db.Where("org_id = ?", orgID)
-	q = applyEmployeeTeamScope(h.db, c, q, "employee_id")
+	st, ok := eventStore(c, orgID)
+	if !ok {
+		return
+	}
+
+	q := dataplane.EventQuery{OrgID: orgUUID(c)}
+	teamEmployeeScope(h.db, c, &q)
 
 	// "Allowed" is never shown, anywhere, regardless of what the caller asks
 	// for — hard exclusion rather than something a filter value could opt
@@ -49,62 +57,59 @@ func (h *ActivityHandler) List(c *gin.Context) {
 	// it (see dropAllowedEvents), so this is mainly for the rows already in
 	// the database from before that fix; an explicit ?action=allowed simply
 	// gets an empty result instead of a page of routine traffic.
-	q = q.Where("action != ?", models.EventActionAllowed)
+	q.NotActions = []string{string(models.EventActionAllowed)}
 
-	if empID != "" {
-		q = q.Where("employee_id = ?", empID)
+	if id, err := uuid.Parse(empID); err == nil {
+		q.EmployeeID = &id
+	} else if empID != "" {
+		q.IDs = []uuid.UUID{uuid.Nil} // a malformed id matches nothing, never everything
 	}
 	if eventType != "" {
-		q = q.Where("event_type = ?", eventType)
+		q.EventTypes = []string{eventType}
 	}
 	// source groups events the way the dashboard's tabs do — "which part of the
 	// product produced this". It is derived from (event_type, category) rather
 	// than stored, because every writer already sets those two consistently and
 	// a third denormalised column would only be one more thing to keep in sync.
-	if scope := activitySourceScope(c.Query("source")); scope != nil {
-		q = q.Where(scope.query, scope.args...)
-	}
+	q.AnyOf = activitySourceScope(c.Query("source"))
 	// action accepts a comma-separated list ("blocked,alerted") so a caller can
 	// ask for several outcomes at once without dropping to no filter at all —
 	// which would pull in the allowed/logged telemetry that isn't an incident.
 	if action != "" {
-		if actions := splitCSV(action); len(actions) > 1 {
-			q = q.Where("action IN ?", actions)
-		} else {
-			q = q.Where("action = ?", action)
-		}
+		q.Actions = splitCSV(action)
 	}
 	if search != "" {
-		like := "%" + search + "%"
-		q = q.Where("target LIKE ? OR target_domain LIKE ? OR process_name LIKE ?", like, like, like)
+		q.Search = search
+		q.SearchFields = []string{"target", "target_domain", "process_name"}
 	}
 
 	// Time range
 	if days > 0 {
-		q = q.Where("timestamp >= ?", time.Now().AddDate(0, 0, -days))
+		q.Since = time.Now().AddDate(0, 0, -days)
 	}
 	if startStr != "" {
 		if t, err := time.Parse(time.RFC3339, startStr); err == nil {
-			q = q.Where("timestamp >= ?", t)
+			q.Since = t
 		}
 	}
 	if endStr != "" {
 		if t, err := time.Parse(time.RFC3339, endStr); err == nil {
-			q = q.Where("timestamp <= ?", t)
+			q.Until = t
 		}
 	}
 
-	// Each terminal call gets its own session — reusing the same *gorm.DB
-	// across Count() and then Find() causes the second call to misbehave
-	// (a well-known GORM footgun).
-	var total int64
-	q.Session(&gorm.Session{}).Model(&models.ActivityEvent{}).Count(&total)
-
-	var events []models.ActivityEvent
-	q.Session(&gorm.Session{}).
-		Order("timestamp DESC").
-		Offset((page-1)*limit).Limit(limit).
-		Find(&events)
+	ctx := c.Request.Context()
+	total, err := st.CountEvents(ctx, q)
+	if err != nil {
+		respondStoreError(c, err)
+		return
+	}
+	q.Offset, q.Limit = (page-1)*limit, limit
+	events, err := st.FindEvents(ctx, q)
+	if err != nil {
+		respondStoreError(c, err)
+		return
+	}
 
 	// Attach employee names manually rather than Preload("Employee"): Employee
 	// also has its own (unrelated, HRIS) EmployeeID field, which collides with
@@ -123,57 +128,41 @@ func (h *ActivityHandler) List(c *gin.Context) {
 	})
 }
 
-// activitySourceFilter is one entry of the source taxonomy — the WHERE
-// fragment that isolates the events one dashboard tab is about.
-type activitySourceFilter struct {
-	query string
-	args  []any
-}
-
-// activitySourceScope maps a source name to its filter, or nil for "no
-// filter" (unknown name or empty). Deliberately nil rather than an error:
-// an unrecognised source showing everything is a far better failure than a
-// tab that renders empty and looks like a data loss.
+// activitySourceScope maps a source name to the event filter for that
+// dashboard tab, or nil for "no filter" (unknown name or empty). Deliberately
+// nil rather than an error: an unrecognised source showing everything is a
+// far better failure than a tab that renders empty and looks like a data loss.
 //
 // The categories below are exactly what the writers set — agents.go writes
 // "dlp", "malware_detection" and "device_posture"; appcontrol.go writes
 // "application_control"; the proxy's web telemetry writes "", "domain",
 // "url_category" or "threat_intelligence".
-func activitySourceScope(source string) *activitySourceFilter {
+func activitySourceScope(source string) []dataplane.EventClause {
 	switch strings.ToLower(strings.TrimSpace(source)) {
 	case "web_gateway", "swg":
 		// Malware is excluded on purpose: a blocked download is download
 		// protection's event, not the web gateway's, and it has its own tab.
-		return &activitySourceFilter{
-			query: "event_type IN ? AND (category IS NULL OR category NOT IN ?)",
-			args: []any{
-				[]string{string(models.EventTypeWebRequest), string(models.EventTypeDNSQuery)},
-				[]string{"dlp", "malware", "malware_detection", "device_posture", "application_control"},
-			},
-		}
+		return []dataplane.EventClause{{
+			EventTypes:    dataplane.Strings(models.EventTypeWebRequest, models.EventTypeDNSQuery),
+			NotCategories: []string{"dlp", "malware", "malware_detection", "device_posture", "application_control"},
+		}}
 	case "dlp":
-		return &activitySourceFilter{query: "category = ?", args: []any{"dlp"}}
+		return []dataplane.EventClause{{Categories: []string{"dlp"}}}
 	case "malware", "download":
-		return &activitySourceFilter{query: "category IN ?", args: []any{[]string{"malware", "malware_detection"}}}
+		return []dataplane.EventClause{{Categories: []string{"malware", "malware_detection"}}}
 	case "application", "app_control":
-		return &activitySourceFilter{
-			query: "event_type IN ? OR category = ?",
-			args: []any{
-				[]string{string(models.EventTypeProcessStart), string(models.EventTypeAppLaunch), string(models.EventTypeAppInstall)},
-				"application_control",
-			},
+		return []dataplane.EventClause{
+			{EventTypes: dataplane.Strings(models.EventTypeProcessStart, models.EventTypeAppLaunch, models.EventTypeAppInstall)},
+			{Categories: []string{"application_control"}},
 		}
 	case "device_posture", "posture":
-		return &activitySourceFilter{query: "category = ?", args: []any{"device_posture"}}
+		return []dataplane.EventClause{{Categories: []string{"device_posture"}}}
 	case "device":
-		return &activitySourceFilter{
-			query: "event_type IN ?",
-			args: []any{[]string{
-				string(models.EventTypeDeviceConnect),
-				string(models.EventTypeDeviceDisconnect),
-				string(models.EventTypeDeviceUninstall),
-			}},
-		}
+		return []dataplane.EventClause{{EventTypes: dataplane.Strings(
+			models.EventTypeDeviceConnect,
+			models.EventTypeDeviceDisconnect,
+			models.EventTypeDeviceUninstall,
+		)}}
 	default:
 		return nil
 	}
@@ -219,27 +208,26 @@ func (h *ActivityHandler) Stats(c *gin.Context) {
 	orgID := c.GetString("scoped_org_id")
 	days, _ := strconv.Atoi(c.DefaultQuery("days", "7"))
 	since := time.Now().AddDate(0, 0, -days)
+	st, ok := eventStore(c, orgID)
+	if !ok {
+		return
+	}
+	ctx := c.Request.Context()
 
 	// Optional event_type narrows every figure below. Without it the response is
 	// exactly what it always was; with it a caller like the DLP page gets counts
 	// for policy violations alone instead of web-request blocks mixed in.
 	eventType := c.Query("event_type")
-	typeSQL := ""
-	var typeArgs []any
-	if eventType != "" {
-		typeSQL = " AND event_type = ?"
-		typeArgs = append(typeArgs, eventType)
-	}
 	// Same hard exclusion the List handler applies: these counters sit at the
 	// top of the very page whose table can never contain an allowed row, so a
 	// "total events" that counted them would not match the rows underneath it.
-	scoped := func() *gorm.DB {
-		q := h.db.Model(&models.ActivityEvent{}).
-			Where("org_id = ? AND timestamp >= ? AND action != ?", orgID, since, models.EventActionAllowed)
-		if eventType != "" {
-			q = q.Where("event_type = ?", eventType)
-		}
-		return q
+	scope := dataplane.EventQuery{
+		OrgID:      orgUUID(c),
+		Since:      since,
+		NotActions: []string{string(models.EventActionAllowed)},
+	}
+	if eventType != "" {
+		scope.EventTypes = []string{eventType}
 	}
 
 	type StatsResult struct {
@@ -249,96 +237,154 @@ func (h *ActivityHandler) Stats(c *gin.Context) {
 		UniqueUsers   int64   `json:"unique_users"`
 		AvgRiskScore  float64 `json:"avg_risk_score"`
 	}
-
 	var stats StatsResult
-	scoped().Count(&stats.TotalEvents)
-	scoped().Where("action = ?", "blocked").Count(&stats.BlockedEvents)
-	scoped().Where("action = ?", "alerted").Count(&stats.AlertedEvents)
-	scoped().Distinct("employee_id").Count(&stats.UniqueUsers)
-	scoped().Select("COALESCE(AVG(risk_score), 0)").Scan(&stats.AvgRiskScore)
+	totals, err := st.GroupEvents(ctx, scope, "", 0)
+	if err != nil {
+		respondStoreError(c, err)
+		return
+	}
+	if len(totals) > 0 && totals[0].Count > 0 {
+		stats.TotalEvents = totals[0].Count
+		stats.UniqueUsers = totals[0].Employees
+		stats.AvgRiskScore = totals[0].RiskSum / float64(totals[0].Count)
+	}
+	byAction, _ := st.GroupEvents(ctx, scope, "action", 0)
+	for _, g := range byAction {
+		switch g.Key {
+		case string(models.EventActionBlocked):
+			stats.BlockedEvents = g.Count
+		case string(models.EventActionAlerted):
+			stats.AlertedEvents = g.Count
+		}
+	}
 
 	// Top blocked domains
 	type DomainCount struct {
 		Domain string `json:"domain"`
 		Count  int    `json:"count"`
 	}
-	var topDomains []DomainCount
-	h.db.Raw(`SELECT target_domain as domain, COUNT(*) as count
-		FROM activity_events
-		WHERE org_id = ? AND timestamp >= ? AND action = 'blocked' AND target_domain != ''`+typeSQL+`
-		GROUP BY target_domain ORDER BY count DESC LIMIT 10`,
-		append([]any{orgID, since}, typeArgs...)...).
-		Scan(&topDomains)
+	topDomains := []DomainCount{}
+	blocked := scope
+	blocked.Actions = []string{string(models.EventActionBlocked)}
+	blocked.HasTargetDomain = true
+	if groups, err := st.GroupEvents(ctx, blocked, "target_domain", 10); err == nil {
+		for _, g := range groups {
+			topDomains = append(topDomains, DomainCount{g.Key, int(g.Count)})
+		}
+	}
 
-	// Most frequently triggered DLP detector. metadata->'detectors' is only an
-	// array on scan events, so non-array rows are filtered out before the
-	// element expansion — jsonb_array_elements_text errors on anything else.
+	// Event type breakdown. Filtered too, for consistency with every other
+	// figure — asking for one event_type collapses this to that single row
+	// rather than reporting a breakdown at a different scope than the counts
+	// above it.
+	type TypeCount struct {
+		EventType string `json:"event_type"`
+		Count     int    `json:"count"`
+	}
+	byType := []TypeCount{}
+	if groups, err := st.GroupEvents(ctx, scope, "event_type", 0); err == nil {
+		for _, g := range groups {
+			byType = append(byType, TypeCount{g.Key, int(g.Count)})
+		}
+	}
+
+	// Days and per-employee counts in one pass over the period, without
+	// metadata; detectors in a second pass over DLP findings only — the only
+	// events whose metadata carries them.
+	type DayCount struct {
+		Date    string `json:"date"`
+		Total   int    `json:"total"`
+		Blocked int    `json:"blocked"`
+	}
+	dayCounts := map[string]*DayCount{}
+	perEmployee := map[uuid.UUID]int{}
+	pass := scope
+	pass.Fields = []string{"employee_id", "action", "timestamp"}
+	pass.Ascending = true
+	err = st.EachEvent(ctx, pass, func(ev *models.ActivityEvent) error {
+		day := ev.Timestamp.UTC().Format("2006-01-02")
+		dc := dayCounts[day]
+		if dc == nil {
+			dc = &DayCount{Date: day}
+			dayCounts[day] = dc
+		}
+		dc.Total++
+		if ev.Action == models.EventActionBlocked {
+			dc.Blocked++
+		}
+		if ev.EmployeeID != nil {
+			perEmployee[*ev.EmployeeID]++
+		}
+		return nil
+	})
+	if err != nil {
+		respondStoreError(c, err)
+		return
+	}
+	detectors := map[string]int{}
+	dlp := scope
+	dlp.Categories = []string{"dlp"}
+	dlp.Fields = []string{"metadata", "timestamp"}
+	err = st.EachEvent(ctx, dlp, func(ev *models.ActivityEvent) error {
+		if list, ok := ev.Metadata["detectors"].([]any); ok {
+			for _, d := range list {
+				if s, ok := d.(string); ok && s != "" {
+					detectors[s]++
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		respondStoreError(c, err)
+		return
+	}
+
+	// Most frequently triggered DLP detector.
 	type DetectorCount struct {
 		Detector string `json:"detector"`
 		Count    int    `json:"count"`
 	}
-	var topDetectors []DetectorCount
-	h.db.Raw(`SELECT d as detector, COUNT(*) as count
-		FROM activity_events, LATERAL jsonb_array_elements_text(metadata->'detectors') as d
-		WHERE org_id = ? AND timestamp >= ? AND jsonb_typeof(metadata->'detectors') = 'array'
-		  AND action != 'allowed'`+typeSQL+`
-		GROUP BY d ORDER BY count DESC LIMIT 5`,
-		append([]any{orgID, since}, typeArgs...)...).
-		Scan(&topDetectors)
+	topDetectors := []DetectorCount{}
+	for _, lc := range sortedLabels(detectors) {
+		if len(topDetectors) == 5 {
+			break
+		}
+		topDetectors = append(topDetectors, DetectorCount{lc.Label, lc.Count})
+	}
 
-	// Top users by risk
+	byDay := make([]DayCount, 0, len(dayCounts))
+	for _, d := range dayCounts {
+		byDay = append(byDay, *d)
+	}
+	sort.Slice(byDay, func(i, j int) bool { return byDay[i].Date < byDay[j].Date })
+
+	// Top users by risk. Employees with no events in the period still appear
+	// with a zero count — the employee's own risk score leads the ranking.
 	type UserRisk struct {
 		EmployeeID uuid.UUID `json:"employee_id"`
 		Name       string    `json:"name"`
 		RiskScore  float64   `json:"risk_score"`
 		Events     int       `json:"events"`
 	}
-	var topUsers []UserRisk
-	// The event_type filter belongs in the JOIN condition, not WHERE: this is a
-	// LEFT JOIN, and filtering in WHERE would drop employees with no matching
-	// events instead of showing them with a zero count.
-	h.db.Raw(`SELECT e.id as employee_id,
-		e.first_name || ' ' || e.last_name as name,
-		e.risk_score,
-		COUNT(ae.id) as events
-		FROM employees e
-		LEFT JOIN activity_events ae ON ae.employee_id = e.id AND ae.timestamp >= ?
-			AND ae.action != 'allowed'`+
-		strings.ReplaceAll(typeSQL, "event_type", "ae.event_type")+`
-		WHERE e.org_id = ?
-		GROUP BY e.id, e.first_name, e.last_name, e.risk_score
-		ORDER BY risk_score DESC, events DESC
-		LIMIT 5`, append(append([]any{since}, typeArgs...), orgID)...).Scan(&topUsers)
-
-	// Events by day
-	type DayCount struct {
-		Date    string `json:"date"`
-		Total   int    `json:"total"`
-		Blocked int    `json:"blocked"`
+	var emps []models.Employee
+	h.db.Select("id", "first_name", "last_name", "risk_score").Where("org_id = ?", orgID).Find(&emps)
+	topUsers := make([]UserRisk, 0, len(emps))
+	for _, e := range emps {
+		topUsers = append(topUsers, UserRisk{
+			EmployeeID: e.ID, Name: e.FirstName + " " + e.LastName,
+			RiskScore: e.RiskScore, Events: perEmployee[e.ID],
+		})
 	}
-	var byDay []DayCount
-	h.db.Raw(`SELECT DATE(timestamp) as date,
-		COUNT(*) as total,
-		COUNT(*) FILTER (WHERE action = 'blocked') as blocked
-		FROM activity_events
-		WHERE org_id = ? AND timestamp >= ? AND action != 'allowed'`+typeSQL+`
-		GROUP BY DATE(timestamp)
-		ORDER BY date ASC`, append([]any{orgID, since}, typeArgs...)...).Scan(&byDay)
-
-	// Event type breakdown
-	type TypeCount struct {
-		EventType string `json:"event_type"`
-		Count     int    `json:"count"`
+	sort.SliceStable(topUsers, func(i, j int) bool {
+		if topUsers[i].RiskScore != topUsers[j].RiskScore {
+			return topUsers[i].RiskScore > topUsers[j].RiskScore
+		}
+		return topUsers[i].Events > topUsers[j].Events
+	})
+	if len(topUsers) > 5 {
+		topUsers = topUsers[:5]
 	}
-	// Filtered too, for consistency with every other figure — asking for one
-	// event_type collapses this to that single row rather than reporting a
-	// breakdown at a different scope than the counts above it.
-	var byType []TypeCount
-	h.db.Raw(`SELECT event_type, COUNT(*) as count
-		FROM activity_events
-		WHERE org_id = ? AND timestamp >= ? AND action != 'allowed'`+typeSQL+`
-		GROUP BY event_type ORDER BY count DESC`,
-		append([]any{orgID, since}, typeArgs...)...).Scan(&byType)
 
 	c.JSON(http.StatusOK, gin.H{
 		"stats":         stats,
@@ -370,6 +416,9 @@ func (h *ActivityHandler) createEvent(c *gin.Context) {
 		return
 	}
 
+	// Always the caller's own organization, whatever the body says.
+	event.OrgID = orgUUID(c)
+	event.ID = uuid.Nil
 	if event.Timestamp.IsZero() {
 		event.Timestamp = time.Now()
 	}
@@ -377,15 +426,10 @@ func (h *ActivityHandler) createEvent(c *gin.Context) {
 		event.Operation = operationForEventType(event.EventType)
 	}
 
-	if err := h.db.Create(&event).Error; err != nil {
+	if err := recordAndBroadcast(c.Request.Context(), h.db, h.hub, &event); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to record event"})
 		return
 	}
-
-	events := []models.ActivityEvent{event}
-	attachEmployees(h.db, events)
-	event = events[0]
-	h.hub.BroadcastActivityEvent(event)
 	c.JSON(http.StatusCreated, gin.H{"id": event.ID})
 }
 
@@ -404,7 +448,10 @@ func (h *ActivityHandler) BulkCreate(c *gin.Context) {
 		return
 	}
 
+	org := orgUUID(c)
 	for i := range events {
+		events[i].OrgID = org
+		events[i].ID = uuid.Nil
 		if events[i].Timestamp.IsZero() {
 			events[i].Timestamp = time.Now()
 		}
@@ -413,9 +460,10 @@ func (h *ActivityHandler) BulkCreate(c *gin.Context) {
 		}
 	}
 
-	// Blocked pages fold per host (see recordDeduped): a browser retries a
-	// blocked page, and http→https redirects hit the block twice. Everything
-	// else in the batch is inserted as-is.
+	// Blocked pages fold per host (see dataplane.RecordDeduped): a browser
+	// retries a blocked page, and http→https redirects hit the block twice.
+	// Everything else in the batch is inserted as-is.
+	ctx := c.Request.Context()
 	var plain, stored []models.ActivityEvent
 	for i := range events {
 		key := ""
@@ -426,7 +474,7 @@ func (h *ActivityHandler) BulkCreate(c *gin.Context) {
 			plain = append(plain, events[i])
 			continue
 		}
-		_, dup, err := recordDeduped(h.db, &events[i], key, webBlockDedupeWindow, nil)
+		_, dup, err := dataplane.RecordDeduped(ctx, org, &events[i], key, webBlockDedupeWindow, nil)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to batch insert events"})
 			return
@@ -436,7 +484,7 @@ func (h *ActivityHandler) BulkCreate(c *gin.Context) {
 		}
 	}
 	if len(plain) > 0 {
-		if err := h.db.CreateInBatches(&plain, 100).Error; err != nil {
+		if err := dataplane.RecordEvents(ctx, org, eventPtrs(plain)...); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to batch insert events"})
 			return
 		}
@@ -445,11 +493,7 @@ func (h *ActivityHandler) BulkCreate(c *gin.Context) {
 
 	// Look up each distinct employee once so live broadcasts can show a name,
 	// not just an ID, in the company dashboard.
-	attachEmployees(h.db, events)
-
-	for _, ev := range events {
-		h.hub.BroadcastActivityEvent(ev)
-	}
+	broadcastEvents(h.db, h.hub, events)
 
 	c.JSON(http.StatusCreated, gin.H{"created": len(events)})
 }

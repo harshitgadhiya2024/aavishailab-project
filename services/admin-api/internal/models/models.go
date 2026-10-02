@@ -506,7 +506,7 @@ type ActivityEvent struct {
 	ID         uuid.UUID   `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()" json:"id"`
 	OrgID      uuid.UUID   `gorm:"type:uuid;not null;index;index:idx_activity_org_domain,priority:1" json:"org_id"`
 	EmployeeID *uuid.UUID  `gorm:"type:uuid;index" json:"employee_id"`
-	DeviceID   *uuid.UUID  `gorm:"type:uuid;index" json:"device_id"`
+	DeviceID   *uuid.UUID  `gorm:"type:uuid;index;index:idx_activity_device_dedupe,priority:1" json:"device_id"`
 	EventType  EventType   `gorm:"type:event_type;not null;index" json:"event_type"`
 	Action     EventAction `gorm:"type:event_action;default:'logged';index" json:"action"`
 	Target     string      `json:"target"`
@@ -538,7 +538,12 @@ type ActivityEvent struct {
 	GeoCountry    string         `json:"geo_country"`
 	GeoCity       string         `json:"geo_city"`
 	Metadata      map[string]any `gorm:"type:jsonb;serializer:json" json:"metadata"`
-	Timestamp     time.Time      `gorm:"index;index:idx_activity_timestamp_domain,priority:1" json:"timestamp"`
+	// DedupeKey identifies "the same action reported again" (see
+	// handlers/event_dedupe.go). A column rather than only metadata.dedupe_key
+	// so the fold lookup is a plain indexed equality on every database a
+	// company can bring — not a Postgres-only jsonb operator.
+	DedupeKey string    `gorm:"index:idx_activity_device_dedupe,priority:2" json:"-"`
+	Timestamp time.Time `gorm:"index;index:idx_activity_timestamp_domain,priority:1" json:"timestamp"`
 	CreatedAt     time.Time      `json:"created_at"`
 
 	// references:ID — see the note on Employee.Devices above.

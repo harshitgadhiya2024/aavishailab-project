@@ -1,6 +1,6 @@
-import { Laptop, ShieldCheck, FileWarning, CreditCard, UserCog, HelpCircle, type LucideIcon } from "lucide-react";
+import { Laptop, ShieldCheck, FileWarning, CreditCard, UserCog, HelpCircle, Database, type LucideIcon } from "lucide-react";
 
-export type TopicId = "agent" | "policies" | "data_protection" | "billing" | "account" | "other";
+export type TopicId = "agent" | "policies" | "data_protection" | "billing" | "account" | "data_residency" | "other";
 
 export const TOPICS: { id: TopicId; label: string; hint: string; icon: LucideIcon }[] = [
   { id: "agent", label: "Agent & devices", hint: "Installing, enrolling, a device offline or showing a warning", icon: Laptop },
@@ -8,6 +8,7 @@ export const TOPICS: { id: TopicId; label: string; hint: string; icon: LucideIco
   { id: "data_protection", label: "Data protection", hint: "DLP findings, false positives, sensitive data alerts", icon: FileWarning },
   { id: "billing", label: "Billing & plans", hint: "Invoices, seats, upgrading or renewing", icon: CreditCard },
   { id: "account", label: "Account & access", hint: "Signing in, admins, roles and permissions", icon: UserCog },
+  { id: "data_residency", label: "Data residency & storage", hint: "Keeping data on your own database or storage, or a new provider", icon: Database },
   { id: "other", label: "Something else", hint: "Anything that doesn't fit above", icon: HelpCircle },
 ];
 

@@ -5,10 +5,12 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/aavishield/admin-api/internal/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"github.com/aavishield/admin-api/internal/dataplane"
+	"github.com/aavishield/admin-api/internal/models"
 )
 
 // ComplianceHandler covers the two ends of an org's data lifecycle a
@@ -67,7 +69,10 @@ func (h *ComplianceHandler) Export(c *gin.Context) {
 	h.db.Where("org_id = ?", orgID).Find(&bundle.Policies)
 	h.db.Where("org_id = ?", orgID).Find(&bundle.DomainRules)
 	h.db.Where("org_id = ?", orgID).Find(&bundle.CASBRules)
-	h.db.Where("org_id = ?", orgID).Order("timestamp DESC").Limit(10000).Find(&bundle.RecentActivity)
+	// Only activity Aavishield itself holds. A company on its own storage
+	// already has every row in its own database; the export never reaches
+	// into it.
+	bundle.RecentActivity, _ = dataplane.Primary().FindEvents(c.Request.Context(), dataplane.EventQuery{OrgID: orgID, Limit: 10000})
 	h.db.Where("org_id = ?", orgID).Find(&bundle.BillingRecords)
 
 	writeAudit(h.db, c, &orgID, "export", "organization", &orgID, map[string]any{"org_name": org.Name})
@@ -131,7 +136,12 @@ func (h *ComplianceHandler) Purge(c *gin.Context) {
 		tx.Unscoped().Where("org_id = ?", orgID).Delete(&models.Policy{})
 		tx.Unscoped().Where("org_id = ?", orgID).Delete(&models.DomainRule{})
 		tx.Unscoped().Where("org_id = ?", orgID).Delete(&models.CASBRule{})
+		// Employee data Aavishield holds. A company's own database and bucket
+		// are its own: purging the account does not reach into them.
 		tx.Unscoped().Where("org_id = ?", orgID).Delete(&models.ActivityEvent{})
+		tx.Unscoped().Where("org_id = ?", orgID).Delete(&models.Screenshot{})
+		tx.Unscoped().Where("org_id = ?", orgID).Delete(&models.WorkSession{})
+		tx.Unscoped().Where("org_id = ?", orgID).Delete(&models.OrgDataResidency{})
 		tx.Unscoped().Where("org_id = ?", orgID).Delete(&models.BillingRecord{})
 		tx.Unscoped().Where("flag_id IN (SELECT id FROM feature_flags) AND org_id = ?", orgID).Delete(&models.FeatureFlagOrg{})
 		tx.Where("ticket_id IN (SELECT id FROM support_tickets WHERE org_id = ?)", orgID).Delete(&models.SupportTicketAttachment{})
@@ -141,5 +151,6 @@ func (h *ComplianceHandler) Purge(c *gin.Context) {
 		return nil
 	})
 
+	dataplane.Invalidate(orgID)
 	c.JSON(http.StatusOK, gin.H{"message": "Organization permanently purged"})
 }

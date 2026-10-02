@@ -6,10 +6,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aavishield/admin-api/internal/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"github.com/aavishield/admin-api/internal/dataplane"
+	"github.com/aavishield/admin-api/internal/models"
 )
 
 type AppControlHandler struct{ db *gorm.DB }
@@ -497,9 +499,17 @@ func (h *AppControlHandler) DeleteApplication(c *gin.Context) {
 func (h *AppControlHandler) Events(c *gin.Context) {
 	orgID, _ := uuid.Parse(c.GetString("scoped_org_id"))
 
-	var events []models.ActivityEvent
-	h.db.Where("org_id = ? AND event_type = ?", orgID, models.EventTypeProcessStart).
-		Order("timestamp DESC").Limit(100).Find(&events)
+	st, ok := eventStore(c, orgID.String())
+	if !ok {
+		return
+	}
+	events, err := st.FindEvents(c.Request.Context(), dataplane.EventQuery{
+		OrgID: orgID, EventTypes: dataplane.Strings(models.EventTypeProcessStart), Limit: 100,
+	})
+	if err != nil {
+		respondStoreError(c, err)
+		return
+	}
 	attachEmployees(h.db, events)
 
 	c.JSON(http.StatusOK, gin.H{"events": events, "total": len(events)})
@@ -639,7 +649,7 @@ func (h *AgentHandler) ReportAppBlock(c *gin.Context) {
 	if appKey == "" {
 		appKey = strings.ToLower(in.AppName)
 	}
-	_, dup, err := recordDeduped(h.db, &event, "app|"+appKey, appBlockDedupeWindow, nil)
+	_, dup, err := dataplane.RecordDeduped(c.Request.Context(), orgID, &event, "app|"+appKey, appBlockDedupeWindow, nil)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to record the event"})
 		return
@@ -649,9 +659,7 @@ func (h *AgentHandler) ReportAppBlock(c *gin.Context) {
 		return
 	}
 
-	events := []models.ActivityEvent{event}
-	attachEmployees(h.db, events)
-	h.hub.BroadcastActivityEvent(events[0])
+	broadcastEvents(h.db, h.hub, []models.ActivityEvent{event})
 
 	c.JSON(http.StatusOK, gin.H{"recorded": true})
 }
@@ -724,7 +732,7 @@ func (h *AgentHandler) ReportBrowserExtension(c *gin.Context) {
 	if extKey == "" {
 		extKey = strings.ToLower(name)
 	}
-	_, dup, err := recordDeduped(h.db, &event, "ext|"+extKey+"|"+operation, extensionDedupeWindow, mergeExtensionProfiles)
+	_, dup, err := dataplane.RecordDeduped(c.Request.Context(), orgID, &event, "ext|"+extKey+"|"+operation, extensionDedupeWindow, mergeExtensionProfiles)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to record the event"})
 		return
@@ -734,9 +742,7 @@ func (h *AgentHandler) ReportBrowserExtension(c *gin.Context) {
 		return
 	}
 
-	events := []models.ActivityEvent{event}
-	attachEmployees(h.db, events)
-	h.hub.BroadcastActivityEvent(events[0])
+	broadcastEvents(h.db, h.hub, []models.ActivityEvent{event})
 
 	c.JSON(http.StatusOK, gin.H{"recorded": true})
 }

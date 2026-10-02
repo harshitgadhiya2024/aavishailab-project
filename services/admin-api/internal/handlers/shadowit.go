@@ -6,11 +6,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aavishield/admin-api/internal/models"
-	"github.com/aavishield/admin-api/internal/shadowitclient"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"github.com/aavishield/admin-api/internal/dataplane"
+	"github.com/aavishield/admin-api/internal/models"
+	"github.com/aavishield/admin-api/internal/shadowitclient"
 )
 
 type ShadowITHandler struct {
@@ -58,14 +60,22 @@ func (h *ShadowITHandler) DiscoveredApps(c *gin.Context) {
 		FirstSeen    *time.Time
 		LastSeen     *time.Time
 	}
-	var rows []aggRow
-	h.db.Model(&models.ActivityEvent{}).
-		Select("target_domain, count(*) as events, count(distinct employee_id) as users, min(timestamp) as first_seen, max(timestamp) as last_seen").
-		Where("org_id = ? AND target_domain <> '' AND action != ?", orgID, models.EventActionAllowed).
-		Group("target_domain").
-		Order("events desc").
-		Limit(limit).
-		Scan(&rows)
+	st, ok := eventStore(c, orgID)
+	if !ok {
+		return
+	}
+	groups, err := st.GroupEvents(c.Request.Context(), dataplane.EventQuery{
+		OrgID: orgUUID(c), HasTargetDomain: true,
+		NotActions: dataplane.Strings(models.EventActionAllowed),
+	}, "target_domain", limit)
+	if err != nil {
+		respondStoreError(c, err)
+		return
+	}
+	rows := make([]aggRow, 0, len(groups))
+	for _, g := range groups {
+		rows = append(rows, aggRow{TargetDomain: g.Key, Events: g.Count, Users: g.Employees, FirstSeen: g.First, LastSeen: g.Last})
+	}
 
 	if len(rows) == 0 {
 		c.JSON(http.StatusOK, gin.H{"apps": []discoveredApp{}, "total": 0})

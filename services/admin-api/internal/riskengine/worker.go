@@ -1,12 +1,15 @@
 package riskengine
 
 import (
+	"context"
 	"log"
 	"strings"
 	"time"
 
-	"github.com/aavishield/admin-api/internal/models"
 	"gorm.io/gorm"
+
+	"github.com/aavishield/admin-api/internal/dataplane"
+	"github.com/aavishield/admin-api/internal/models"
 )
 
 // AssessmentWorker periodically scans recently-visited domains that haven't
@@ -26,7 +29,19 @@ type AssessmentWorker struct {
 	db       *gorm.DB
 	interval time.Duration
 	lookback time.Duration
+
+	lastTenantScan time.Time
 }
+
+// Companies that keep employee data in their own database are scanned less
+// often than Aavishield's (every tenantScanEvery, over the last
+// tenantLookback): each scan is a query against someone else's server. Only
+// domain names come back — never who visited them — and they feed the same
+// platform-wide assessment as everyone else's.
+const (
+	tenantScanEvery = 5 * time.Minute
+	tenantLookback  = 30 * time.Minute
+)
 
 func NewAssessmentWorker(db *gorm.DB, interval, lookback time.Duration) *AssessmentWorker {
 	return &AssessmentWorker{db: db, interval: interval, lookback: lookback}
@@ -43,6 +58,10 @@ func (w *AssessmentWorker) Start() {
 
 func (w *AssessmentWorker) tick() {
 	domains := w.unassessedRecentDomains()
+	if time.Since(w.lastTenantScan) >= tenantScanEvery {
+		w.lastTenantScan = time.Now()
+		domains = append(domains, w.unassessedTenantDomains()...)
+	}
 	for _, domain := range domains {
 		a := Assess(w.db, domain)
 		PersistAssessment(w.db, a)
@@ -93,4 +112,53 @@ func (w *AssessmentWorker) createRiskBlock(a Assessment) {
 		Enabled:   true,
 	}
 	w.db.Create(&rule)
+}
+
+// unassessedTenantDomains is unassessedRecentDomains for companies on their
+// own database: the domains come from their stores, the "already ruled or
+// assessed" filter from Aavishield's tables.
+func (w *AssessmentWorker) unassessedTenantDomains() []string {
+	ctx := context.Background()
+	orgs, err := dataplane.TenantOrgs(ctx)
+	if err != nil || len(orgs) == 0 {
+		return nil
+	}
+	seen := map[string]bool{}
+	var candidates []string
+	for _, org := range orgs {
+		st, err := dataplane.Events(ctx, org)
+		if err != nil {
+			continue
+		}
+		groups, err := st.GroupEvents(ctx, dataplane.EventQuery{
+			OrgID: org, Since: time.Now().Add(-tenantLookback), HasTargetDomain: true,
+		}, "target_domain", 500)
+		if err != nil {
+			continue
+		}
+		for _, g := range groups {
+			d := strings.ToLower(g.Key)
+			if !seen[d] {
+				seen[d] = true
+				candidates = append(candidates, d)
+			}
+		}
+	}
+	if len(candidates) == 0 {
+		return nil
+	}
+	var ruled, assessed []string
+	w.db.Model(&models.DomainRule{}).Where("enabled = true AND domain IN ?", candidates).Pluck("domain", &ruled)
+	w.db.Model(&models.DomainRiskAssessment{}).Where("assessed_at >= ? AND domain IN ?", time.Now().Add(-time.Hour), candidates).Pluck("domain", &assessed)
+	skip := map[string]bool{}
+	for _, d := range append(ruled, assessed...) {
+		skip[strings.ToLower(d)] = true
+	}
+	var out []string
+	for _, d := range candidates {
+		if !skip[d] && len(out) < 200 {
+			out = append(out, d)
+		}
+	}
+	return out
 }

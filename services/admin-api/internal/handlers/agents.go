@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/aavishield/admin-api/internal/casbclient"
+	"github.com/aavishield/admin-api/internal/dataplane"
 	"github.com/aavishield/admin-api/internal/dlpclient"
 	"github.com/aavishield/admin-api/internal/mailer"
 	"github.com/aavishield/admin-api/internal/malwareclient"
@@ -481,10 +482,9 @@ func (h *AgentHandler) Heartbeat(c *gin.Context) {
 			},
 			Timestamp: now,
 		}
-		h.db.Create(&event)
-		events := []models.ActivityEvent{event}
-		attachEmployees(h.db, events)
-		h.hub.BroadcastActivityEvent(events[0])
+		if err := recordAndBroadcast(c.Request.Context(), h.db, h.hub, &event); err != nil {
+			log.Printf("activity event not stored: %v", err)
+		}
 	}
 
 	resp := gin.H{"status": "ok", "server_time": now}
@@ -562,12 +562,16 @@ func (h *AgentHandler) deviceOwnership(deviceID, orgID uuid.UUID) string {
 // whose laptop happened to cross midnight first.
 func (h *AgentHandler) postureLoggedToday(orgID, deviceID uuid.UUID, now time.Time) bool {
 	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	var count int64
-	h.db.Model(&models.ActivityEvent{}).
-		Where("org_id = ? AND device_id = ? AND category = ? AND timestamp >= ?",
-			orgID, deviceID, "device_posture", dayStart).
-		Count(&count)
-	return count > 0
+	st, err := dataplane.Events(context.Background(), orgID)
+	if err != nil {
+		// Can't tell — say yes. Otherwise every heartbeat (~30s) while the
+		// company's database is down would queue another identical row.
+		return true
+	}
+	count, err := st.CountEvents(context.Background(), dataplane.EventQuery{
+		OrgID: orgID, DeviceID: &deviceID, Categories: []string{"device_posture"}, Since: dayStart, Limit: 1,
+	})
+	return err != nil || count > 0
 }
 
 // GetConfig handles GET /internal/agent/config
@@ -860,10 +864,9 @@ func (h *AgentHandler) ScanFile(c *gin.Context) {
 			},
 			Timestamp: time.Now(),
 		}
-		h.db.Create(&event)
-		events := []models.ActivityEvent{event}
-		attachEmployees(h.db, events)
-		h.hub.BroadcastActivityEvent(events[0])
+		if err := recordAndBroadcast(c.Request.Context(), h.db, h.hub, &event); err != nil {
+			log.Printf("activity event not stored: %v", err)
+		}
 		h.alertAdmins(orgID, empID, "Malware blocked in a download", filename, v.signature, v.score, v.action)
 	}
 
@@ -1109,7 +1112,7 @@ func (h *AgentHandler) ScanDLP(c *gin.Context) {
 		},
 		Timestamp: time.Now(),
 	}
-	prior, dup, err := h.createUnlessDuplicate(&event, deviceID, v.previews, filename)
+	prior, dup, err := h.createUnlessDuplicate(c.Request.Context(), &event, v.previews, filename)
 	if err != nil {
 		log.Printf("dlp event not stored: %v", err)
 	}
@@ -1122,9 +1125,7 @@ func (h *AgentHandler) ScanDLP(c *gin.Context) {
 		c.JSON(http.StatusOK, resp)
 		return
 	}
-	events := []models.ActivityEvent{event}
-	attachEmployees(h.db, events)
-	h.hub.BroadcastActivityEvent(events[0])
+	broadcastEvents(h.db, h.hub, []models.ActivityEvent{event})
 	h.alertAdmins(orgID, empID, "Sensitive data left the company", insp.Destination,
 		strings.Join(v.detectors, ", "), v.score, v.action)
 
@@ -1144,7 +1145,8 @@ func (h *AgentHandler) ScanDLP(c *gin.Context) {
 const dlpDuplicateWindow = 60 * time.Second
 
 // createUnlessDuplicate stores a DLP event unless it repeats one the device
-// just recorded (see recordDeduped), and reports the kept row when it does.
+// just recorded (see dataplane.RecordDeduped), and reports the kept row when
+// it does.
 //
 //   - File uploads fold on identical masked matches within dlpDuplicateWindow:
 //     Teams uploads one attached image twice (the file, and an inline preview),
@@ -1155,10 +1157,10 @@ const dlpDuplicateWindow = 60 * time.Second
 //     every few seconds, and each save carries the whole draft, so one email
 //     being written used to become one incident per autosave. The kept row
 //     takes the highest score seen.
-func (h *AgentHandler) createUnlessDuplicate(event *models.ActivityEvent, deviceID uuid.UUID, previews []string, filename string) (uuid.UUID, bool, error) {
+func (h *AgentHandler) createUnlessDuplicate(ctx context.Context, event *models.ActivityEvent, previews []string, filename string) (uuid.UUID, bool, error) {
 	if event.Operation == OpFileUpload {
 		matches, _ := json.Marshal(previews)
-		return recordDeduped(h.db, event, "dlp-file|"+string(matches), dlpDuplicateWindow,
+		return dataplane.RecordDeduped(ctx, event.OrgID, event, "dlp-file|"+string(matches), dlpDuplicateWindow,
 			func(kept, next *models.ActivityEvent) {
 				if kept.Target == "" && filename != "" {
 					kept.Target = filename
@@ -1171,7 +1173,7 @@ func (h *AgentHandler) createUnlessDuplicate(event *models.ActivityEvent, device
 	}
 	path, _ := event.Metadata["path"].(string)
 	detectors, _ := event.Metadata["detectors"].([]string)
-	return recordDeduped(h.db, event, dlpTextDedupeKey(site, path, detectors), dlpTextDedupeWindow, keepWorstDLP)
+	return dataplane.RecordDeduped(ctx, event.OrgID, event, dlpTextDedupeKey(site, path, detectors), dlpTextDedupeWindow, keepWorstDLP)
 }
 
 func truncateRunes(s string, max int) string {
@@ -1870,18 +1872,17 @@ func (h *AgentHandler) ReportActivity(c *gin.Context) {
 		}
 	}
 
-	if err := h.db.CreateInBatches(events, 100).Error; err != nil {
+	for i := range events {
+		events[i].ID = uuid.Nil // the server assigns IDs, never the agent
+	}
+	if err := dataplane.RecordEvents(c.Request.Context(), orgID, eventPtrs(events)...); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save events"})
 		return
 	}
 
 	// Look up the employee once so live broadcasts can show a name, not just
 	// an ID, in the company dashboard.
-	attachEmployees(h.db, events)
-
-	for _, ev := range events {
-		h.hub.BroadcastActivityEvent(ev)
-	}
+	broadcastEvents(h.db, h.hub, events)
 
 	c.JSON(http.StatusCreated, gin.H{"created": len(events)})
 }
@@ -1932,14 +1933,26 @@ func (h *AgentHandler) GetDevice(c *gin.Context) {
 	attachEmployeesToDevices(h.db, devices)
 	device = devices[0]
 
-	var recentEvents []models.ActivityEvent
-	h.db.Where("device_id = ?", device.ID).
-		Order("timestamp DESC").Limit(20).Find(&recentEvents)
-
+	// The device itself is always shown; its recent activity comes from
+	// wherever the company keeps employee data, and the page says so if that
+	// can't be reached instead of failing as a whole.
 	org, _ := uuid.Parse(orgID)
+	recentEvents := []models.ActivityEvent{}
+	eventsAvailable := true
+	if st, err := dataplane.Events(c.Request.Context(), org); err == nil {
+		if evs, err := st.FindEvents(c.Request.Context(), dataplane.EventQuery{OrgID: org, DeviceID: &device.ID, Limit: 20}); err == nil {
+			recentEvents = evs
+		} else {
+			eventsAvailable = false
+		}
+	} else {
+		eventsAvailable = false
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"device":        device,
-		"recent_events": recentEvents,
+		"device":           device,
+		"recent_events":    recentEvents,
+		"events_available": eventsAvailable,
 		"enforcement":   deviceEnforcement(h.db, org, &device.ID, teamIDForDevice(h.db, &device), time.Now()),
 	})
 }
