@@ -8,6 +8,7 @@ import (
 	"github.com/aavishield/admin-api/internal/mailer"
 	"github.com/aavishield/admin-api/internal/middleware"
 	"github.com/aavishield/admin-api/internal/models"
+	"github.com/aavishield/admin-api/internal/secretbox"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
@@ -81,6 +82,21 @@ func orgRequiresMFA(db *gorm.DB, orgID *uuid.UUID) bool {
 // Setup handles POST /auth/mfa/setup — issues a secret and the QR payload.
 // Nothing is enabled yet: the secret is parked on the user until a code proves
 // their authenticator has it.
+// mfaSecretLabel namespaces the key that seals TOTP secrets at rest.
+const mfaSecretLabel = "mfa-totp"
+
+// mfaSecret decrypts a stored TOTP secret, tolerating a legacy plaintext value.
+func mfaSecret(stored string) string {
+	if stored == "" {
+		return ""
+	}
+	plain, err := secretbox.Open(mfaSecretLabel, stored)
+	if err != nil {
+		return "" // unreadable secret can't verify any code
+	}
+	return plain
+}
+
 func (h *MFAHandler) Setup(c *gin.Context) {
 	user, ok := h.currentUser(c)
 	if !ok {
@@ -96,7 +112,12 @@ func (h *MFAHandler) Setup(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not start setup"})
 		return
 	}
-	h.db.Model(user).Update("mfa_secret", secret)
+	sealed, err := secretbox.Seal(mfaSecretLabel, secret)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not start setup"})
+		return
+	}
+	h.db.Model(user).Update("mfa_secret", sealed)
 
 	issuer := "Aavishield"
 	if user.Org != nil && user.Org.Name != "" {
@@ -282,7 +303,7 @@ func (h *MFAHandler) Verify(c *gin.Context) {
 	}
 
 	usedRecoveryCode := false
-	if !auth.VerifyTOTP(user.MFASecret, req.Code) {
+	if !auth.VerifyTOTP(mfaSecret(user.MFASecret), req.Code) {
 		if !h.consumeRecoveryCode(user.ID, req.Code) {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "That code is not valid"})
 			return

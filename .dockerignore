@@ -1,0 +1,15 @@
+# Never ship secrets, VCS metadata, or local build junk into any image context.
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+.git
+.github
+**/node_modules
+**/.next
+**/target
+**/*.log
+*.dump
+*.bundle
+.DS_Store

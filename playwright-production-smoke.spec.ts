@@ -6,9 +6,12 @@ const COMPANY = process.env.E2E_COMPANY_URL || "https://aavishield-app.aavishail
 const EMPLOYEE = process.env.E2E_EMPLOYEE_URL || "https://aavishield-employee.aavishailab.com";
 const SUPERADMIN = process.env.E2E_SUPERADMIN_URL || "https://aavishield-admin.aavishailab.com";
 
-const COMPANY_ADMIN = { email: "admin@acme.com", password: "Admin@123" };
-const EMPLOYEE_USER = { email: "employee@acme.com", password: "Employee@123" };
-const SUPERADMIN_USER = { email: "superadmin@aavishield.com", password: "SuperAdmin@123" };
+// Credentials come from the CI environment — never hardcode real or default
+// account passwords in a tracked file. The smoke test is skipped if they are
+// not provided.
+const COMPANY_ADMIN = { email: process.env.E2E_COMPANY_EMAIL || "", password: process.env.E2E_COMPANY_PASSWORD || "" };
+const EMPLOYEE_USER = { email: process.env.E2E_EMPLOYEE_EMAIL || "", password: process.env.E2E_EMPLOYEE_PASSWORD || "" };
+const SUPERADMIN_USER = { email: process.env.E2E_SUPERADMIN_EMAIL || "", password: process.env.E2E_SUPERADMIN_PASSWORD || "" };
 
 async function apiLogin(request: APIRequestContext, email: string, password: string, panel: "company" | "superadmin") {
   const res = await request.post(`${API}/api/v1/auth/login`, {

@@ -197,7 +197,11 @@ func connectStores() (*gorm.DB, *redis.Client, error) {
 		return nil, nil, fmt.Errorf("failed to seed applications: %w", err)
 	}
 
-	if os.Getenv("APP_ENV") != "production" {
+	// Dev seed data ships well-known default-password accounts (admin@acme.com
+	// etc.). It is gated on an explicit opt-in, not merely on APP_ENV, so a
+	// non-production-but-internet-reachable environment can never stand up with
+	// those credentials by accident.
+	if os.Getenv("APP_ENV") != "production" && os.Getenv("SEED_DEV_DATA") == "true" {
 		if err := database.SeedDevData(db); err != nil {
 			return nil, nil, fmt.Errorf("failed to seed development data: %w", err)
 		}

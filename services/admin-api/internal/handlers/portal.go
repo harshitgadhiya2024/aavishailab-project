@@ -14,22 +14,25 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
 	"github.com/aavishield/admin-api/internal/auth"
+	"github.com/aavishield/admin-api/internal/authpolicy"
 	"github.com/aavishield/admin-api/internal/dataplane"
 	"github.com/aavishield/admin-api/internal/mailer"
 	"github.com/aavishield/admin-api/internal/models"
 )
 
 type PortalHandler struct {
-	db  *gorm.DB
-	hub *WebSocketHub
+	db      *gorm.DB
+	hub     *WebSocketHub
+	lockout *authpolicy.Lockout
 }
 
-func NewPortalHandler(db *gorm.DB, hub *WebSocketHub) *PortalHandler {
-	return &PortalHandler{db: db, hub: hub}
+func NewPortalHandler(db *gorm.DB, hub *WebSocketHub, rdb *redis.Client) *PortalHandler {
+	return &PortalHandler{db: db, hub: hub, lockout: authpolicy.NewLockout(rdb)}
 }
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
@@ -135,9 +138,17 @@ func (h *PortalHandler) Login(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
+	if locked, retry := h.lockout.Locked(ctx, "portal", req.Email); locked {
+		c.Header("Retry-After", retryAfterSeconds(retry))
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "Too many failed sign-ins. Try again in a few minutes."})
+		return
+	}
+
 	var emp models.Employee
 	if err := h.db.Where("email = ? AND status = 'active'", req.Email).
 		Preload("Team").First(&emp).Error; err != nil {
+		h.lockout.Fail(ctx, "portal", req.Email)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password"})
 		return
 	}
@@ -148,9 +159,11 @@ func (h *PortalHandler) Login(c *gin.Context) {
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(emp.PortalPasswordHash), []byte(req.Password)); err != nil {
+		h.lockout.Fail(ctx, "portal", req.Email)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password"})
 		return
 	}
+	h.lockout.Reset(ctx, "portal", req.Email)
 
 	payload, err := h.portalAuthPayload(c, &emp)
 	if err != nil {
@@ -191,6 +204,11 @@ func (h *PortalHandler) Signup(c *gin.Context) {
 
 	if emp.PortalPasswordHash != "" {
 		c.JSON(http.StatusConflict, gin.H{"error": "This account is already activated. Please sign in instead."})
+		return
+	}
+
+	if reason := authpolicy.ValidatePassword(req.Password, req.Email); reason != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": reason})
 		return
 	}
 
@@ -269,6 +287,15 @@ func (h *PortalHandler) ResetPassword(c *gin.Context) {
 		return
 	}
 
+	var rEmp models.Employee
+	if prt.EmployeeID != nil {
+		h.db.Select("email").First(&rEmp, "id = ?", *prt.EmployeeID)
+	}
+	if reason := authpolicy.ValidatePassword(req.NewPassword, rEmp.Email); reason != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": reason})
+		return
+	}
+
 	newHash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
@@ -312,6 +339,10 @@ func (h *PortalHandler) ChangePassword(c *gin.Context) {
 		// there is no password to verify against, so "change" doesn't apply.
 		// ForgotPassword still works for these accounts and sets one.
 		c.JSON(http.StatusBadRequest, gin.H{"error": "This account signs in with Google or Apple — there's no password to change."})
+		return
+	}
+	if reason := authpolicy.ValidatePassword(req.NewPassword, emp.Email); reason != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": reason})
 		return
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(emp.PortalPasswordHash), []byte(req.CurrentPassword)); err != nil {

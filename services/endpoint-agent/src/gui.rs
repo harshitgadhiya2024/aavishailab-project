@@ -196,7 +196,7 @@ impl eframe::App for ConnectorApp {
 
         let snap = self.ui_state.snapshot();
 
-        if self.brand.as_ref().map_or(true, |b| b.pixels_per_point != ctx.pixels_per_point()) {
+        if self.brand.as_ref().is_none_or(|b| b.pixels_per_point != ctx.pixels_per_point()) {
             self.brand = BrandTextures::load(&ctx);
         }
 

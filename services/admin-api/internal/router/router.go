@@ -39,7 +39,7 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 
 	// ─── Handlers ────────────────────────────────────────────────────────────
 	wsHub := handlers.NewWebSocketHub()
-	authH := handlers.NewAuthHandler(db)
+	authH := handlers.NewAuthHandler(db, rdb)
 	empH := handlers.NewEmployeeHandler(db)
 	teamH := handlers.NewTeamHandler(db)
 	policyH := handlers.NewPolicyHandler(db)
@@ -48,7 +48,7 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	swgH := handlers.NewSWGHandler(db)
 	policySigner := policysig.New()
 	agentH := handlers.NewAgentHandler(db, wsHub, rdb, policySigner)
-	portalH := handlers.NewPortalHandler(db, wsHub)
+	portalH := handlers.NewPortalHandler(db, wsHub, rdb)
 	arH := handlers.NewAccessRequestHandler(db)
 	shadowH := handlers.NewShadowITHandler(db)
 	casbH := handlers.NewCASBHandler(db)
@@ -111,7 +111,14 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	r.POST("/webhooks/razorpay", billingH.Webhook)
 
 	// ─── Health ───────────────────────────────────────────────────────────────
+	// Public liveness only: a 200 and a bare status. Component detail
+	// (database/redis reachability) is reconnaissance, so it moves behind the
+	// same operator token as /metrics. The Docker healthcheck only checks for
+	// a 200, so trimming the body doesn't affect it.
 	r.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "admin-api"})
+	})
+	r.GET("/health/detailed", middleware.InternalMetricsAuth(), func(c *gin.Context) {
 		sqlDB, _ := db.DB()
 		dbOk := sqlDB.Ping() == nil
 		redisOk := rdb.Ping(c.Request.Context()).Err() == nil
@@ -128,7 +135,10 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	})
 
 	// ─── Metrics ──────────────────────────────────────────────────────────────
-	r.GET("/metrics", metrics.Handler)
+	// Behind an operator bearer token: the exposition leaks the full route map
+	// and traffic volumes, so it is not anonymous — even though the only way
+	// in from outside is the public API hostname via the tunnel.
+	r.GET("/metrics", middleware.InternalMetricsAuth(), metrics.Handler)
 
 	// ─── WebSocket ────────────────────────────────────────────────────────────
 	r.GET("/ws", wsHub.Serve)

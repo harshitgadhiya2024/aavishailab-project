@@ -8,21 +8,36 @@ import (
 	"time"
 
 	"github.com/aavishield/admin-api/internal/auth"
+	"github.com/aavishield/admin-api/internal/authpolicy"
 	"github.com/aavishield/admin-api/internal/mailer"
 	"github.com/aavishield/admin-api/internal/middleware"
 	"github.com/aavishield/admin-api/internal/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
 type AuthHandler struct {
-	db *gorm.DB
+	db      *gorm.DB
+	lockout *authpolicy.Lockout
 }
 
-func NewAuthHandler(db *gorm.DB) *AuthHandler {
-	return &AuthHandler{db: db}
+func NewAuthHandler(db *gorm.DB, rdb *redis.Client) *AuthHandler {
+	return &AuthHandler{db: db, lockout: authpolicy.NewLockout(rdb)}
+}
+
+// requiresTOTPSetup reports whether this account must enrol an authenticator
+// app (rather than fall back to email OTP). Gated on REQUIRE_SUPERADMIN_TOTP
+// and limited to superadmins: it is OFF by default because the superadmin
+// console does not yet support authenticator-app sign-in or enrolment, so
+// turning it on before that UI exists would strand the only superadmin at
+// login. Superadmins still always pass a second factor (email OTP) today;
+// this flag upgrades that to a mandatory authenticator once the console can
+// handle it.
+func (h *AuthHandler) requiresTOTPSetup(user *models.User) bool {
+	return user.Role == models.RoleSuperAdmin && os.Getenv("REQUIRE_SUPERADMIN_TOTP") == "true"
 }
 
 type LoginRequest struct {
@@ -85,15 +100,35 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	if err := query.Preload("Org").First(&user).Error; err != nil {
+		scope := "company"
+		if req.Panel == "superadmin" {
+			scope = "superadmin"
+		}
+		h.lockout.Fail(c.Request.Context(), scope, req.Email)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password"})
+		return
+	}
+
+	// Per-account lockout: a password-spray spread over many IPs is invisible
+	// to the per-IP limiter, so one account's failures are counted too.
+	scope := "company"
+	if req.Panel == "superadmin" {
+		scope = "superadmin"
+	}
+	ctx := c.Request.Context()
+	if locked, retry := h.lockout.Locked(ctx, scope, req.Email); locked {
+		c.Header("Retry-After", retryAfterSeconds(retry))
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "Too many failed sign-ins. Try again in a few minutes."})
 		return
 	}
 
 	// Check password
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
+		h.lockout.Fail(ctx, scope, req.Email)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password"})
 		return
 	}
+	h.lockout.Reset(ctx, scope, req.Email)
 
 	// Check status
 	if user.Status != models.StatusActive {
@@ -114,6 +149,23 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			"mfa_token":    challenge,
 			"code":         "MFA_REQUIRED",
 			"message":      "Enter the 6-digit code from your authenticator app.",
+		})
+		return
+	}
+
+	// Superadmin without an authenticator is sent to set one up rather than
+	// dropped to the weaker email-OTP path.
+	if h.requiresTOTPSetup(&user) {
+		challenge, chErr := auth.GenerateMFAChallenge(&user)
+		if chErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to start enrolment"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"mfa_setup_required": true,
+			"mfa_token":          challenge,
+			"code":               "MFA_SETUP_REQUIRED",
+			"message":            "Superadmin accounts must use an authenticator app. Set it up to continue.",
 		})
 		return
 	}
@@ -213,6 +265,11 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	h.db.Model(&models.User{}).Where("email = ?", req.Email).Count(&existing)
 	if existing > 0 {
 		c.JSON(http.StatusConflict, gin.H{"error": "An account with this email already exists"})
+		return
+	}
+
+	if reason := authpolicy.ValidatePassword(req.Password, req.Email); reason != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": reason})
 		return
 	}
 
@@ -427,6 +484,10 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Current password is incorrect"})
 		return
 	}
+	if reason := authpolicy.ValidatePassword(req.NewPassword, user.Email); reason != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": reason})
+		return
+	}
 
 	hashed, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
 	if err != nil {
@@ -535,6 +596,13 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 		return
 	}
 
+	var resetUser models.User
+	h.db.Select("email").First(&resetUser, "id = ?", *prt.UserID)
+	if reason := authpolicy.ValidatePassword(req.NewPassword, resetUser.Email); reason != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": reason})
+		return
+	}
+
 	newHash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
@@ -603,6 +671,15 @@ func (h *AuthHandler) SocialLogin(c *gin.Context) {
 	h.db.Model(&user).Update("last_login_at", time.Now())
 
 	c.JSON(http.StatusOK, buildAuthResponse(&user, accessToken, plainRefresh))
+}
+
+// retryAfterSeconds renders a lock duration as a whole-second Retry-After value.
+func retryAfterSeconds(d time.Duration) string {
+	s := int(d.Seconds())
+	if s < 1 {
+		s = 1
+	}
+	return fmt.Sprintf("%d", s)
 }
 
 // validInternalSecret checks the X-Internal-Secret header against
