@@ -9,7 +9,7 @@ import {
   ArrowLeft, Building2, Users, Shield, Laptop, Activity, Mail, Globe,
   UserCog, Download, Trash2, Plus, X, Loader2, RefreshCw, CreditCard,
 } from "lucide-react";
-import { formatDate, formatDateTime, formatNumber, cn } from "@/lib/utils";
+import { formatDate, formatDateTime, formatNumber, cn, STATUS_STYLES } from "@/lib/utils";
 import { toast } from "sonner";
 
 const PLAN_LABELS: Record<string, string> = {
@@ -148,7 +148,10 @@ export default function OrganizationDetailPage() {
 
   const d = data.data;
   const org = d.org;
-  const isInactive = org.status !== "active";
+  // A trial is a live customer too: only an org that has been switched off
+  // may be purged (the API also refuses anything not deactivated first).
+  const isInactive = org.status === "inactive" || org.status === "suspended";
+  const st = STATUS_STYLES[org.status] ?? STATUS_STYLES.inactive;
   const billingRecords = billingData?.data?.records ?? [];
 
   const stats = [
@@ -182,12 +185,12 @@ export default function OrganizationDetailPage() {
           <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-brand-500/10 text-brand-500">
             {PLAN_LABELS[org.plan] ?? org.plan}
           </span>
-          <span className={cn(
-            "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium",
-            org.status === "active" ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400"
-          )}>
-            <span className={cn("w-1.5 h-1.5 rounded-full", org.status === "active" ? "bg-green-500" : "bg-red-400")} />
-            {org.status}
+          <span className={cn("flex items-center gap-1.5 rounded-full bg-muted px-3 py-1.5 text-xs font-medium", st.text)}>
+            <span className={cn("h-1.5 w-1.5 rounded-full", st.dot)} />
+            {st.label}
+            {org.status === "trial" && org.trial_ends_at && (
+              <span className="text-muted-foreground">· ends {formatDate(org.trial_ends_at)}</span>
+            )}
           </span>
         </div>
       </div>

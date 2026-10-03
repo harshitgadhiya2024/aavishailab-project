@@ -83,6 +83,7 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	complianceH := handlers.NewComplianceHandler(db)
 	revenueH := handlers.NewRevenueAnalyticsHandler(db)
 	ticketH := handlers.NewTicketHandler(db)
+	overviewH := handlers.NewSuperadminOverviewHandler(db)
 
 	// ─── Agent script + native packages (public — used by installers) ──────────
 	r.GET("/agent/aavishield-agent.py", handlers.ServeAgentScript)
@@ -206,6 +207,7 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	superadmin.Use(middleware.SuperAdminOnly())
 	{
 		superadmin.GET("/stats", orgH.Stats)
+		superadmin.GET("/overview", overviewH.Get)
 		superadmin.GET("/audit-log", auditH.List)
 		superadmin.GET("/system-health", healthH.Get)
 		superadmin.GET("/settings", settingsH.Get)

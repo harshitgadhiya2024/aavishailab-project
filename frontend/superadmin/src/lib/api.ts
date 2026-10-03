@@ -82,6 +82,11 @@ export const orgApi = {
     api.post(`/superadmin/organizations/${id}/impersonate`, { user_id: userId }),
 };
 
+/** Everything the Command Center shows, in one call (cached ~30s server-side). */
+export const overviewApi = {
+  get: (fresh = false) => api.get("/superadmin/overview", { params: fresh ? { fresh: 1 } : undefined }),
+};
+
 export const seatAlertApi = {
   list: () => api.get("/superadmin/seat-alerts"),
 };

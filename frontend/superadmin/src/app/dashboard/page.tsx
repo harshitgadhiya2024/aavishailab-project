@@ -1,209 +1,408 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { orgApi, seatAlertApi } from "@/lib/api";
-import { Building2, Users, Shield, Activity, TrendingUp, AlertCircle, Gauge, ChevronRight } from "lucide-react";
-import { formatNumber, formatDate } from "@/lib/utils";
+import { useSession } from "next-auth/react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend
-} from "recharts";
+  AlertOctagon, AlertTriangle, ArrowDownRight, ArrowRight, ArrowUpRight, Building2, CheckCircle2, CircleDollarSign,
+  HeartPulse, Info, Laptop, RefreshCw, ShieldCheck,
+} from "lucide-react";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { healthApi, overviewApi } from "@/lib/api";
+import { cn, formatINR, formatNumber, PLAN_LABELS, STATUS_STYLES, timeAgo } from "@/lib/utils";
 
-const PLAN_COLORS = ["#FF7000", "#FF8B33", "#FFA366", "#FFC299"];
+const AXIS = { fontSize: 11, fill: "#8A8A8A" };
+const TOOLTIP = { background: "#141414", border: "1px solid #262626", borderRadius: 8, color: "#F5F5F5", fontSize: 12 };
 
-export default function DashboardPage() {
-  const { data: stats, isLoading } = useQuery({
-    queryKey: ["org-stats"],
-    queryFn: orgApi.stats,
-    refetchInterval: 30_000,
+const SEVERITY = {
+  critical: { icon: AlertOctagon, tone: "text-red-400 bg-red-500/10", ring: "border-red-500/30" },
+  warning: { icon: AlertTriangle, tone: "text-yellow-400 bg-yellow-500/10", ring: "border-yellow-500/20" },
+  info: { icon: Info, tone: "text-sky-400 bg-sky-500/10", ring: "border-border" },
+} as const;
+
+function greeting() {
+  const h = new Date().getHours();
+  return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+}
+
+export default function CommandCenter() {
+  const qc = useQueryClient();
+  const { data: session } = useSession();
+  const name = (session as any)?.user?.first_name || (session as any)?.user?.name?.split(" ")[0] || "";
+
+  const { data, isLoading, isError, isFetching } = useQuery({
+    queryKey: ["sa-overview"],
+    queryFn: () => overviewApi.get().then((r) => r.data),
+    refetchInterval: 60_000,
   });
-
-  const { data: seatAlerts } = useQuery({
-    queryKey: ["seat-alerts"],
-    queryFn: seatAlertApi.list,
+  const { data: health } = useQuery({
+    queryKey: ["sa-health"],
+    queryFn: () => healthApi.get().then((r) => r.data),
     refetchInterval: 60_000,
   });
 
-  if (isLoading) {
+  if (isLoading) return <Skeleton />;
+  if (isError || !data) {
     return (
-      <div className="space-y-6 animate-pulse">
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="h-28 bg-card rounded-xl border border-border" />
-          ))}
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="h-72 bg-card rounded-xl border border-border" />
-          <div className="h-72 bg-card rounded-xl border border-border" />
-        </div>
+      <div className="flex items-start gap-3 rounded-xl border border-red-500/30 bg-red-500/5 p-5 text-sm text-foreground">
+        <AlertTriangle className="h-5 w-5 flex-shrink-0 text-red-400" />
+        The overview couldn&apos;t load. Check System Health, then try again.
       </div>
     );
   }
 
-  const s = stats?.data ?? {};
-
-  const metricCards = [
-    {
-      label: "Total Organizations",
-      value: formatNumber(s.total_orgs ?? 0),
-      sub: `${s.active_orgs ?? 0} active`,
-      icon: Building2,
-      color: "bg-brand-500/10 text-brand-500",
-    },
-    {
-      label: "Total Users",
-      value: formatNumber(s.total_users ?? 0),
-      sub: "across all orgs",
-      icon: Users,
-      color: "bg-green-500/10 text-green-400",
-    },
-    {
-      label: "Total Employees",
-      value: formatNumber(s.total_employees ?? 0),
-      sub: "managed endpoints",
-      icon: Shield,
-      color: "bg-purple-500/10 text-purple-400",
-    },
-    {
-      label: "Activity Events",
-      value: formatNumber(s.total_events ?? 0),
-      sub: "last 30 days",
-      icon: Activity,
-      color: "bg-brand-500/10 text-brand-500",
-    },
-  ];
-
-  const planData = Object.entries(s.by_plan ?? {}).map(([name, count]) => ({
-    name: name.charAt(0).toUpperCase() + name.slice(1),
-    value: count as number,
-  }));
-
-  const trendData = (s.trend_by_day ?? []).map((d: any) => ({
-    date: formatDate(d.date),
-    events: d.count,
-  }));
+  const b = data.business ?? {};
+  const cu = data.customers ?? {};
+  const fl = data.fleet ?? {};
+  const us = data.usage ?? {};
+  const attention: any[] = data.attention ?? [];
+  const growth = (cu.new_30d ?? 0) - (cu.new_prev_30d ?? 0);
+  const blocked14 = (us.events_by_day ?? []).reduce((s: number, d: any) => s + (d.blocked ?? 0), 0);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-foreground">Platform Overview</h2>
-        <p className="text-sm text-muted-foreground mt-1">Real-time metrics across all organizations</p>
-      </div>
-
-      {/* Metric Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-        {metricCards.map((c) => (
-          <div key={c.label} className="bg-card rounded-xl p-5 border border-border shadow-sm">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">{c.label}</p>
-                <p className="text-3xl font-bold text-foreground mt-1">{c.value}</p>
-                <p className="text-xs text-[#6B6B6B] mt-1">{c.sub}</p>
-              </div>
-              <div className={`p-2.5 rounded-lg ${c.color}`}>
-                <c.icon className="w-5 h-5" />
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Activity trend */}
-        <div className="bg-card rounded-xl p-5 border border-border shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-foreground">Activity Trend (30d)</h3>
-            <TrendingUp className="w-4 h-4 text-muted-foreground" />
-          </div>
-          {trendData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={220}>
-              <AreaChart data={trendData}>
-                <defs>
-                  <linearGradient id="eventGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#FF7000" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#FF7000" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#262626" />
-                <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#A3A3A3" }} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: "#A3A3A3" }} tickLine={false} axisLine={false} />
-                <Tooltip contentStyle={{ background: "#141414", border: "1px solid #262626", color: "#F5F5F5" }} />
-                <Area
-                  type="monotone"
-                  dataKey="events"
-                  stroke="#FF7000"
-                  strokeWidth={2}
-                  fill="url(#eventGrad)"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="h-[220px] flex items-center justify-center text-[#6B6B6B] text-sm">
-              No activity data yet
-            </div>
-          )}
+    <div className="mx-auto max-w-[1400px] space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-2xl font-semibold text-foreground">{greeting()}{name ? `, ${name}` : ""}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {attention.length === 0
+              ? "Everything is running smoothly."
+              : `${attention.length} thing${attention.length === 1 ? "" : "s"} could use your attention today.`}
+          </p>
         </div>
-
-        {/* Plan distribution */}
-        <div className="bg-card rounded-xl p-5 border border-border shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-foreground">Organizations by Plan</h3>
-            <AlertCircle className="w-4 h-4 text-muted-foreground" />
-          </div>
-          {planData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={220}>
-              <PieChart>
-                <Pie
-                  data={planData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={90}
-                  paddingAngle={3}
-                  dataKey="value"
-                >
-                  {planData.map((_, i) => (
-                    <Cell key={i} fill={PLAN_COLORS[i % PLAN_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip contentStyle={{ background: "#141414", border: "1px solid #262626", color: "#F5F5F5" }} />
-                <Legend iconType="circle" iconSize={10} wrapperStyle={{ color: "#A3A3A3" }} />
-              </PieChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="h-[220px] flex items-center justify-center text-[#6B6B6B] text-sm">
-              No organizations yet
-            </div>
-          )}
-        </div>
+        <button
+          onClick={() => {
+            overviewApi.get(true).then((r) => qc.setQueryData(["sa-overview"], r.data));
+            qc.invalidateQueries({ queryKey: ["sa-health"] });
+          }}
+          className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <RefreshCw className={cn("h-3.5 w-3.5", isFetching && "animate-spin")} />
+          Updated {timeAgo(data.generated_at)}
+        </button>
       </div>
 
-      {/* Seat-limit alerts */}
-      {(seatAlerts?.data?.alerts ?? []).length > 0 && (
-        <div className="bg-card rounded-xl border border-yellow-500/20 shadow-sm">
-          <div className="px-5 py-4 border-b border-border flex items-center gap-2">
-            <Gauge className="w-4 h-4 text-yellow-400" />
-            <h3 className="font-semibold text-foreground">Orgs Near Seat Limit</h3>
-            <span className="text-xs text-muted-foreground">({seatAlerts?.data?.threshold_pct}%+ used)</span>
+      {/* KPIs */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Kpi
+          icon={CircleDollarSign}
+          label="Monthly recurring revenue"
+          value={formatINR(b.mrr_paise ?? 0, true)}
+          sub={`${formatINR(b.arr_paise ?? 0, true)} ARR · ${b.paying_orgs ?? 0} paying`}
+          href="/dashboard/billing"
+        />
+        <Kpi
+          icon={Building2}
+          label="Customers"
+          value={formatNumber(cu.total ?? 0)}
+          sub={`${cu.by_status?.active ?? 0} active · ${cu.by_status?.trial ?? 0} on trial`}
+          trend={{ value: `${cu.new_30d ?? 0} new in 30d`, up: growth >= 0, show: (cu.new_30d ?? 0) > 0 || (cu.new_prev_30d ?? 0) > 0 }}
+          href="/dashboard/organizations"
+        />
+        <Kpi
+          icon={Laptop}
+          label="Protected devices"
+          value={formatNumber(fl.devices ?? 0)}
+          sub={`${fl.online ?? 0} online now · ${fl.seen_24h ?? 0} seen in 24h`}
+          href="/dashboard/agent-versions"
+        />
+        <Kpi
+          icon={ShieldCheck}
+          label="Security events (14 days)"
+          value={formatNumber(us.events_14d ?? 0)}
+          sub={`${formatNumber(blocked14)} blocked · ${cu.employees ?? 0} employees covered`}
+          href="/dashboard/activity"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        {/* Attention */}
+        <Card className="xl:col-span-2" title="Needs attention" action={attention.length > 0 ? `${attention.length}` : undefined}>
+          {attention.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-10 text-center">
+              <CheckCircle2 className="mb-2 h-8 w-8 text-green-500/70" />
+              <p className="text-sm text-foreground">You&apos;re all caught up</p>
+              <p className="mt-1 text-xs text-muted-foreground">No urgent tickets, new leads, overdue invoices or stuck customers.</p>
+            </div>
+          ) : (
+            <ul className="space-y-2">
+              {attention.slice(0, 8).map((it, i) => {
+                const sev = SEVERITY[it.severity as keyof typeof SEVERITY] ?? SEVERITY.info;
+                return (
+                  <li key={i}>
+                    <Link href={it.href} className={cn("group flex items-center gap-3 rounded-lg border bg-background/40 px-3 py-2.5 transition-colors hover:bg-muted", sev.ring)}>
+                      <span className={cn("flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg", sev.tone)}>
+                        <sev.icon className="h-4 w-4" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium text-foreground">{it.title}</span>
+                        <span className="block truncate text-xs text-muted-foreground">{it.detail}</span>
+                      </span>
+                      <ArrowRight className="h-4 w-4 flex-shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
+
+        {/* Platform */}
+        <Card title="Platform" href="/dashboard/system-health">
+          <HealthSummary health={health} />
+          <div className="mt-5 border-t border-border pt-4">
+            <div className="mb-2 flex items-center justify-between text-xs">
+              <span className="font-medium text-muted-foreground">Agent versions in the field</span>
+              {fl.latest_version && <span className="text-[#8A8A8A]">latest {fl.latest_version}</span>}
+            </div>
+            {(fl.versions ?? []).length === 0 ? (
+              <p className="text-xs text-muted-foreground">No devices yet.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {(fl.versions as any[]).slice(0, 5).map((v) => (
+                  <div key={v.version} className="flex items-center gap-2 text-xs">
+                    <span className={cn("w-16 font-mono", v.latest ? "text-green-400" : "text-muted-foreground")}>{v.version}</span>
+                    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+                      <div className={cn("h-full rounded-full", v.latest ? "bg-green-500" : "bg-brand-500/70")} style={{ width: `${(v.count / Math.max(1, fl.devices)) * 100}%` }} />
+                    </div>
+                    <span className="w-6 text-right tabular-nums text-muted-foreground">{v.count}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {(fl.outdated ?? 0) > 0 && (
+              <p className="mt-2 text-xs text-yellow-400">{fl.outdated} device{fl.outdated === 1 ? "" : "s"} not on the latest agent</p>
+            )}
           </div>
-          <div className="divide-y divide-border">
-            {(seatAlerts?.data?.alerts ?? []).map((a: any) => (
-              <Link
-                key={a.org_id}
-                href={`/dashboard/organizations/${a.org_id}`}
-                className="px-5 py-3 flex items-center justify-between text-sm hover:bg-muted transition-colors"
-              >
-                <span className="text-foreground">{a.org_name}</span>
-                <span className="flex items-center gap-3">
-                  <span className="text-muted-foreground tabular-nums">{a.user_count}/{a.max_users} seats ({a.percent_used}%)</span>
-                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                </span>
-              </Link>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Card title="Security events" subtitle="Per day, last 14 days · data Aavishield stores">
+          <ResponsiveContainer width="100%" height={220}>
+            <AreaChart data={(us.events_by_day ?? []).map((d: any) => ({ ...d, label: d.date.slice(5) }))} margin={{ left: -16, right: 8 }}>
+              <defs>
+                <linearGradient id="ev" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#FF7000" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#FF7000" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#222" vertical={false} />
+              <XAxis dataKey="label" tick={AXIS} tickLine={false} axisLine={false} interval={1} />
+              <YAxis tick={AXIS} tickLine={false} axisLine={false} allowDecimals={false} />
+              <Tooltip contentStyle={TOOLTIP} />
+              <Area type="monotone" dataKey="events" name="Events" stroke="#FF7000" strokeWidth={2} fill="url(#ev)" />
+              <Area type="monotone" dataKey="blocked" name="Blocked" stroke="#ef4444" strokeWidth={1.5} fill="transparent" />
+            </AreaChart>
+          </ResponsiveContainer>
+          {(us.orgs_on_own_storage ?? 0) > 0 && (
+            <p className="mt-2 text-[11px] text-[#8A8A8A]">
+              {us.orgs_on_own_storage} organization{us.orgs_on_own_storage === 1 ? " keeps" : "s keep"} data in their own database and {us.orgs_on_own_storage === 1 ? "is" : "are"} not counted.
+            </p>
+          )}
+        </Card>
+
+        <Card title="New organizations" subtitle="Per week, last 12 weeks">
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={(cu.signups_by_week ?? []).map((w: any) => ({ ...w, label: new Date(w.week).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) }))} margin={{ left: -16, right: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#222" vertical={false} />
+              <XAxis dataKey="label" tick={AXIS} tickLine={false} axisLine={false} interval={1} />
+              <YAxis tick={AXIS} tickLine={false} axisLine={false} allowDecimals={false} />
+              <Tooltip contentStyle={TOOLTIP} cursor={{ fill: "#ffffff08" }} />
+              <Bar dataKey="count" name="New organizations" fill="#FF7000" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <Card title="Customer mix">
+          <Breakdown title="By status" data={cu.by_status ?? {}} labels={Object.fromEntries(Object.entries(STATUS_STYLES).map(([k, v]) => [k, v.label]))} />
+          <div className="mt-4" />
+          <Breakdown title="By plan" data={cu.by_plan ?? {}} labels={PLAN_LABELS} />
+          <div className="mt-4 grid grid-cols-2 gap-3 border-t border-border pt-4 text-xs">
+            <Mini label="Collected this month" value={formatINR(b.collected_this_month_paise ?? 0, true)} />
+            <Mini label="Pending invoices" value={formatINR(b.pending_paise ?? 0, true)} warn={(b.overdue_invoices ?? 0) > 0} />
+          </div>
+        </Card>
+
+        <Card title="Latest signups" href="/dashboard/organizations">
+          {(data.recent_orgs ?? []).length === 0 ? (
+            <p className="text-sm text-muted-foreground">No organizations yet.</p>
+          ) : (
+            <ul className="divide-y divide-border">
+              {(data.recent_orgs as any[]).map((o) => {
+                const st = STATUS_STYLES[o.status] ?? STATUS_STYLES.inactive;
+                return (
+                  <li key={o.id}>
+                    <Link href={`/dashboard/organizations/${o.id}`} className="flex items-center gap-3 py-2.5 hover:opacity-80">
+                      <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-brand-500/10 text-xs font-semibold text-brand-500">
+                        {o.name?.[0]?.toUpperCase()}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm text-foreground">{o.name}</span>
+                        <span className="text-xs text-muted-foreground">{PLAN_LABELS[o.plan] ?? o.plan} · {timeAgo(o.created_at)}</span>
+                      </span>
+                      <span className={cn("inline-flex items-center gap-1.5 text-xs", st.text)}>
+                        <span className={cn("h-1.5 w-1.5 rounded-full", st.dot)} />{st.label}
+                      </span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
+
+        <Card title="Recent changes" href="/dashboard/audit-log">
+          {(data.recent_audit ?? []).length === 0 ? (
+            <p className="text-sm text-muted-foreground">Nothing recorded yet.</p>
+          ) : (
+            <ul className="space-y-3">
+              {(data.recent_audit as any[]).map((a) => (
+                <li key={a.id} className="flex gap-3 text-sm">
+                  <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-brand-500/70" />
+                  <span className="min-w-0">
+                    <span className="block truncate text-foreground">
+                      <span className="text-muted-foreground">{a.actor || "System"}</span> {humanAction(a.action)} {a.resource?.replace(/_/g, " ")}
+                    </span>
+                    <span className="text-xs text-[#8A8A8A]">{a.org ? `${a.org} · ` : ""}{timeAgo(a.created_at)}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function humanAction(a: string) {
+  const map: Record<string, string> = { create: "created", update: "updated", delete: "deleted", approved: "approved", denied: "denied", revoked: "revoked" };
+  return map[a] ?? a?.replace(/_/g, " ");
+}
+
+function Card({ title, subtitle, href, action, className, children }: {
+  title: string; subtitle?: string; href?: string; action?: string; className?: string; children: React.ReactNode;
+}) {
+  return (
+    <section className={cn("rounded-xl border border-border bg-card p-5", className)}>
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+          {subtitle && <p className="mt-0.5 text-xs text-[#8A8A8A]">{subtitle}</p>}
+        </div>
+        {action && <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{action}</span>}
+        {href && (
+          <Link href={href} className="text-xs text-brand-500 hover:text-brand-400">View all</Link>
+        )}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function Kpi({ icon: Icon, label, value, sub, href, trend }: {
+  icon: React.ElementType; label: string; value: string; sub: string; href: string;
+  trend?: { value: string; up: boolean; show: boolean };
+}) {
+  return (
+    <Link href={href} className="group rounded-xl border border-border bg-card p-5 transition-colors hover:border-brand-500/40">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-muted-foreground">{label}</span>
+        <Icon className="h-4 w-4 text-[#8A8A8A] transition-colors group-hover:text-brand-500" />
+      </div>
+      <p className="mt-2 text-3xl font-semibold tabular-nums text-foreground">{value}</p>
+      <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+        {trend?.show && (
+          <span className={cn("inline-flex items-center gap-0.5 font-medium", trend.up ? "text-green-400" : "text-red-400")}>
+            {trend.up ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownRight className="h-3.5 w-3.5" />}
+            {trend.value}
+          </span>
+        )}
+        <span className="truncate">{sub}</span>
+      </div>
+    </Link>
+  );
+}
+
+function Breakdown({ title, data, labels }: { title: string; data: Record<string, number>; labels: Record<string, string> }) {
+  const entries = Object.entries(data).sort((a, b) => b[1] - a[1]);
+  const total = entries.reduce((s, [, n]) => s + n, 0);
+  const colors = ["bg-brand-500", "bg-sky-400", "bg-green-500", "bg-purple-400", "bg-zinc-500"];
+  return (
+    <div>
+      <p className="mb-2 text-xs font-medium text-muted-foreground">{title}</p>
+      {total === 0 ? (
+        <p className="text-xs text-[#8A8A8A]">No data yet.</p>
+      ) : (
+        <>
+          <div className="flex h-2 overflow-hidden rounded-full bg-muted">
+            {entries.map(([k, n], i) => <div key={k} className={colors[i % colors.length]} style={{ width: `${(n / total) * 100}%` }} />)}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+            {entries.map(([k, n], i) => (
+              <span key={k} className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                <span className={cn("h-2 w-2 rounded-sm", colors[i % colors.length])} />
+                {labels[k] ?? k} <span className="tabular-nums text-foreground">{n}</span>
+              </span>
             ))}
           </div>
-        </div>
+        </>
       )}
+    </div>
+  );
+}
+
+function Mini({ label, value, warn }: { label: string; value: string; warn?: boolean }) {
+  return (
+    <div>
+      <p className="text-[#8A8A8A]">{label}</p>
+      <p className={cn("mt-0.5 text-sm font-semibold tabular-nums", warn ? "text-yellow-400" : "text-foreground")}>{value}</p>
+    </div>
+  );
+}
+
+function HealthSummary({ health }: { health: any }) {
+  if (!health) return <div className="h-16 animate-pulse rounded-lg bg-muted" />;
+  if (!health.reachable) {
+    return (
+      <div className="flex items-start gap-2 text-sm text-yellow-400">
+        <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+        Monitoring isn&apos;t reachable, so service status is unknown.
+      </div>
+    );
+  }
+  const services: any[] = health.services ?? [];
+  const down = services.filter((s) => !s.up);
+  return (
+    <div>
+      <div className="flex items-center gap-3">
+        <span className={cn("flex h-10 w-10 items-center justify-center rounded-xl", down.length ? "bg-red-500/10 text-red-400" : "bg-green-500/10 text-green-400")}>
+          <HeartPulse className="h-5 w-5" />
+        </span>
+        <div>
+          <p className="text-sm font-medium text-foreground">{down.length ? `${down.length} service${down.length === 1 ? "" : "s"} down` : "All services operational"}</p>
+          <p className="text-xs text-muted-foreground">{health.up_count}/{health.total} up</p>
+        </div>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-1" aria-label="Service status">
+        {services.map((s) => (
+          <span key={s.job} title={`${s.job}: ${s.up ? "up" : "down"}`} className={cn("h-2.5 w-2.5 rounded-sm", s.up ? "bg-green-500/80" : "bg-red-500")} />
+        ))}
+      </div>
+      {down.length > 0 && <p className="mt-2 truncate text-xs text-red-400">{down.map((s) => s.job).join(", ")}</p>}
+    </div>
+  );
+}
+
+function Skeleton() {
+  return (
+    <div className="mx-auto max-w-[1400px] animate-pulse space-y-6">
+      <div className="h-12 w-72 rounded-lg bg-card" />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">{[0, 1, 2, 3].map((i) => <div key={i} className="h-28 rounded-xl bg-card" />)}</div>
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3"><div className="h-72 rounded-xl bg-card xl:col-span-2" /><div className="h-72 rounded-xl bg-card" /></div>
     </div>
   );
 }

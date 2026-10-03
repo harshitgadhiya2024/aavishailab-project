@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -39,8 +40,9 @@ func (h *OrgHandler) List(c *gin.Context) {
 	}
 
 	q := h.db.Model(&models.Organization{})
-	if search != "" {
-		q = q.Where("LOWER(name) LIKE ? OR LOWER(domain) LIKE ?", "%"+search+"%", "%"+search+"%")
+	if search = strings.ToLower(strings.TrimSpace(search)); search != "" {
+		like := "%" + search + "%"
+		q = q.Where("LOWER(name) LIKE ? OR LOWER(domain) LIKE ? OR LOWER(slug) LIKE ? OR LOWER(contact_email) LIKE ?", like, like, like, like)
 	}
 	if status != "" {
 		q = q.Where("status = ?", status)
@@ -52,35 +54,82 @@ func (h *OrgHandler) List(c *gin.Context) {
 	var total int64
 	q.Count(&total)
 
-	var orgs []models.Organization
-	q.Order("created_at DESC").Offset((page - 1) * limit).Limit(limit).Find(&orgs)
-
-	// Add user counts
-	type OrgWithCounts struct {
-		models.Organization
-		UserCount     int `json:"user_count"`
-		EmployeeCount int `json:"employee_count"`
-		PolicyCount   int `json:"policy_count"`
+	order := "created_at DESC"
+	switch c.Query("sort") {
+	case "name":
+		order = "LOWER(name) ASC"
+	case "oldest":
+		order = "created_at ASC"
+	case "trial_ending":
+		order = "trial_ends_at ASC NULLS LAST"
 	}
+	var orgs []models.Organization
+	q.Order(order).Offset((page - 1) * limit).Limit(limit).Find(&orgs)
+
+	// Per-org counts for the page in one grouped query per table, not three
+	// queries per row.
+	ids := make([]uuid.UUID, len(orgs))
+	for i, o := range orgs {
+		ids[i] = o.ID
+	}
+	type cnt struct {
+		OrgID uuid.UUID
+		N     int64
+	}
+	countBy := func(model any, where string, args ...any) map[uuid.UUID]int64 {
+		out := map[uuid.UUID]int64{}
+		if len(ids) == 0 {
+			return out
+		}
+		var rows []cnt
+		tx := h.db.Model(model).Select("org_id, COUNT(*) AS n").Where("org_id IN ?", ids)
+		if where != "" {
+			tx = tx.Where(where, args...)
+		}
+		tx.Group("org_id").Scan(&rows)
+		for _, r := range rows {
+			out[r.OrgID] = r.N
+		}
+		return out
+	}
+	users := countBy(&models.User{}, "")
+	employees := countBy(&models.Employee{}, "")
+	policies := countBy(&models.Policy{}, "")
+	devices := countBy(&models.Device{}, "status <> ?", "revoked")
+	online := countBy(&models.Device{}, "status = ?", "online")
+	lastSeen := map[uuid.UUID]*time.Time{}
+	if len(ids) > 0 {
+		var rows []struct {
+			OrgID    uuid.UUID
+			LastSeen *time.Time
+		}
+		h.db.Model(&models.Device{}).Select("org_id, MAX(last_seen_at) AS last_seen").
+			Where("org_id IN ?", ids).Group("org_id").Scan(&rows)
+		for _, r := range rows {
+			lastSeen[r.OrgID] = r.LastSeen
+		}
+	}
+
 	result := make([]map[string]any, len(orgs))
 	for i, org := range orgs {
-		var uc, ec, pc int64
-		h.db.Model(&models.User{}).Where("org_id = ?", org.ID).Count(&uc)
-		h.db.Model(&models.Employee{}).Where("org_id = ?", org.ID).Count(&ec)
-		h.db.Model(&models.Policy{}).Where("org_id = ?", org.ID).Count(&pc)
 		result[i] = map[string]any{
 			"id":             org.ID,
 			"name":           org.Name,
 			"slug":           org.Slug,
 			"domain":         org.Domain,
+			"contact_email":  org.ContactEmail,
 			"status":         org.Status,
 			"plan":           org.Plan,
 			"max_users":      org.MaxUsers,
+			"trial_ends_at":  org.TrialEndsAt,
 			"created_at":     org.CreatedAt,
 			"is_active":      org.Status == models.OrgStatusActive,
-			"user_count":     uc,
-			"employee_count": ec,
-			"policy_count":   pc,
+			"user_count":     users[org.ID],
+			"employee_count": employees[org.ID],
+			"policy_count":   policies[org.ID],
+			"device_count":   devices[org.ID],
+			"online_count":   online[org.ID],
+			"last_seen_at":   lastSeen[org.ID],
 		}
 	}
 
@@ -242,13 +291,40 @@ func (h *OrgHandler) Update(c *gin.Context) {
 		Plan     string `json:"plan"`
 		MaxUsers int    `json:"max_users"`
 		LogoURL  string `json:"logo_url"`
+		// TrialEndsAt (YYYY-MM-DD) extends or shortens a trial.
+		TrialEndsAt string `json:"trial_ends_at"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	switch models.OrgStatus(req.Status) {
+	case "", models.OrgStatusActive, models.OrgStatusInactive, models.OrgStatusSuspended, models.OrgStatusTrial:
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Unknown status"})
+		return
+	}
+	switch models.PlanType(req.Plan) {
+	case "", models.PlanTrial, models.PlanStarter, models.PlanProfessional, models.PlanEnterprise:
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Unknown plan"})
+		return
+	}
 
 	updates := map[string]any{}
+	if req.TrialEndsAt != "" {
+		// End of that day in the organization's own time zone.
+		loc, err := time.LoadLocation(org.Timezone)
+		if err != nil || org.Timezone == "" {
+			loc = time.UTC
+		}
+		t, err := time.ParseInLocation("2006-01-02", req.TrialEndsAt, loc)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Trial end date must be YYYY-MM-DD"})
+			return
+		}
+		updates["trial_ends_at"] = t.Add(24*time.Hour - time.Second)
+	}
 	if req.Name != "" {
 		updates["name"] = req.Name
 	}
@@ -268,9 +344,13 @@ func (h *OrgHandler) Update(c *gin.Context) {
 		updates["logo_url"] = req.LogoURL
 	}
 
-	h.db.Model(&org).Updates(updates)
+	if err := h.db.Model(&org).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update organization"})
+		return
+	}
 	orgUUID := org.ID
 	writeAudit(h.db, c, &orgUUID, "update", "organization", &orgUUID, updates)
+	h.db.First(&org, "id = ?", org.ID)
 	c.JSON(http.StatusOK, org)
 }
 
