@@ -18,7 +18,13 @@ import { cn } from "@/lib/utils";
 type OSType = "macos" | "windows" | "linux";
 type Package = { filename: string; url: string; version: string; size: number; sha256: string };
 type Installers = { version: string; packages: Record<OSType, Package | null> };
-type Step = { title: string; detail: string; note?: string };
+type Step = {
+  title: string;
+  detail: string;
+  note?: string;
+  // Optional terminal alternative, built from the real file name.
+  command?: { where: string; build: (filename: string) => string };
+};
 
 const PLATFORMS: Record<OSType, {
   label: string;
@@ -39,6 +45,7 @@ const PLATFORMS: Record<OSType, {
         title: "Open the installer",
         detail: "Double-click the downloaded .pkg file in your Downloads folder.",
         note: "If macOS says it can't verify the developer, open System Settings → Privacy & Security, scroll down and click “Open Anyway”.",
+        command: { where: "Terminal", build: (f) => `sudo installer -pkg ~/Downloads/${f} -target /` },
       },
       { title: "Follow the installer", detail: "Click Continue, then Install, and enter your Mac password when asked." },
       { title: "Your device connects automatically", detail: "A browser tab opens and links this Mac to your account. You don't need to do anything there." },
@@ -56,6 +63,7 @@ const PLATFORMS: Record<OSType, {
         title: "Open the installer",
         detail: "Double-click the downloaded .msi file in your Downloads folder.",
         note: "If Windows shows “Windows protected your PC”, click More info, then Run anyway.",
+        command: { where: "Command Prompt", build: (f) => `msiexec /i "%USERPROFILE%\\Downloads\\${f}"` },
       },
       { title: "Follow the setup wizard", detail: "Click Next, then Install, and choose Yes when Windows asks for permission." },
       { title: "Your device connects automatically", detail: "A browser tab opens and links this PC to your account. You don't need to do anything there." },
@@ -69,7 +77,11 @@ const PLATFORMS: Record<OSType, {
     format: "Debian package (.deb)",
     deviceOs: ["linux"],
     steps: [
-      { title: "Open the installer", detail: "Double-click the downloaded .deb file. It opens in your software center (App Center or Software Install)." },
+      {
+        title: "Open the installer",
+        detail: "Double-click the downloaded .deb file. It opens in your software center (App Center or Software Install).",
+        command: { where: "Terminal", build: (f) => `sudo apt install ~/Downloads/${f}` },
+      },
       { title: "Install it", detail: "Click Install and enter your password when asked." },
       { title: "Your device connects automatically", detail: "A browser tab opens and links this computer to your account. You don't need to do anything there." },
       { title: "You're protected", detail: "Aavishield starts on its own every time you sign in, and this page shows your device as connected." },
@@ -253,6 +265,7 @@ export default function DownloadPage() {
                         {step.note && (
                           <p className="mt-2 rounded-lg border border-border bg-muted/60 px-3 py-2 text-xs text-muted-foreground">{step.note}</p>
                         )}
+                        {step.command && <TerminalOption where={step.command.where} command={step.command.build(pkg.filename)} />}
                       </div>
                     </li>
                   );
@@ -299,6 +312,41 @@ export default function DownloadPage() {
             Having trouble installing? Contact your IT administrator.
           </p>
         </>
+      )}
+    </div>
+  );
+}
+
+function TerminalOption({ where, command }: { where: string; command: string }) {
+  const [open, setOpen] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(command);
+      toast.success("Command copied");
+    } catch {
+      toast.error("Couldn't copy. Select it and copy manually.");
+    }
+  };
+  return (
+    <div className="mt-2">
+      <button
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        className="inline-flex items-center gap-1.5 text-xs font-medium text-brand-500 hover:text-brand-400"
+      >
+        <Terminal className="h-3.5 w-3.5" /> Or install from {where}
+        <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")} />
+      </button>
+      {open && (
+        <div className="mt-2">
+          <p className="mb-1.5 text-xs text-muted-foreground">Open {where} and run this. It installs the same file you just downloaded.</p>
+          <div className="flex items-start gap-2">
+            <code className="min-w-0 flex-1 break-all rounded-lg bg-zinc-950 px-3 py-2 font-mono text-xs leading-relaxed text-green-400">{command}</code>
+            <button onClick={copy} aria-label="Copy command" className="rounded-md border border-border p-2 text-muted-foreground hover:bg-muted hover:text-foreground">
+              <Copy className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
