@@ -63,6 +63,9 @@ export const portalApi = {
     api.get("/api/v1/portal/screenshots", { params }),
   setScreenshotReason: (id: string, reason: string) =>
     api.put(`/api/v1/portal/screenshots/${id}/reason`, { reason }),
+  notifications: () => api.get("/api/v1/portal/notifications"),
+  markNotificationsRead: () => api.post("/api/v1/portal/notifications/read"),
+  markNotificationRead: (id: string) => api.post(`/api/v1/portal/notifications/${id}/read`),
   withdrawAccessRequest: (id: string) => api.post(`/api/v1/portal/access-requests/${id}/withdraw`),
   downloadUninstaller: async (os: "macos" | "windows" | "linux") => {
     const session = await getSession();

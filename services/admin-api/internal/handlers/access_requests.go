@@ -409,6 +409,7 @@ func (h *AccessRequestHandler) resolve(c *gin.Context, from, to models.AccessReq
 
 	// The employee is waiting on this answer — tell them rather than making
 	// them re-check the portal.
+	notifyAccessDecision(h.db, ar, to, req.Note)
 	if ar.Employee != nil && ar.Employee.Email != "" {
 		mailer.AccessRequestResolved(ar.Employee.Email, ar.Employee.FirstName, kindNoun(ar.Kind), ar.Label, string(to), req.Note)
 	}
@@ -439,4 +440,25 @@ func attachRequestEmployees(db *gorm.DB, requests []models.AccessRequest) {
 			requests[i].Employee = &e
 		}
 	}
+}
+
+// notifyAccessDecision puts the decision in the employee's portal bell.
+func notifyAccessDecision(db *gorm.DB, ar models.AccessRequest, to models.AccessRequestStatus, note string) {
+	what := firstNonEmpty(ar.Label, ar.Domain, ar.Resource, kindNoun(ar.Kind))
+	var kind, title string
+	switch to {
+	case models.AccessRequestApproved:
+		kind, title = NotifAccessApproved, "Access approved: "+what
+	case models.AccessRequestDenied:
+		kind, title = NotifAccessDenied, "Access denied: "+what
+	case models.AccessRequestRevoked:
+		kind, title = NotifAccessRevoked, "Access revoked: "+what
+	default:
+		return
+	}
+	body := "Your IT administrator reviewed your request."
+	if note != "" {
+		body = "Note from IT: " + note
+	}
+	notifyEmployee(db, ar.OrgID, ar.EmployeeID, kind, title, body, "/dashboard/activity")
 }

@@ -91,6 +91,11 @@ func (h *WebSocketHub) BroadcastToOrg(orgID string, msgType string, payload any)
 	h.mu.RUnlock()
 
 	for client := range clients {
+		// Org-wide messages (a device enrolling, …) are the company's view.
+		// An employee's portal connection gets only what is about them.
+		if client.employeeID != nil {
+			continue
+		}
 		select {
 		case client.send <- data:
 		default:
@@ -117,6 +122,27 @@ func (h *WebSocketHub) BroadcastActivityEvent(event models.ActivityEvent) {
 			if event.EmployeeID == nil || *client.employeeID != *event.EmployeeID {
 				continue
 			}
+		}
+		select {
+		case client.send <- data:
+		default:
+			h.Unregister(client)
+		}
+	}
+}
+
+// SendToEmployee delivers a message to that one employee's portal
+// connections only.
+func (h *WebSocketHub) SendToEmployee(orgID, employeeID uuid.UUID, msgType string, payload any) {
+	data, _ := json.Marshal(WSMessage{Type: msgType, Payload: payload})
+
+	h.mu.RLock()
+	clients := h.clients[orgID.String()]
+	h.mu.RUnlock()
+
+	for client := range clients {
+		if client.employeeID == nil || *client.employeeID != employeeID {
+			continue
 		}
 		select {
 		case client.send <- data:

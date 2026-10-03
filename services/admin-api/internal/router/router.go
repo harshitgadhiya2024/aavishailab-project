@@ -39,6 +39,7 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 
 	// ─── Handlers ────────────────────────────────────────────────────────────
 	wsHub := handlers.NewWebSocketHub()
+	handlers.UseNotificationHub(wsHub)
 	authH := handlers.NewAuthHandler(db, rdb)
 	empH := handlers.NewEmployeeHandler(db)
 	teamH := handlers.NewTeamHandler(db)
@@ -606,6 +607,10 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 			portalProtected.PUT("/screenshots/:id/reason",
 				middleware.RateLimit(rdb, "portal-screenshot-reason", 60, time.Minute),
 				portalH.SetScreenshotReason)
+			// The bell: own control-plane notifications + own recent blocks/alerts.
+			portalProtected.GET("/notifications", portalH.Notifications)
+			portalProtected.POST("/notifications/read", portalH.MarkNotificationsRead)
+			portalProtected.POST("/notifications/:id/read", portalH.MarkNotificationRead)
 			portalProtected.GET("/devices", portalH.Devices)
 			portalProtected.DELETE("/devices/:id", portalH.DeleteDevice)
 			portalProtected.POST("/access-requests", arH.Create)

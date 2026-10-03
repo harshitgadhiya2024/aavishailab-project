@@ -114,5 +114,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&models.InboundEmail{},
 		&models.DemoRequest{},
 		&models.OrgDataResidency{},
+		&models.EmployeeNotification{},
+		&models.EmployeeNotificationState{},
 	)
 }

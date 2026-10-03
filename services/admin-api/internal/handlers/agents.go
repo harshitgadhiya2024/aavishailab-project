@@ -296,6 +296,12 @@ func (h *AgentHandler) Enroll(c *gin.Context) {
 
 	// Broadcast new device event to company dashboard
 	h.hub.BroadcastToOrg(enrollToken.OrgID.String(), "device_enrolled", device)
+	if isNewDevice && enrollToken.EmployeeID != nil {
+		notifyEmployee(h.db, enrollToken.OrgID, *enrollToken.EmployeeID, NotifDeviceEnrolled,
+			"New device connected: "+device.Hostname,
+			"Aavishield protection is now active on this device. If this wasn't you, contact your IT administrator.",
+			"/dashboard/devices")
+	}
 
 	// A device joining the estate is worth an email — an enrolment nobody
 	// authorised is otherwise invisible until someone opens the dashboard.
@@ -2001,6 +2007,12 @@ func (h *AgentHandler) RevokeDevice(c *gin.Context) {
 
 	revokeAgentToken(h.db, h.rdb, c.Request.Context(), device.ID)
 	h.db.Model(&device).Update("status", "revoked")
+	if device.EmployeeID != nil {
+		notifyEmployee(h.db, device.OrgID, *device.EmployeeID, NotifDeviceRevoked,
+			"Device removed by IT: "+device.Hostname,
+			"Your IT administrator revoked this device. It no longer reports to Aavishield.",
+			"/dashboard/devices")
+	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Device revoked. The agent will stop reporting on next heartbeat."})
 }

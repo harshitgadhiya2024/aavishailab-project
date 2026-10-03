@@ -2,10 +2,11 @@
 
 import { useSession, signOut } from "next-auth/react";
 import Link from "next/link";
-import { Bell, LogOut, ChevronDown, Building2, UserRound } from "lucide-react";
+import { LogOut, ChevronDown, Building2, UserRound } from "lucide-react";
 import { useState } from "react";
 import { getInitials } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import { NotificationBell } from "./NotificationBell";
 
 export function Header({ title }: { title?: string }) {
   const { data: session } = useSession();
@@ -28,9 +29,7 @@ export function Header({ title }: { title?: string }) {
 
         <ThemeToggle />
 
-        <button className="relative p-2 rounded-lg hover:bg-muted transition-colors">
-          <Bell className="w-5 h-5 text-muted-foreground" />
-        </button>
+        <NotificationBell />
 
         <div className="relative">
           <button

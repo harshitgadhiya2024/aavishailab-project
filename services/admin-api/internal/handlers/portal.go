@@ -308,6 +308,8 @@ func (h *PortalHandler) ResetPassword(c *gin.Context) {
 	var resetEmp models.Employee
 	if err := h.db.First(&resetEmp, "id = ?", *prt.EmployeeID).Error; err == nil {
 		mailer.PasswordChanged(resetEmp.Email, resetEmp.FirstName, true)
+		notifyEmployee(h.db, resetEmp.OrgID, resetEmp.ID, NotifPasswordChanged, "Your password was reset",
+			"Your password was reset using an emailed link. If you didn't do this, contact your IT administrator.", "/dashboard/profile")
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Password reset successfully"})
@@ -356,6 +358,8 @@ func (h *PortalHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 	h.db.Model(&models.Employee{}).Where("id = ?", emp.ID).Update("portal_password_hash", string(hashed))
+	notifyEmployee(h.db, emp.OrgID, emp.ID, NotifPasswordChanged, "Your password was changed",
+		"If you didn't do this, reset your password and contact your IT administrator.", "/dashboard/profile")
 
 	mailer.PasswordChanged(emp.Email, emp.FirstName, true)
 
