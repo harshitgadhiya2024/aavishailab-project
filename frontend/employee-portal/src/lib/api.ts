@@ -67,51 +67,7 @@ export const portalApi = {
   markNotificationsRead: () => api.post("/api/v1/portal/notifications/read"),
   markNotificationRead: (id: string) => api.post(`/api/v1/portal/notifications/${id}/read`),
   withdrawAccessRequest: (id: string) => api.post(`/api/v1/portal/access-requests/${id}/withdraw`),
-  downloadUninstaller: async (os: "macos" | "windows" | "linux") => {
-    const session = await getSession();
-    const token = (session as any)?.accessToken;
-    const res = await fetch(`${API_URL}/api/v1/portal/uninstall/${os}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error("Download failed");
-    const blob = await res.blob();
-    const filenames: Record<string, string> = {
-      macos: "aavishield-uninstall.command",
-      windows: "aavishield-uninstall.bat",
-      linux: "aavishield-uninstall.sh",
-    };
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = filenames[os];
-    document.body.appendChild(a); a.click();
-    document.body.removeChild(a); URL.revokeObjectURL(url);
-  },
-  installerInfo: (os: "macos" | "windows" | "linux") =>
-    api.get(`/api/v1/portal/installer-info/${os}`),
+  /** The published native installer (.pkg / .msi / .deb) for every platform. */
+  installers: () => api.get("/api/v1/portal/installers"),
   enrollDevice: () => api.post("/api/v1/portal/enroll-device"),
-  downloadInstaller: async (os: "macos" | "windows" | "linux") => {
-    const session = await getSession();
-    const token = (session as any)?.accessToken;
-    const res = await fetch(`${API_URL}/api/v1/portal/download/${os}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: "Download failed" }));
-      throw new Error(err.error || "Download failed");
-    }
-    const blob = await res.blob();
-    const filenames: Record<string, string> = {
-      macos: "aavishield-install.command",
-      windows: "aavishield-install.bat",
-      linux: "aavishield-install.sh",
-    };
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filenames[os];
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  },
 };

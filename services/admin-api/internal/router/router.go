@@ -593,9 +593,10 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 		{
 			portalProtected.GET("/me", portalH.Me)
 			portalProtected.POST("/change-password", portalH.ChangePassword)
-			portalProtected.GET("/download/:os", portalH.DownloadInstaller)
-			portalProtected.GET("/uninstall/:os", portalH.DownloadUninstaller)
-			portalProtected.GET("/installer-info/:os", portalH.InstallerInfo)
+			// The published native installers (.pkg/.msi/.deb) for every
+			// platform. The installed agent enrolls itself through the browser
+			// (enroll-device), so nothing per-employee is baked into a download.
+			portalProtected.GET("/installers", portalH.Installers)
 			portalProtected.POST("/enroll-device", portalH.EnrollDevice)
 			portalProtected.GET("/activity", portalH.Activity)
 			portalProtected.GET("/activity/stats", portalH.ActivityStats)
