@@ -54,6 +54,9 @@ export const portalApi = {
   requestAccess: (data: { event_id: string; reason: string }) =>
     api.post("/api/v1/portal/access-requests", data),
   accessRequests: () => api.get("/api/v1/portal/access-requests"),
+  /** Everything the dashboard shows for one period ({start, end, tz}). */
+  overview: (params: { start: string; end: string; tz: string }) =>
+    api.get("/api/v1/portal/overview", { params }),
   withdrawAccessRequest: (id: string) => api.post(`/api/v1/portal/access-requests/${id}/withdraw`),
   downloadUninstaller: async (os: "macos" | "windows" | "linux") => {
     const session = await getSession();

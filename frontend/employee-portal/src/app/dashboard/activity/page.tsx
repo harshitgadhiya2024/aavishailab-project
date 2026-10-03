@@ -161,8 +161,16 @@ function ActivityContent() {
   const [limit, setLimit] = useState(25);
   const [days, setDays] = useState(7);
   const [search, setSearch] = useState("");
-  const [actionFilter, setActionFilter] = useState("");
-  const [source, setSource] = useState("");
+  // Deep links from the dashboard (?source=dlp, ?action=blocked) open the
+  // matching tab and filter; anything unrecognised is ignored.
+  const [actionFilter, setActionFilter] = useState(() => {
+    const a = params.get("action") ?? "";
+    return ACTIONS.some((o) => o.value === a) ? a : "";
+  });
+  const [source, setSource] = useState(() => {
+    const s = params.get("source") ?? "";
+    return SOURCES.some((o) => o.value === s) ? s : "";
+  });
   const [wsConnected, setWsConnected] = useState(false);
   const [requestFor, setRequestFor] = useState<ActivityEvent | null>(null);
   const wsRef = useRef<WebSocket | null>(null);

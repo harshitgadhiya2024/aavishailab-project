@@ -22,15 +22,15 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        "h-screen bg-background text-foreground flex flex-col transition-all duration-300 relative border-r border-border",
-        collapsed ? "w-16" : "w-64"
+        "h-screen bg-background text-foreground flex flex-col transition-all duration-300 relative border-r border-border flex-shrink-0",
+        // Phones always get the compact icon rail so the page keeps its width.
+        collapsed ? "w-16" : "w-16 md:w-64"
       )}
     >
       <div className="flex items-center gap-3 px-4 py-5 border-b border-border">
-        {collapsed ? (
-          <BrandMark className="h-8 w-8" />
-        ) : (
-          <div className="min-w-0">
+        <BrandMark className={cn("h-8 w-8", !collapsed && "md:hidden")} />
+        {!collapsed && (
+          <div className="hidden min-w-0 md:block">
             <BrandLogo className="h-[72px]" priority />
             <p className="mt-1 text-xs text-muted-foreground">Employee Portal</p>
           </div>
@@ -45,7 +45,8 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
-              title={collapsed ? item.label : undefined}
+              title={item.label}
+              aria-label={item.label}
               className={cn(
                 "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-sm font-medium border-l-2",
                 isActive
@@ -54,7 +55,7 @@ export function Sidebar() {
               )}
             >
               <item.icon className="w-5 h-5 flex-shrink-0" />
-              {!collapsed && <span>{item.label}</span>}
+              {!collapsed && <span className="hidden md:inline">{item.label}</span>}
             </Link>
           );
         })}
@@ -62,7 +63,8 @@ export function Sidebar() {
 
       <button
         onClick={() => setCollapsed(!collapsed)}
-        className="absolute -right-3 top-20 w-6 h-6 bg-card border border-border rounded-full flex items-center justify-center shadow-md hover:bg-muted transition-colors"
+        aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        className="absolute -right-3 top-20 hidden w-6 h-6 bg-card border border-border rounded-full items-center justify-center shadow-md hover:bg-muted transition-colors md:flex"
       >
         {collapsed
           ? <ChevronRight className="w-3 h-3 text-muted-foreground" />
@@ -70,7 +72,7 @@ export function Sidebar() {
       </button>
 
       {!collapsed && (
-        <div className="px-4 py-3 border-t border-border">
+        <div className="hidden px-4 py-3 border-t border-border md:block">
           <p className="text-xs text-muted-foreground">Aavishield v1.0 MVP</p>
         </div>
       )}

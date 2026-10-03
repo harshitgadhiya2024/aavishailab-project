@@ -598,6 +598,8 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 			portalProtected.POST("/enroll-device", portalH.EnrollDevice)
 			portalProtected.GET("/activity", portalH.Activity)
 			portalProtected.GET("/activity/stats", portalH.ActivityStats)
+			// Everything the employee dashboard shows for one period.
+			portalProtected.GET("/overview", portalH.Overview)
 			portalProtected.GET("/devices", portalH.Devices)
 			portalProtected.DELETE("/devices/:id", portalH.DeleteDevice)
 			portalProtected.POST("/access-requests", arH.Create)
