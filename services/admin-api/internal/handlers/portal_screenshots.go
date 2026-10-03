@@ -52,12 +52,12 @@ func (h *PortalHandler) Screenshots(c *gin.Context) {
 	if !ok {
 		return
 	}
+	// The capture interval is deliberately left out: knowing it would tell
+	// the employee when the next screenshot is not coming.
 	day["monitoring"] = gin.H{
 		"enabled":        settings.Enabled,
 		"blurred":        settings.Blur,
 		"retention_days": settings.RetentionDays,
-		"min_interval_s": settings.MinIntervalSeconds,
-		"max_interval_s": settings.MaxIntervalSeconds,
 	}
 	// What this person may do here. Spelled out so the page never has to
 	// guess, and so "delete" is visibly, deliberately false.

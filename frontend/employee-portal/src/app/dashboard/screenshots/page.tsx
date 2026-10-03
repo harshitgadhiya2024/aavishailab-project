@@ -201,12 +201,6 @@ function MonitoringNotice({ monitoring }: { monitoring: any }) {
       <span className="inline-flex items-center gap-2 text-body">
         <ShieldCheck className="h-4 w-4 text-success" /> Screenshot monitoring is on
       </span>
-      {monitoring.min_interval_s > 0 && (
-        <span>
-          About one every {Math.round(monitoring.min_interval_s / 60)}
-          {monitoring.max_interval_s > monitoring.min_interval_s ? `–${Math.round(monitoring.max_interval_s / 60)}` : ""} min while you work
-        </span>
-      )}
       {monitoring.blurred && (
         <span className="inline-flex items-center gap-1.5"><EyeOff className="h-4 w-4" /> Blurred</span>
       )}
