@@ -1,7 +1,8 @@
 "use client";
 
 import { useSession, signOut } from "next-auth/react";
-import { Bell, LogOut, ChevronDown, Building2 } from "lucide-react";
+import Link from "next/link";
+import { Bell, LogOut, ChevronDown, Building2, UserRound } from "lucide-react";
 import { useState } from "react";
 import { getInitials } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
@@ -56,6 +57,13 @@ export function Header({ title }: { title?: string }) {
                   <p className="text-sm font-medium text-foreground truncate">{user?.full_name}</p>
                   <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
                 </div>
+                <Link
+                  href="/dashboard/profile"
+                  onClick={() => setOpen(false)}
+                  className="flex items-center gap-2 w-full px-4 py-2 text-sm text-foreground hover:bg-muted"
+                >
+                  <UserRound className="w-4 h-4" /> Profile
+                </Link>
                 <button
                   onClick={() => signOut({ callbackUrl: "/login" })}
                   className="flex items-center gap-2 w-full px-4 py-2 text-sm text-danger hover:bg-red-500/10"
