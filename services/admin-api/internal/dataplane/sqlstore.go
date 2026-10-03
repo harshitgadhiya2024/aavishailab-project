@@ -576,6 +576,20 @@ func (s *sqlStore) DeleteScreenshots(ctx context.Context, q ScreenshotQuery) (in
 	return res.RowsAffected, res.Error
 }
 
+func (s *sqlStore) SetScreenshotNote(ctx context.Context, orgID, employeeID, id uuid.UUID, note string, at time.Time) (bool, error) {
+	q := ScreenshotQuery{OrgID: orgID, EmployeeID: &employeeID, IDs: []uuid.UUID{id}}
+	// Look first: MySQL reports zero affected rows when the value is
+	// unchanged, which would read as "not yours" on a repeat save.
+	found, err := s.FindScreenshots(ctx, ScreenshotQuery{OrgID: orgID, EmployeeID: &employeeID, IDs: []uuid.UUID{id}, Limit: 1})
+	if err != nil || len(found) == 0 {
+		return false, err
+	}
+	err = s.shotScope(ctx, q).Updates(map[string]any{
+		"employee_note": note, "employee_note_at": at.UTC(), "updated_at": time.Now().UTC(),
+	}).Error
+	return err == nil, err
+}
+
 func (s *sqlStore) ScreenshotEmployees(ctx context.Context, orgID uuid.UUID) ([]uuid.UUID, error) {
 	var ids []uuid.UUID
 	err := s.shotScope(ctx, ScreenshotQuery{OrgID: orgID}).
@@ -613,7 +627,41 @@ func (s *sqlStore) ensureSchema(ctx context.Context) error {
 			return describeSQLError(err, "create Aavishield's tables")
 		}
 	}
+	for _, stmt := range tenantUpgrades(s.dialect) {
+		if err := s.db.WithContext(ctx).Exec(stmt).Error; err != nil && !isDuplicateColumn(err) {
+			return describeSQLError(err, "update Aavishield's tables")
+		}
+	}
 	return nil
+}
+
+// tenantUpgrades adds columns introduced after a company's tables were first
+// created. Each statement is idempotent; for MySQL, which has no ADD COLUMN IF
+// NOT EXISTS, a "duplicate column" error simply means it is already there.
+func tenantUpgrades(dialect string) []string {
+	switch dialect {
+	case "mysql":
+		return []string{
+			"ALTER TABLE aavishield_screenshots ADD COLUMN employee_note TEXT NULL",
+			"ALTER TABLE aavishield_screenshots ADD COLUMN employee_note_at DATETIME(6) NULL",
+		}
+	case "sqlserver":
+		return []string{
+			`IF COL_LENGTH('aavishield_screenshots', 'employee_note') IS NULL
+			ALTER TABLE aavishield_screenshots ADD employee_note NVARCHAR(MAX) NULL`,
+			`IF COL_LENGTH('aavishield_screenshots', 'employee_note_at') IS NULL
+			ALTER TABLE aavishield_screenshots ADD employee_note_at DATETIMEOFFSET NULL`,
+		}
+	}
+	return []string{
+		"ALTER TABLE aavishield_screenshots ADD COLUMN IF NOT EXISTS employee_note TEXT",
+		"ALTER TABLE aavishield_screenshots ADD COLUMN IF NOT EXISTS employee_note_at TIMESTAMPTZ",
+	}
+}
+
+func isDuplicateColumn(err error) bool {
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "duplicate column") || strings.Contains(s, "1060")
 }
 
 func tenantDDL(dialect string) []string {
@@ -706,7 +754,9 @@ var postgresDDL = []string{
 		mouse_count INTEGER NOT NULL DEFAULT 0,
 		scroll_count INTEGER NOT NULL DEFAULT 0,
 		state VARCHAR(16) NOT NULL DEFAULT 'active',
-		open_apps JSONB
+		open_apps JSONB,
+		employee_note TEXT,
+		employee_note_at TIMESTAMPTZ
 	)`,
 	`CREATE INDEX IF NOT EXISTS aavishield_ss_org_emp ON aavishield_screenshots (org_id, employee_id, captured_at)`,
 	`CREATE INDEX IF NOT EXISTS aavishield_ss_session ON aavishield_screenshots (session_id)`,
@@ -796,6 +846,8 @@ var mysqlDDL = []string{
 		"scroll_count INT NOT NULL DEFAULT 0,\n" +
 		"state VARCHAR(16) NOT NULL DEFAULT 'active',\n" +
 		"open_apps JSON NULL,\n" +
+		"employee_note TEXT NULL,\n" +
+		"employee_note_at DATETIME(6) NULL,\n" +
 		"INDEX aavishield_ss_org_emp (org_id, employee_id, captured_at),\n" +
 		"INDEX aavishield_ss_session (session_id),\n" +
 		"INDEX aavishield_ss_org_ts (org_id, captured_at)\n" +
@@ -887,6 +939,8 @@ var sqlserverDDL = []string{
 		scroll_count INT NOT NULL DEFAULT 0,
 		state NVARCHAR(16) NOT NULL DEFAULT 'active',
 		open_apps NVARCHAR(MAX) NULL,
+		employee_note NVARCHAR(MAX) NULL,
+		employee_note_at DATETIMEOFFSET NULL,
 		INDEX aavishield_ss_org_emp (org_id, employee_id, captured_at),
 		INDEX aavishield_ss_session (session_id),
 		INDEX aavishield_ss_org_ts (org_id, captured_at)

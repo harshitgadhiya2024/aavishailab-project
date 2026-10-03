@@ -58,6 +58,10 @@ type Store interface {
 	InsertScreenshot(ctx context.Context, s *models.Screenshot) error
 	FindScreenshots(ctx context.Context, q ScreenshotQuery) ([]models.Screenshot, error)
 	DeleteScreenshots(ctx context.Context, q ScreenshotQuery) (int64, error)
+	// SetScreenshotNote records the employee's own explanation of one of
+	// their screenshots. Matches only a screenshot owned by that employee in
+	// that org; reports false when there is none.
+	SetScreenshotNote(ctx context.Context, orgID, employeeID, id uuid.UUID, note string, at time.Time) (bool, error)
 	// ScreenshotEmployees lists everyone in the org with at least one screenshot.
 	ScreenshotEmployees(ctx context.Context, orgID uuid.UUID) ([]uuid.UUID, error)
 	// SessionRollup totals a session's screenshots.

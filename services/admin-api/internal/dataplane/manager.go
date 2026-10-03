@@ -235,6 +235,13 @@ func openSealedDB(ctx context.Context, sealed string) (Store, error) {
 		st.Close()
 		return nil, describeConnectError(err, cfg)
 	}
+	// Bring a company database created by an older release up to the current
+	// schema (new columns, indexes). Idempotent and runs once per connection;
+	// a failure (e.g. the user lost ALTER rights) is logged, not fatal — reads
+	// and existing writes keep working.
+	if err := st.ensureSchema(ctx); err != nil {
+		log.Printf("dataplane: schema upgrade skipped: %v", err)
+	}
 	return st, nil
 }
 

@@ -166,6 +166,13 @@ func (g *guardedStore) DeleteScreenshots(ctx context.Context, q ScreenshotQuery)
 	return n, g.check(err)
 }
 
+func (g *guardedStore) SetScreenshotNote(ctx context.Context, orgID, employeeID, id uuid.UUID, note string, at time.Time) (bool, error) {
+	ctx, cancel := within(ctx, writeTimeout)
+	defer cancel()
+	ok, err := g.Store.SetScreenshotNote(ctx, orgID, employeeID, id, note, at)
+	return ok, g.check(err)
+}
+
 func (g *guardedStore) ScreenshotEmployees(ctx context.Context, orgID uuid.UUID) ([]uuid.UUID, error) {
 	ctx, cancel := within(ctx, readTimeout)
 	defer cancel()

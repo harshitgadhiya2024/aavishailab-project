@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { monitoringApi } from "@/lib/api";
 import {
   Camera, RefreshCw, Loader2, Trash2, X, ChevronDown, Clock,
-  Keyboard, MousePointer2, MoveVertical, CalendarDays, AlertTriangle, AppWindow,
+  Keyboard, MousePointer2, MoveVertical, CalendarDays, AlertTriangle, AppWindow, MessageSquareText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -461,7 +461,12 @@ function Thumbnail({ shot, tz, onClick }: { shot: any; tz: string; onClick: () =
   const barColor = pct >= 50 ? "bg-green-500" : pct >= 20 ? "bg-yellow-500" : "bg-red-500";
   return (
     <button onClick={onClick} className="group text-left">
-      <div className="aspect-video rounded-lg overflow-hidden border border-border bg-elevated">
+      <div className="relative aspect-video rounded-lg overflow-hidden border border-border bg-elevated">
+        {shot.employee_note && (
+          <span title={`Employee's reason: ${shot.employee_note}`} className="absolute right-1.5 top-1.5 rounded-md bg-brand-500 p-1 text-white shadow">
+            <MessageSquareText className="w-3 h-3" />
+          </span>
+        )}
         {/* Signed URL loads directly; no auth header needed. */}
         <img
           src={shot.image_url}
@@ -484,6 +489,11 @@ function Thumbnail({ shot, tz, onClick }: { shot: any; tz: string; onClick: () =
       <div className="mt-1.5">
         <OpenApps apps={shot.open_apps} max={2} />
       </div>
+      {shot.employee_note && (
+        <p className="mt-1 text-[11px] text-muted-foreground line-clamp-2" title={shot.employee_note}>
+          <span className="text-brand-500 font-medium">Reason:</span> {shot.employee_note}
+        </p>
+      )}
     </button>
   );
 }
@@ -544,6 +554,20 @@ function ZoomModal({
           <div className="px-5 py-3 border-t border-border">
             <p className="text-xs font-medium text-muted-foreground mb-1.5">Open at this moment</p>
             <OpenApps apps={shot.open_apps} />
+          </div>
+        )}
+        {/* Written by the employee from their portal; plain text, never HTML. */}
+        {shot.employee_note && (
+          <div className="px-5 py-3 border-t border-border bg-brand-500/5">
+            <p className="text-xs font-medium text-muted-foreground mb-1 inline-flex items-center gap-1.5">
+              <MessageSquareText className="w-3.5 h-3.5 text-brand-500" /> Employee&apos;s reason
+              {shot.employee_note_at && (
+                <span className="text-subtle font-normal">
+                  · {new Date(shot.employee_note_at).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: tz })}
+                </span>
+              )}
+            </p>
+            <p className="text-sm text-body whitespace-pre-wrap break-words">{shot.employee_note}</p>
           </div>
         )}
       </div>

@@ -119,6 +119,7 @@ func TestConformance(t *testing.T) {
 				t.Fatalf("second ensureSchema: %v", err)
 			}
 			runStoreSuite(t, st)
+			upgradeFromOlderSchema(t, st)
 		})
 	}
 
@@ -457,6 +458,26 @@ func runStoreSuite(t *testing.T, st Store) {
 	if err != nil || len(found) != 3 || found[0].ID != shots[0].ID || len(found[2].OpenApps) != 2 || found[1].StorageKey != shots[1].StorageKey {
 		t.Fatalf("screenshots = %+v, %v", found, err)
 	}
+	// The employee's own reason: only on their own screenshot, and it reads back.
+	noteAt := base.Add(30 * time.Minute)
+	if ok, err := st.SetScreenshotNote(ctx, org, emp1, shots[1].ID, "Personal call — lunch break", noteAt); err != nil || !ok {
+		t.Fatalf("set own note: ok=%v err=%v", ok, err)
+	}
+	if ok, err := st.SetScreenshotNote(ctx, org, emp2, shots[1].ID, "not mine", noteAt); err != nil || ok {
+		t.Fatalf("another employee must not be able to annotate it: ok=%v err=%v", ok, err)
+	}
+	if ok, _ := st.SetScreenshotNote(ctx, other, emp1, shots[1].ID, "wrong org", noteAt); ok {
+		t.Fatal("a note must not cross organisations")
+	}
+	// Saving the same text again still counts as found (MySQL reports 0 rows changed).
+	if ok, err := st.SetScreenshotNote(ctx, org, emp1, shots[1].ID, "Personal call — lunch break", noteAt); err != nil || !ok {
+		t.Fatalf("repeat save: ok=%v err=%v", ok, err)
+	}
+	noted, _ := st.FindScreenshots(ctx, ScreenshotQuery{OrgID: org, IDs: []uuid.UUID{shots[1].ID}})
+	if len(noted) != 1 || noted[0].EmployeeNote != "Personal call — lunch break" || noted[0].EmployeeNoteAt == nil || !near(*noted[0].EmployeeNoteAt, noteAt) {
+		t.Fatalf("note did not round-trip: %+v", noted)
+	}
+
 	emps, _ := st.ScreenshotEmployees(ctx, org)
 	if len(emps) != 1 || emps[0] != emp1 {
 		t.Fatalf("screenshot employees = %v", emps)
@@ -505,4 +526,46 @@ func sessionIDs(s []models.WorkSession) []string {
 		out[i] = x.ID.String()[:8]
 	}
 	return out
+}
+
+// upgradeFromOlderSchema simulates a company database created before the
+// employee-note columns existed: drop them, reconnect-time ensureSchema must
+// add them back, and writing a note must work afterwards.
+func upgradeFromOlderSchema(t *testing.T, st tenantStore) {
+	t.Helper()
+	ctx := context.Background()
+	var ss *sqlStore
+	switch v := st.(type) {
+	case *sqlStore:
+		ss = v
+	case *pgTenant:
+		ss = v.sqlStore
+	default:
+		return // MongoDB has no columns to add
+	}
+	drops := map[string][]string{
+		"postgres":  {"ALTER TABLE aavishield_screenshots DROP COLUMN IF EXISTS employee_note", "ALTER TABLE aavishield_screenshots DROP COLUMN IF EXISTS employee_note_at"},
+		"mysql":     {"ALTER TABLE aavishield_screenshots DROP COLUMN employee_note", "ALTER TABLE aavishield_screenshots DROP COLUMN employee_note_at"},
+		"sqlserver": {"ALTER TABLE aavishield_screenshots DROP COLUMN employee_note", "ALTER TABLE aavishield_screenshots DROP COLUMN employee_note_at"},
+	}[ss.dialect]
+	for _, q := range drops {
+		if err := ss.db.Exec(q).Error; err != nil {
+			t.Fatalf("simulate old schema: %v", err)
+		}
+	}
+	if err := st.ensureSchema(ctx); err != nil {
+		t.Fatalf("upgrade: %v", err)
+	}
+	if err := st.ensureSchema(ctx); err != nil {
+		t.Fatalf("upgrade must be idempotent: %v", err)
+	}
+	org, emp := uuid.New(), uuid.New()
+	shot := &models.Screenshot{OrgID: org, EmployeeID: &emp, CapturedAt: time.Now(), StorageKey: "k"}
+	if err := st.InsertScreenshot(ctx, shot); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := st.SetScreenshotNote(ctx, org, emp, shot.ID, "after upgrade", time.Now()); err != nil || !ok {
+		t.Fatalf("note after upgrade: ok=%v err=%v", ok, err)
+	}
+	st.DeleteScreenshots(ctx, ScreenshotQuery{OrgID: org})
 }

@@ -98,6 +98,13 @@ type Screenshot struct {
 	// system and, on Linux, a tool that may not be installed.
 	OpenApps []string `gorm:"type:jsonb;serializer:json" json:"open_apps"`
 
+	// EmployeeNote is the employee's own explanation of this capture, written
+	// from the employee portal ("Personal call", "Researching a vendor").
+	// Employees can explain a screenshot; they can never delete one. Stored
+	// with the screenshot so it lives wherever the company keeps its data.
+	EmployeeNote   string     `json:"employee_note"`
+	EmployeeNoteAt *time.Time `json:"employee_note_at"`
+
 	Employee *Employee `gorm:"foreignKey:EmployeeID" json:"employee,omitempty"`
 }
 

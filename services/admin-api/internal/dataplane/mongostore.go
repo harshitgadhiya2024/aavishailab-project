@@ -101,28 +101,30 @@ type mSession struct {
 }
 
 type mShot struct {
-	ID              string    `bson:"_id"`
-	CreatedAt       time.Time `bson:"created_at"`
-	UpdatedAt       time.Time `bson:"updated_at"`
-	OrgID           string    `bson:"org_id"`
-	EmployeeID      *string   `bson:"employee_id"`
-	DeviceID        *string   `bson:"device_id"`
-	SessionID       *string   `bson:"session_id"`
-	CapturedAt      time.Time `bson:"captured_at"`
-	IntervalStart   time.Time `bson:"interval_start"`
-	IntervalEnd     time.Time `bson:"interval_end"`
-	StorageKey      string    `bson:"storage_key"`
-	Width           int       `bson:"width"`
-	Height          int       `bson:"height"`
-	Bytes           int       `bson:"bytes"`
-	ActivityPercent int       `bson:"activity_percent"`
-	ActiveSeconds   int       `bson:"active_seconds"`
-	IntervalSeconds int       `bson:"interval_seconds"`
-	KeyboardCount   int       `bson:"keyboard_count"`
-	MouseCount      int       `bson:"mouse_count"`
-	ScrollCount     int       `bson:"scroll_count"`
-	State           string    `bson:"state"`
-	OpenApps        []string  `bson:"open_apps"`
+	ID              string     `bson:"_id"`
+	CreatedAt       time.Time  `bson:"created_at"`
+	UpdatedAt       time.Time  `bson:"updated_at"`
+	OrgID           string     `bson:"org_id"`
+	EmployeeID      *string    `bson:"employee_id"`
+	DeviceID        *string    `bson:"device_id"`
+	SessionID       *string    `bson:"session_id"`
+	CapturedAt      time.Time  `bson:"captured_at"`
+	IntervalStart   time.Time  `bson:"interval_start"`
+	IntervalEnd     time.Time  `bson:"interval_end"`
+	StorageKey      string     `bson:"storage_key"`
+	Width           int        `bson:"width"`
+	Height          int        `bson:"height"`
+	Bytes           int        `bson:"bytes"`
+	ActivityPercent int        `bson:"activity_percent"`
+	ActiveSeconds   int        `bson:"active_seconds"`
+	IntervalSeconds int        `bson:"interval_seconds"`
+	KeyboardCount   int        `bson:"keyboard_count"`
+	MouseCount      int        `bson:"mouse_count"`
+	ScrollCount     int        `bson:"scroll_count"`
+	State           string     `bson:"state"`
+	OpenApps        []string   `bson:"open_apps"`
+	EmployeeNote    string     `bson:"employee_note,omitempty"`
+	EmployeeNoteAt  *time.Time `bson:"employee_note_at,omitempty"`
 }
 
 func idStr(id *uuid.UUID) *string {
@@ -254,6 +256,7 @@ func toMShot(s *models.Screenshot) mShot {
 		ActivityPercent: s.ActivityPercent, ActiveSeconds: s.ActiveSeconds,
 		IntervalSeconds: s.IntervalSeconds, KeyboardCount: s.KeyboardCount,
 		MouseCount: s.MouseCount, ScrollCount: s.ScrollCount, State: s.State, OpenApps: s.OpenApps,
+		EmployeeNote: s.EmployeeNote, EmployeeNoteAt: s.EmployeeNoteAt,
 	}
 }
 
@@ -268,6 +271,7 @@ func (d mShot) model() models.Screenshot {
 		ActiveSeconds: d.ActiveSeconds, IntervalSeconds: d.IntervalSeconds,
 		KeyboardCount: d.KeyboardCount, MouseCount: d.MouseCount, ScrollCount: d.ScrollCount,
 		State: d.State, OpenApps: d.OpenApps,
+		EmployeeNote: d.EmployeeNote, EmployeeNoteAt: d.EmployeeNoteAt,
 	}
 	s.ID, s.CreatedAt, s.UpdatedAt = id, d.CreatedAt, d.UpdatedAt
 	return s
@@ -817,6 +821,16 @@ func (m *mongoStore) DeleteScreenshots(ctx context.Context, q ScreenshotQuery) (
 		return 0, err
 	}
 	return res.DeletedCount, nil
+}
+
+func (m *mongoStore) SetScreenshotNote(ctx context.Context, orgID, employeeID, id uuid.UUID, note string, at time.Time) (bool, error) {
+	res, err := m.shots.UpdateOne(ctx,
+		bson.M{"_id": id.String(), "org_id": orgID.String(), "employee_id": employeeID.String()},
+		bson.M{"$set": bson.M{"employee_note": note, "employee_note_at": at.UTC(), "updated_at": time.Now().UTC()}})
+	if err != nil {
+		return false, err
+	}
+	return res.MatchedCount > 0, nil
 }
 
 func (m *mongoStore) ScreenshotEmployees(ctx context.Context, orgID uuid.UUID) ([]uuid.UUID, error) {

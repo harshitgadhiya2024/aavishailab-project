@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Download, Activity, Monitor, ChevronLeft, ChevronRight } from "lucide-react";
+import { LayoutDashboard, Download, Activity, Monitor, Camera, ChevronLeft, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { BrandLogo, BrandMark } from "@/components/brand/BrandLogo";
@@ -12,6 +12,7 @@ const navItems = [
   { href: "/dashboard/download", icon: Download, label: "Download Agent" },
   { href: "/dashboard/devices", icon: Monitor, label: "My Devices" },
   { href: "/dashboard/activity", icon: Activity, label: "My Activity" },
+  { href: "/dashboard/screenshots", icon: Camera, label: "My Screenshots" },
 ];
 
 export function Sidebar() {

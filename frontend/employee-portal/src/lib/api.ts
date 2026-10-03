@@ -57,6 +57,12 @@ export const portalApi = {
   /** Everything the dashboard shows for one period ({start, end, tz}). */
   overview: (params: { start: string; end: string; tz: string }) =>
     api.get("/api/v1/portal/overview", { params }),
+  // Own screenshots only (the employee comes from the token). Read + reason;
+  // there is deliberately no delete call here.
+  screenshots: (params: { date: string; tz: string; day_reset?: number }) =>
+    api.get("/api/v1/portal/screenshots", { params }),
+  setScreenshotReason: (id: string, reason: string) =>
+    api.put(`/api/v1/portal/screenshots/${id}/reason`, { reason }),
   withdrawAccessRequest: (id: string) => api.post(`/api/v1/portal/access-requests/${id}/withdraw`),
   downloadUninstaller: async (os: "macos" | "windows" | "linux") => {
     const session = await getSession();

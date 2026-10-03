@@ -98,6 +98,10 @@ type screenshotOut struct {
 	MouseCount      int       `json:"mouse_count"`
 	ScrollCount     int       `json:"scroll_count"`
 	State           string    `json:"state"`
+	OpenApps        []string  `json:"open_apps"`
+	// The employee's own explanation, written from the employee portal.
+	EmployeeNote   string     `json:"employee_note,omitempty"`
+	EmployeeNoteAt *time.Time `json:"employee_note_at,omitempty"`
 }
 
 type sessionOut struct {
@@ -127,17 +131,38 @@ func (h *MonitoringHandler) Screenshots(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "employee_id is required"})
 		return
 	}
+	day, ok := screenshotDay(c, orgID, employeeID)
+	if !ok {
+		return
+	}
+	day["permissions"] = gin.H{
+		"delete_session":    hasPerm(c, models.PermMonitoringDeleteSes),
+		"delete_screenshot": hasPerm(c, models.PermMonitoringDeleteImg),
+	}
+	c.JSON(http.StatusOK, day)
+}
 
+// screenshotDay builds one person's day of sessions and screenshots — the
+// shared body of the company's Screenshots view and the employee's own
+// read-only view. Reads ?date= (YYYY-MM-DD), ?tz= and ?day_reset= (hour);
+// writes the error response itself and returns false on failure.
+//
+// The "day" is [date 00:00 + day_reset, +24h) in the requested timezone, so a
+// 04:00 day-reset puts the small hours on the previous calendar day exactly as
+// the reference UI does.
+func screenshotDay(c *gin.Context, orgID, employeeID uuid.UUID) (gin.H, bool) {
 	loc := time.UTC
 	if tz := c.Query("tz"); tz != "" {
 		if l, err := time.LoadLocation(tz); err == nil {
 			loc = l
 		}
 	}
-	dayReset := atoiOr(c.Query("day_reset"), 0) // hour, 0–23
+	dayReset := atoiOr(c.Query("day_reset"), 0)
+	if dayReset < 0 || dayReset > 23 {
+		dayReset = 0
+	}
 
-	dateStr := c.Query("date")
-	base, err := time.ParseInLocation("2006-01-02", dateStr, loc)
+	base, err := time.ParseInLocation("2006-01-02", c.Query("date"), loc)
 	if err != nil {
 		base = time.Now().In(loc)
 		base = time.Date(base.Year(), base.Month(), base.Day(), 0, 0, 0, 0, loc)
@@ -147,7 +172,7 @@ func (h *MonitoringHandler) Screenshots(c *gin.Context) {
 
 	st, ok := eventStore(c, orgID.String())
 	if !ok {
-		return
+		return nil, false
 	}
 	ctx := c.Request.Context()
 	shots, err := st.FindScreenshots(ctx, dataplane.ScreenshotQuery{
@@ -155,12 +180,11 @@ func (h *MonitoringHandler) Screenshots(c *gin.Context) {
 	})
 	if err != nil {
 		respondStoreError(c, err)
-		return
+		return nil, false
 	}
 
 	// Group by session, minting a signed URL per image. Both start as
-	// non-nil — same reasoning as the nil-slice fix below this function:
-	// a day with zero orphans should serialize as `[]`, not `null`.
+	// non-nil: a day with zero orphans should serialize as `[]`, not `null`.
 	bySession := map[uuid.UUID][]screenshotOut{}
 	orphans := []screenshotOut{}
 	for i := range shots {
@@ -174,7 +198,8 @@ func (h *MonitoringHandler) Screenshots(c *gin.Context) {
 			ImageURL: url, Width: s.Width, Height: s.Height,
 			ActivityPercent: s.ActivityPercent,
 			KeyboardCount:   s.KeyboardCount, MouseCount: s.MouseCount, ScrollCount: s.ScrollCount,
-			State: s.State,
+			State: s.State, OpenApps: s.OpenApps,
+			EmployeeNote: s.EmployeeNote, EmployeeNoteAt: s.EmployeeNoteAt,
 		}
 		if s.SessionID != nil {
 			bySession[*s.SessionID] = append(bySession[*s.SessionID], out)
@@ -188,19 +213,13 @@ func (h *MonitoringHandler) Screenshots(c *gin.Context) {
 	})
 	if err != nil {
 		respondStoreError(c, err)
-		return
+		return nil, false
 	}
 
 	out := make([]sessionOut, 0, len(sessions))
 	for i := range sessions {
-		// bySession[id] is a nil slice, not an empty one, for any session
-		// with zero screenshots in this window (a Go map read on a missing
-		// key returns the zero value) — encoding/json marshals a nil slice
-		// as `null`, not `[]`, which crashed the dashboard's own
-		// `session.screenshots.length` the moment a session had no shots
-		// yet (e.g. right after enrollment, before the first capture
-		// interval elapses). Coalesced here so the wire contract is always
-		// an array.
+		// A session with no screenshots in this window must still carry an
+		// array: the dashboards read session.screenshots.length.
 		shots := bySession[sessions[i].ID]
 		if shots == nil {
 			shots = []screenshotOut{}
@@ -220,7 +239,7 @@ func (h *MonitoringHandler) Screenshots(c *gin.Context) {
 		avg = clampPercent(activeSeconds * 100 / trackedSeconds)
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	return gin.H{
 		"window":   gin.H{"from": from, "to": to, "day_reset": dayReset, "timezone": loc.String()},
 		"sessions": out,
 		"orphans":  orphans, // screenshots without a session (shouldn't normally happen)
@@ -231,11 +250,7 @@ func (h *MonitoringHandler) Screenshots(c *gin.Context) {
 			"tracked_seconds": trackedSeconds,
 			"avg_activity":    avg,
 		},
-		"permissions": gin.H{
-			"delete_session":    hasPerm(c, models.PermMonitoringDeleteSes),
-			"delete_screenshot": hasPerm(c, models.PermMonitoringDeleteImg),
-		},
-	})
+	}, true
 }
 
 // buildTimeline collapses per-screenshot intervals into contiguous coloured

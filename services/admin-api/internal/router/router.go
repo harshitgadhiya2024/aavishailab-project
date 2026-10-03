@@ -600,6 +600,12 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 			portalProtected.GET("/activity/stats", portalH.ActivityStats)
 			// Everything the employee dashboard shows for one period.
 			portalProtected.GET("/overview", portalH.Overview)
+			// The employee's own screenshots: read-only, plus a reason they can
+			// attach. There is deliberately no delete route on the portal.
+			portalProtected.GET("/screenshots", portalH.Screenshots)
+			portalProtected.PUT("/screenshots/:id/reason",
+				middleware.RateLimit(rdb, "portal-screenshot-reason", 60, time.Minute),
+				portalH.SetScreenshotReason)
 			portalProtected.GET("/devices", portalH.Devices)
 			portalProtected.DELETE("/devices/:id", portalH.DeleteDevice)
 			portalProtected.POST("/access-requests", arH.Create)
