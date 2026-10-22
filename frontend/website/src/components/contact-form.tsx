@@ -8,7 +8,7 @@ type Status = "idle" | "sending" | "sent" | "error";
 type Errors = Partial<Record<"name" | "email" | "company" | "devices", string>>;
 
 const field =
-  "h-12 w-full rounded-xl border border-line-strong bg-surface px-4 text-[15px] text-fg placeholder:text-muted transition-[border-color,box-shadow] focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/20";
+  "h-12 w-full rounded-[4px] border border-line-strong bg-surface px-4 text-[15px] text-fg placeholder:text-muted transition-[border-color,box-shadow] focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/20";
 
 function validate(data: FormData): Errors {
   const e: Errors = {};
@@ -58,7 +58,7 @@ export function ContactForm() {
   }
 
   return (
-    <div className="relative overflow-hidden rounded-[20px] border border-line bg-surface p-6 shadow-[var(--shadow)] md:p-10">
+    <div className="relative overflow-hidden rounded-[6px] border border-line bg-surface p-6 shadow-[var(--shadow)] md:p-10">
       <AnimatePresence mode="wait" initial={false}>
         {status === "sent" ? (
           <motion.div
@@ -77,7 +77,7 @@ export function ContactForm() {
               >
                 <CheckCircle size={30} weight="fill" />
               </motion.span>
-              <h2 className="mt-6 text-2xl font-semibold tracking-tight text-fg">Request received</h2>
+              <h2 className="mt-6 text-2xl font-normal tracking-tight text-fg">Request received</h2>
               <p className="mx-auto mt-2 max-w-[36ch] text-muted">We will reply within one business day to schedule your demo.</p>
             </div>
           </motion.div>
@@ -116,7 +116,7 @@ export function ContactForm() {
             </div>
 
             {status === "error" && (
-              <p role="alert" className="rounded-xl border border-danger/40 px-4 py-3 text-sm text-danger">
+              <p role="alert" className="rounded-[4px] border border-danger/40 px-4 py-3 text-sm text-danger">
                 {serverError || "Something went wrong sending your request. Please try again."}
               </p>
             )}
@@ -124,7 +124,7 @@ export function ContactForm() {
             <button
               type="submit"
               disabled={status === "sending"}
-              className="mt-2 inline-flex h-12 items-center justify-center gap-2 rounded-full bg-brand px-7 text-[15px] font-medium text-on-brand hover:bg-brand-dark transition-[transform,opacity] duration-200 active:scale-[0.98] disabled:opacity-70"
+              className="mt-2 inline-flex h-12 items-center justify-center gap-2 rounded-[6px] bg-brand px-7 text-[15px] font-medium text-on-brand hover:bg-brand-dark transition-[transform,opacity] duration-200 active:scale-[0.98] disabled:opacity-70"
             >
               {status === "sending" && <CircleNotch size={16} weight="bold" className="animate-spin" />}
               {status === "sending" ? "Sending" : "Book a demo"}

@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { PixelPanel } from "@/components/landing/visuals";
+import { ConsolidateHero } from "@/components/landing/hero-widgets";
 import Image from "next/image";
 import { Check, Minus, X } from "@phosphor-icons/react/dist/ssr";
 import { BeforeAfter, CardGrid, FaqSection, FeatureSplit } from "@/components/blocks";
@@ -14,7 +16,7 @@ import { JsonLd, breadcrumbLd, faqLd } from "@/lib/seo";
 import { shots } from "@/lib/shots";
 
 export const metadata: Metadata = {
-  title: "Why Aavishield: One Agent Instead of Four Security Tools",
+  title: "Why One Endpoint Security Agent Beats Four",
   description: "Why companies choose Aavishield over office firewalls, VPN-based cloud proxies and a stack of separate point tools for web filtering, DLP and device compliance.",
   alternates: { canonical: "/why-aavishield" },
   openGraph: { url: "/why-aavishield" },
@@ -52,11 +54,11 @@ const faq = [
 
 const icon = (v: V) =>
   v === "yes" ? (
-    <span className="inline-grid size-6 place-items-center rounded-full bg-brand text-on-brand"><Check size={12} weight="bold" /></span>
+    <span className="inline-grid size-6 place-items-center rounded-[4px] bg-brand text-on-brand"><Check size={12} weight="bold" /></span>
   ) : v === "part" ? (
-    <span className="inline-grid size-6 place-items-center rounded-full bg-bg-2 text-muted"><Minus size={12} weight="bold" /></span>
+    <span className="inline-grid size-6 place-items-center rounded-[4px] bg-bg-2 text-muted"><Minus size={12} weight="bold" /></span>
   ) : (
-    <span className="inline-grid size-6 place-items-center rounded-full bg-danger/10 text-danger"><X size={12} weight="bold" /></span>
+    <span className="inline-grid size-6 place-items-center rounded-[4px] bg-danger/10 text-danger"><X size={12} weight="bold" /></span>
   );
 
 export default function WhyPage() {
@@ -66,12 +68,12 @@ export default function WhyPage() {
       <JsonLd data={faqLd(faq)} />
 
       {/* 1. Hero */}
-      <PageHero eyebrow="Why Aavishield" accent={["four."]} title="One agent instead of four." body="Most companies protect laptops with a patchwork: an office firewall, a VPN, a DLP tool and a compliance checker. Aavishield replaces the patchwork with one agent and one console.">
+      <PageHero visual={<ConsolidateHero />} eyebrow="Why one endpoint security agent" accent={["four."]} title="One agent instead of four." body="Most companies protect laptops with a patchwork: an office firewall, a VPN, a DLP tool and a compliance checker. Aavishield replaces the patchwork with one agent and one console.">
         <Button href="/contact" size="lg">{CTA.demo}</Button>
       </PageHero>
 
       {/* 2. Before/after */}
-      <section className="mx-auto max-w-6xl px-4 md:px-6">
+      <section className="grid-band px-5 py-16 sm:px-8 md:px-12 md:py-24">
         <BeforeAfter
           beforeTitle="The patchwork"
           afterTitle="Aavishield"
@@ -83,7 +85,7 @@ export default function WhyPage() {
       {/* 3. Comparison */}
       <Section>
         <SectionHead eyebrow="Compared" title="How the common approaches stack up." body="A general comparison of approaches, not of specific vendors. Your needs may differ, and we are happy to walk through them." />
-        <Reveal className="mt-12 overflow-x-auto rounded-[20px] border border-line bg-surface">
+        <Reveal className="mt-12 overflow-x-auto rounded-[6px] border border-line bg-surface">
           <table className="w-full min-w-[720px] text-left text-sm">
             <thead>
               <tr className="border-b border-line bg-bg-2">
@@ -91,7 +93,7 @@ export default function WhyPage() {
                 <th className="px-4 py-4 text-center font-medium text-muted">Office firewall</th>
                 <th className="px-4 py-4 text-center font-medium text-muted">VPN + cloud proxy</th>
                 <th className="px-4 py-4 text-center font-medium text-muted">Separate point tools</th>
-                <th className="px-4 py-4 text-center font-semibold text-brand-ink">Aavishield</th>
+                <th className="px-4 py-4 text-center font-medium text-brand-ink">Aavishield</th>
               </tr>
             </thead>
             <tbody>
@@ -121,7 +123,7 @@ export default function WhyPage() {
       </Section>
 
       {/* 5. Manifesto */}
-      <section className="mx-auto max-w-5xl px-4 py-28 md:px-6 md:py-36">
+      <section className="grid-band px-5 py-24 sm:px-8 md:px-12 md:py-32">
         <ScrollText className="text-3xl font-medium leading-[1.2] tracking-tight text-fg md:text-5xl" text="Every extra agent is another thing to install, update and debug. Every extra console is another place to forget to look. We kept it to one of each." />
       </section>
 
@@ -133,7 +135,7 @@ export default function WhyPage() {
       {/* 7. What you stop paying for */}
       <Section>
         <div className="grid items-center gap-12 lg:grid-cols-2">
-          <Reveal y={40} className="relative aspect-[4/3] overflow-hidden rounded-[28px] bg-ink">
+          <Reveal y={40} className="relative aspect-[4/3] overflow-hidden rounded-[6px] bg-ink">
             <Image src="/images/home-agent.webp" alt="Close-up of a glowing orange chip embedded in a dark laptop chassis" fill sizes="(max-width: 1024px) 100vw, 560px" className="object-cover" />
           </Reveal>
           <div>
@@ -141,8 +143,8 @@ export default function WhyPage() {
             <ul className="mt-8 grid gap-3">
               {stop.map((s, i) => (
                 <Reveal key={s} delay={i * 0.05}>
-                  <li className="flex items-center gap-4 rounded-[16px] border border-line bg-surface p-4 text-fg-2">
-                    <span className="grid size-6 shrink-0 place-items-center rounded-full bg-danger/10 text-danger"><X size={11} weight="bold" /></span>
+                  <li className="flex items-center gap-4 rounded-[6px] border border-line bg-surface p-4 text-fg-2">
+                    <span className="grid size-6 shrink-0 place-items-center rounded-[4px] bg-danger/10 text-danger"><X size={11} weight="bold" /></span>
                     <span className="line-through decoration-muted/60">{s}</span>
                   </li>
                 </Reveal>
@@ -154,10 +156,10 @@ export default function WhyPage() {
 
       {/* 8. Visual proof */}
       <Section>
-        <div className="grid gap-4 md:grid-cols-2">
+        <PixelPanel className="grid gap-4 p-4 sm:p-6 md:grid-cols-2 md:p-8">
           <Reveal className="min-w-0"><BrowserFrame shot={shots.dlp} sizes="(max-width: 768px) 100vw, 560px" /></Reveal>
           <Reveal delay={0.1} className="min-w-0"><BrowserFrame shot={shots.reportsCompliance} sizes="(max-width: 768px) 100vw, 560px" /></Reveal>
-        </div>
+        </PixelPanel>
       </Section>
 
       {/* 9. FAQ */}

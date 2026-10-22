@@ -1,16 +1,17 @@
 import type { Metadata } from "next";
+import { ScreenShowcase } from "@/components/screen-showcase";
+import { LiveFeed } from "@/components/landing/live-feed";
+import { FeedHero } from "@/components/landing/hero-widgets";
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowUpRight, Check } from "@phosphor-icons/react/dist/ssr";
 import { CardGrid, FaqSection } from "@/components/blocks";
-import { BrowserFrame } from "@/components/browser-frame";
 import { Button } from "@/components/button";
 import { CtaBand } from "@/components/cta-band";
 import { ModuleIcon } from "@/components/icons";
 import { Reveal, Stagger, StaggerItem } from "@/components/motion/reveal";
 import { Spotlight } from "@/components/motion/spotlight";
 import { PageHero } from "@/components/page-hero";
-import { ScrollTilt } from "@/components/scroll-tilt";
 import { Section, SectionHead } from "@/components/section";
 import { SolutionIcon } from "@/components/solution-icon";
 import { CTA, modules } from "@/lib/content";
@@ -19,9 +20,9 @@ import { shots } from "@/lib/shots";
 import { industries, solutionsList } from "@/lib/solutions";
 
 export const metadata: Metadata = {
-  title: "Solutions: Real Security Problems, Solved on Every Device",
+  title: "Endpoint Security Solutions by Problem",
   description:
-    "AI data leakage, remote work, insider risk, audits, shadow IT, VPN bypass, phishing, productivity and onboarding. See how Aavishield solves each with one endpoint agent.",
+    "AI data leakage, remote work, insider risk, audits, shadow IT, VPN bypass and phishing: see how one Aavishield endpoint agent solves each problem.",
   alternates: { canonical: "/solutions" },
   openGraph: { url: "/solutions" },
 };
@@ -58,29 +59,29 @@ export default function SolutionsPage() {
       />
 
       {/* 1. Hero */}
-      <PageHero eyebrow="Solutions" accent={["today."]} title="Start from the problem you have today." body="Nine problems companies face right now, and exactly how Aavishield solves each one, shown in the real console." aside={false}>
+      <PageHero visual={<FeedHero />} eyebrow="Endpoint security solutions" accent={["today."]} title="Start from the problem you have today." body="Nine problems companies face right now, and exactly how Aavishield solves each one, shown in the real console.">
         <Button href="#problems" size="lg">See the problems</Button>
         <Button href="/contact" size="lg" variant="ghost">{CTA.demo}</Button>
       </PageHero>
 
       {/* 2. Problems */}
-      <section id="problems" className="mx-auto max-w-6xl scroll-mt-28 px-4 md:px-6">
+      <section id="problems" className="grid-band scroll-mt-24 px-5 py-16 sm:px-8 md:px-12 md:py-24">
         <Stagger className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {solutionsList.map((s, i) => (
             <StaggerItem key={s.slug} className="h-full">
               <Spotlight className="h-full">
                 <Link href={`/solutions/${s.slug}`} className="flex h-full flex-col">
-                  <div className="relative m-2 aspect-[16/10] overflow-hidden rounded-[14px] bg-bg-2">
+                  <div className="relative m-2 aspect-[16/10] overflow-hidden rounded-[6px] bg-bg-2">
                     <Image src={shots[s.hero].src} alt={shots[s.hero].alt} fill sizes="(max-width: 768px) 100vw, 380px" className="object-cover object-left-top transition-transform duration-[1.1s] ease-out-expo group-hover:scale-[1.05]" />
                   </div>
                   <div className="flex flex-1 flex-col p-6 pt-4">
                     <div className="flex items-center justify-between">
-                      <span className="grid size-10 place-items-center rounded-xl border border-line text-fg transition-colors duration-300 group-hover:border-brand group-hover:bg-brand group-hover:text-on-brand">
+                      <span className="grid size-10 place-items-center rounded-[4px] border border-line text-fg transition-colors duration-300 group-hover:border-brand group-hover:bg-brand group-hover:text-on-brand">
                         <SolutionIcon icon={s.icon} size={20} />
                       </span>
                       <span className="font-mono text-xs text-muted">0{i + 1}</span>
                     </div>
-                    <h2 className="mt-5 text-xl font-semibold tracking-tight text-fg">{s.name}</h2>
+                    <h2 className="mt-5 text-xl font-normal tracking-tight text-fg">{s.name}</h2>
                     <p className="mt-2 flex-1 leading-relaxed text-muted">{s.menu}.</p>
                     <span className="mt-5 flex items-center gap-1.5 text-sm font-medium text-brand-ink">
                       How we solve it <ArrowUpRight size={14} className="transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
@@ -96,15 +97,13 @@ export default function SolutionsPage() {
       {/* 3. One console */}
       <Section>
         <SectionHead center eyebrow="One console" title="Nine problems. One place to see them." accent={["One", "place"]} body="Every solution reports into the same security overview, so you see the whole picture, not nine dashboards." />
-        <ScrollTilt className="mt-14">
-          <BrowserFrame shot={shots.overview} sizes="(max-width: 1200px) 100vw, 1150px" />
-        </ScrollTilt>
+        <div className="mt-14"><ScreenShowcase shot={shots.overview} widget={<LiveFeed />} /></div>
       </Section>
 
       {/* 4. Matrix */}
       <Section>
         <SectionHead eyebrow="Problem to control" title="Which controls solve which problem." body="Each solution combines a few of the seven Aavishield controls. All of them run in the same agent." />
-        <Reveal className="mt-12 overflow-x-auto rounded-[20px] border border-line bg-surface">
+        <Reveal className="mt-12 overflow-x-auto rounded-[6px] border border-line bg-surface">
           <table className="w-full min-w-[860px] text-left text-sm">
             <thead>
               <tr className="border-b border-line bg-bg-2">
@@ -128,7 +127,7 @@ export default function SolutionsPage() {
                   {modules.map((m) => (
                     <td key={m.slug} className="px-3 py-3.5 text-center">
                       {s.modules.includes(m.slug) ? (
-                        <span className="inline-grid size-6 place-items-center rounded-full bg-brand text-on-brand"><Check size={12} weight="bold" /></span>
+                        <span className="inline-grid size-6 place-items-center rounded-[4px] bg-brand text-on-brand"><Check size={12} weight="bold" /></span>
                       ) : (
                         <span className="inline-block size-1.5 rounded-full bg-line-strong" />
                       )}
@@ -150,9 +149,9 @@ export default function SolutionsPage() {
         <Stagger className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           {industries.map((ind) => (
             <StaggerItem key={ind.slug}>
-              <Link href={`/industries/${ind.slug}`} className="group block h-full rounded-[20px] border border-line bg-surface p-6 transition-colors duration-300 hover:border-brand/50">
+              <Link href={`/industries/${ind.slug}`} className="group block h-full rounded-[6px] border border-line bg-surface p-6 transition-colors duration-300 hover:border-brand/50">
                 <SolutionIcon icon={ind.icon} size={26} className="text-brand-ink" />
-                <h3 className="mt-6 font-semibold text-fg">{ind.name}</h3>
+                <h3 className="mt-6 font-normal text-fg">{ind.name}</h3>
                 <p className="mt-2 text-sm leading-relaxed text-muted">{ind.menu}</p>
               </Link>
             </StaggerItem>
@@ -163,7 +162,7 @@ export default function SolutionsPage() {
       {/* 6. Approach */}
       <Section>
         <div className="grid items-center gap-12 lg:grid-cols-[1fr_1fr]">
-          <Reveal y={40} className="relative aspect-[4/3] overflow-hidden rounded-[28px] bg-ink">
+          <Reveal y={40} className="relative aspect-[4/3] overflow-hidden rounded-[6px] bg-ink">
             <Image src="/images/company-team.webp" alt="A team collaborating around a large table in a minimal studio office" fill sizes="(max-width: 1024px) 100vw, 560px" className="object-cover" />
           </Reveal>
           <div>
@@ -171,7 +170,7 @@ export default function SolutionsPage() {
             <div className="mt-10 grid gap-8">
               {approach.map((a, i) => (
                 <Reveal key={a.title} delay={i * 0.08} className="border-l-2 border-brand pl-6">
-                  <h3 className="text-xl font-semibold tracking-tight text-fg">{a.title}</h3>
+                  <h3 className="text-xl font-normal tracking-tight text-fg">{a.title}</h3>
                   <p className="mt-2 leading-relaxed text-muted">{a.body}</p>
                 </Reveal>
               ))}

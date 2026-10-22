@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { FaqHero } from "@/components/landing/hero-widgets";
 import Link from "next/link";
 import { Faq } from "@/components/faq";
 import { Button } from "@/components/button";
@@ -10,7 +11,7 @@ import { CTA } from "@/lib/content";
 import { JsonLd, breadcrumbLd, faqLd } from "@/lib/seo";
 
 export const metadata: Metadata = {
-  title: "FAQ: Aavishield Endpoint Security Questions Answered",
+  title: "Endpoint Security FAQ",
   description: "Answers about Aavishield deployment, supported operating systems, data loss prevention, web filtering, monitoring, privacy, security and pricing.",
   alternates: { canonical: "/faq" },
   openGraph: { url: "/faq" },
@@ -81,7 +82,7 @@ const groups: { id: string; title: string; items: { q: string; a: string }[] }[]
     id: "billing",
     title: "Pricing and billing",
     items: [
-      { q: "How is Aavishield priced?", a: "Per enrolled device, billed annually. Book a demo for a quote." },
+      { q: "How is Aavishield priced?", a: "Per enrolled device, billed annually. Essentials and Business cover up to 50 devices; more than 50 devices is Enterprise. Book a demo for a quote." },
       { q: "Can we start with a pilot?", a: "Yes. Most customers start with a small pilot group before rolling out." },
       { q: "Can we cancel?", a: "Yes. Cancellation stops renewal and the service continues to the end of the paid term. See our refund and cancellation policy." },
     ],
@@ -94,14 +95,14 @@ export default function FaqPage() {
       <JsonLd data={breadcrumbLd([{ name: "Home", path: "" }, { name: "FAQ", path: "/faq" }])} />
       <JsonLd data={faqLd(groups.flatMap((g) => g.items))} />
 
-      <PageHero eyebrow="FAQ" accent={["answers."]} title="Straight answers." body="Everything people ask us before, during and after rolling out Aavishield. Missing something? Ask us directly." aside={false}>
+      <PageHero visual={<FaqHero />} eyebrow="Endpoint security FAQ" accent={["answers."]} title="Straight answers." body="Everything people ask us before, during and after rolling out Aavishield. Missing something? Ask us directly.">
         <Button href="/contact" size="lg">{CTA.demo}</Button>
       </PageHero>
 
-      <section className="mx-auto max-w-6xl px-4 md:px-6">
+      <section className="grid-band px-5 py-16 sm:px-8 md:px-12 md:py-24">
         <nav aria-label="FAQ topics" className="flex flex-wrap gap-2">
           {groups.map((g) => (
-            <a key={g.id} href={`#${g.id}`} className="rounded-full border border-line bg-surface px-4 py-2 text-sm text-fg-2 transition-colors hover:border-brand/50 hover:text-fg">
+            <a key={g.id} href={`#${g.id}`} className="rounded-[6px] border border-line bg-surface px-4 py-2 text-sm text-fg-2 transition-colors hover:border-brand/50 hover:text-fg">
               {g.title}
             </a>
           ))}
@@ -118,8 +119,8 @@ export default function FaqPage() {
       ))}
 
       <Section>
-        <Reveal className="rounded-[20px] border border-line bg-surface p-8 text-center md:p-12">
-          <h2 className="text-2xl font-semibold tracking-tight text-fg md:text-3xl">Still have a question?</h2>
+        <Reveal className="rounded-[6px] border border-line bg-surface p-8 text-center md:p-12">
+          <h2 className="text-2xl font-normal tracking-tight text-fg md:text-3xl">Still have a question?</h2>
           <p className="mx-auto mt-3 max-w-[48ch] text-muted">
             Write to <a href="mailto:info@aavishailab.com" className="font-medium text-brand-ink hover:underline">info@aavishailab.com</a> or{" "}
             <Link href="/contact" className="font-medium text-brand-ink hover:underline">book a demo</Link> and ask us live.

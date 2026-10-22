@@ -1,14 +1,13 @@
 import type { Metadata } from "next";
+import { ModuleVisual } from "@/components/landing/hero-widgets";
+import { PageHero } from "@/components/page-hero";
 import Image from "next/image";
 import { notFound } from "next/navigation";
 import { Breadcrumbs, CardGrid, FaqSection, FeatureSplit, LinkCards } from "@/components/blocks";
-import { BrowserFrame } from "@/components/browser-frame";
 import { Button } from "@/components/button";
 import { CtaBand } from "@/components/cta-band";
 import { ModuleIcon } from "@/components/icons";
-import { Enter, HeadlineRise } from "@/components/motion/enter";
 import { Reveal } from "@/components/motion/reveal";
-import { ScrollTilt } from "@/components/scroll-tilt";
 import { Section, SectionHead } from "@/components/section";
 import { SolutionIcon } from "@/components/solution-icon";
 import { CTA, getModule } from "@/lib/content";
@@ -53,35 +52,20 @@ export default async function IndustryPage(props: PageProps<"/industries/[slug]"
       <JsonLd data={faqLd(ind.faqs)} />
 
       {/* 1. Hero */}
-      <section className="relative overflow-hidden">
-        <div className="dot-field absolute inset-0 -z-10" aria-hidden />
-        <div className="mx-auto max-w-6xl px-4 pt-28 md:px-6 md:pt-36">
-          <Enter><Breadcrumbs trail={[{ name: "Home", href: "/" }, { name: "Industries", href: "/industries" }, { name: ind.name }]} /></Enter>
-          <div className="mt-8 grid items-end gap-8 lg:grid-cols-[1.35fr_1fr]">
-            <div>
-              <Enter delay={0.05} className="flex items-center gap-3">
-                <span className="grid size-11 place-items-center rounded-2xl bg-brand text-on-brand"><SolutionIcon icon={ind.icon} size={22} /></span>
-                <span className="text-sm font-medium uppercase tracking-[0.14em] text-brand-ink">{ind.name}</span>
-              </Enter>
-              <h1 className="mt-6 text-[2.4rem] font-semibold leading-[1.03] tracking-[-0.035em] text-fg sm:text-5xl lg:text-6xl">
-                <HeadlineRise text={ind.headline} accent={ind.accent} />
-              </h1>
-            </div>
-            <div>
-              <Enter delay={0.15}><p className="max-w-[52ch] text-lg leading-relaxed text-muted">{ind.intro}</p></Enter>
-              <Enter delay={0.25} className="mt-7 flex flex-wrap gap-3">
-                <Button href="/contact" size="lg">{CTA.demo}</Button>
-                <Button href="#use-cases" size="lg" variant="ghost">Use cases</Button>
-              </Enter>
-            </div>
-          </div>
-        </div>
-        <ScrollTilt className="mx-auto mt-14 max-w-6xl px-4 md:px-6">
-          <BrowserFrame shot={shots[ind.hero]} priority sizes="(max-width: 1200px) 100vw, 1150px" />
-        </ScrollTilt>
-      </section>
+      <PageHero
+        top={<Breadcrumbs trail={[{ name: "Home", href: "/" }, { name: "Industries", href: "/industries" }, { name: ind.name }]} />}
+        eyebrow={ind.seoTitle}
+        title={ind.headline}
+        accent={ind.accent}
+        body={ind.intro}
+        visual={<ModuleVisual slug={ind.modules[0]} />}
+      >
+        <Button href="/contact" size="lg">{CTA.demo}</Button>
+        <Button href="#use-cases" size="lg" variant="ghost">Use cases</Button>
+      </PageHero>
 
       {/* 2. Challenges */}
+
       <Section>
         <SectionHead eyebrow="Challenges" title={`What makes security hard in ${ind.name.toLowerCase()}.`} />
         <div className="mt-12"><CardGrid items={ind.challenges} cols={4} /></div>
@@ -94,12 +78,12 @@ export default async function IndustryPage(props: PageProps<"/industries/[slug]"
             <SectionHead eyebrow="The data at stake" title="Aavishield knows what this data looks like." accent={["looks"]} body="Pattern detectors and AI classification recognise it in files, images and messages, and record when it leaves a device." />
             <Reveal delay={0.2} className="mt-8 flex flex-wrap gap-2.5">
               {ind.data.map((d) => (
-                <span key={d} className="rounded-full border border-line bg-surface px-4 py-2 text-sm font-medium text-fg">{d}</span>
+                <span key={d} className="rounded-[4px] border border-line bg-surface px-3 py-1.5 text-sm font-medium text-fg">{d}</span>
               ))}
             </Reveal>
           </div>
           {ind.image && (
-            <Reveal y={40} className="relative aspect-[4/3] overflow-hidden rounded-[28px] bg-ink">
+            <Reveal y={40} className="relative aspect-[4/3] overflow-hidden rounded-[6px] bg-ink">
               <Image src={ind.image.src} alt={ind.image.alt} fill sizes="(max-width: 1024px) 100vw, 560px" className="object-cover" />
             </Reveal>
           )}
@@ -126,14 +110,14 @@ export default async function IndustryPage(props: PageProps<"/industries/[slug]"
 
       {/* 6. Rollout */}
       <Section>
-        <div className="ink-edge relative overflow-hidden rounded-[28px] bg-ink p-8 text-ink-fg md:p-14">
+        <div className="ink-edge relative overflow-hidden rounded-[6px] bg-ink p-8 text-ink-fg md:p-14">
           <div className="dot-field-ink absolute inset-0 opacity-70" aria-hidden />
           <SectionHead invert eyebrow="Rollout" title="From pilot to every device in three weeks." className="relative" />
           <div className="relative mt-12 grid gap-8 md:grid-cols-4">
             {rollout.map((r, i) => (
               <Reveal key={r.title} delay={i * 0.08}>
                 <span className="font-mono text-sm text-brand">0{i + 1}</span>
-                <h3 className="mt-3 text-lg font-semibold">{r.title}</h3>
+                <h3 className="mt-3 text-lg font-normal">{r.title}</h3>
                 <p className="mt-2 text-sm leading-relaxed opacity-70">{r.body}</p>
               </Reveal>
             ))}
@@ -154,7 +138,7 @@ export default async function IndustryPage(props: PageProps<"/industries/[slug]"
 
       {/* 9. Other industries */}
       <Section>
-        <h2 className="text-2xl font-semibold tracking-tight text-fg">Other industries</h2>
+        <h2 className="text-2xl font-normal tracking-tight text-fg">Other industries</h2>
         <div className="mt-8">
           <LinkCards items={others.map((o) => ({ href: `/industries/${o.slug}`, title: o.name, body: o.menu, icon: <SolutionIcon icon={o.icon} size={22} /> }))} />
         </div>

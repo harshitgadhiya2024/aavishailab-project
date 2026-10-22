@@ -1,53 +1,40 @@
 "use client";
 
-import { CheckCircle, Prohibit, WarningCircle } from "@phosphor-icons/react";
 import { motion, useReducedMotion } from "motion/react";
 import type { Module } from "@/lib/content";
+import { LiveDot, StatePill, UiCard } from "./landing/visuals";
 
-const STATE = {
-  blocked: { I: Prohibit, cls: "text-danger", label: "Blocked" },
-  flagged: { I: WarningCircle, cls: "text-brand-ink", label: "Flagged" },
-  allowed: { I: CheckCircle, cls: "text-muted", label: "Allowed" },
-} as const;
-
-/** Example events for a module, arriving one after another. */
-export function EventPanel({ title, events }: { title: string; events: Module["events"] }) {
+/** Example events for a module, arriving one after another, as a landing-page UI card. */
+export function EventPanel({ title, events, className = "" }: { title: string; events: Module["events"]; className?: string }) {
   const reduce = useReducedMotion();
   return (
-    <div className="glass rounded-[24px] p-4 md:p-5" aria-label={`Example ${title} events`}>
-      <div className="flex items-center justify-between px-2 pb-4">
-        <span className="text-sm font-medium text-fg">{title}</span>
-        <span className="flex items-center gap-1.5 font-mono text-[11px] text-signal">
-          <span className="relative flex size-1.5">
-            <span className="absolute inset-0 animate-pulse-ring rounded-full bg-signal" />
-            <span className="relative size-1.5 rounded-full bg-signal" />
-          </span>
-          example events
+    <UiCard
+      title={title}
+      meta={
+        <span className="flex items-center gap-1.5 font-mono text-[10px] text-muted">
+          <LiveDot /> Example events
         </span>
-      </div>
-      <ul className="grid gap-2">
-        {events.map((e, i) => {
-          const s = STATE[e.state];
-          return (
-            <motion.li
-              key={e.label}
-              initial={reduce ? false : { opacity: 0, x: 24 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ type: "spring", stiffness: 180, damping: 22, delay: 0.5 + i * 0.35 }}
-              className="flex items-center justify-between gap-4 rounded-2xl border border-line bg-surface px-4 py-3.5"
-            >
-              <span className="min-w-0">
-                <span className="block truncate text-[14px] font-medium text-fg">{e.label}</span>
-                <span className="block truncate text-[12.5px] text-muted">{e.detail}</span>
-              </span>
-              <span className={`flex shrink-0 items-center gap-1.5 text-[12px] font-medium ${s.cls}`}>
-                <s.I size={15} weight="fill" />
-                {s.label}
-              </span>
-            </motion.li>
-          );
-        })}
+      }
+      className={className}
+    >
+      <ul className="grid">
+        {events.map((e, i) => (
+          <motion.li
+            key={e.label}
+            initial={reduce ? false : { opacity: 0, x: 16 }}
+            whileInView={{ opacity: 1, x: 0 }}
+            viewport={{ once: true }}
+            transition={{ type: "spring", stiffness: 200, damping: 24, delay: 0.3 + i * 0.25 }}
+            className="flex items-center justify-between gap-4 border-b border-line py-2.5 last:border-b-0"
+          >
+            <span className="min-w-0">
+              <span className="block truncate text-[13px] text-fg">{e.label}</span>
+              <span className="block truncate text-[11.5px] text-muted">{e.detail}</span>
+            </span>
+            <StatePill state={e.state} />
+          </motion.li>
+        ))}
       </ul>
-    </div>
+    </UiCard>
   );
 }

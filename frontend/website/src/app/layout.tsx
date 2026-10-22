@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { DM_Mono, Inter, Sora } from "next/font/google";
 import { Footer } from "@/components/footer";
 import { Nav } from "@/components/nav";
 import { SiteLoader, loaderGateScript } from "@/components/site-loader";
@@ -7,17 +7,20 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { JsonLd, SITE_NAME, SITE_URL } from "@/lib/seo";
 import "./globals.css";
 
-const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
-const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
+// Type system: Satoshi for display (Fontshare, loaded in <head>), Inter for
+// body copy, DM Mono for labels. Sora SemiBold is only the logo's wordmark.
+const inter = Inter({ variable: "--font-inter", subsets: ["latin"] });
+const dmMono = DM_Mono({ variable: "--font-dm-mono", subsets: ["latin"], weight: ["400", "500"] });
+const sora = Sora({ variable: "--font-sora", subsets: ["latin"], weight: ["600"] });
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: "Aavishield | Endpoint Security, DLP and Web Filtering for Every Device",
+    default: "Endpoint Security and DLP for Every Laptop | Aavishield",
     template: "%s | Aavishield",
   },
   description:
-    "Aavishield is endpoint security for companies. One lightweight agent enforces web filtering, data loss prevention, application control, VPN blocking, malware scanning and device posture on macOS, Windows and Linux.",
+    "Endpoint security for companies: one agent enforces web filtering, DLP, app and VPN control, malware scanning and device posture on macOS, Windows and Linux.",
   applicationName: SITE_NAME,
   keywords: [
     "endpoint security",
@@ -61,7 +64,12 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+    <html lang="en" suppressHydrationWarning className={`${inter.variable} ${dmMono.variable} ${sora.variable} antialiased`}>
+      <head>
+        <link rel="preconnect" href="https://api.fontshare.com" crossOrigin="" />
+        <link rel="preconnect" href="https://cdn.fontshare.com" crossOrigin="" />
+        <link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&display=swap" />
+      </head>
       <body className="min-h-[100dvh] overflow-x-clip">
         <JsonLd
           data={{
@@ -82,11 +90,14 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <ThemeProvider>
           <script dangerouslySetInnerHTML={{ __html: loaderGateScript }} />
           <SiteLoader />
-          <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-full focus:bg-invert-bg focus:px-4 focus:py-2 focus:text-invert-fg">
+          <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-[6px] focus:bg-invert-bg focus:px-4 focus:py-2 focus:text-invert-fg">
             Skip to content
           </a>
           <Nav />
-          <main id="main">{children}</main>
+          {/* Every page sits in the same responsive frame (.site-frame), flush under the fixed 64px header. */}
+          <main id="main" className="pt-16">
+            <div className="site-frame">{children}</div>
+          </main>
           <Footer />
           <div aria-hidden className="grain pointer-events-none fixed inset-0 z-50" />
         </ThemeProvider>

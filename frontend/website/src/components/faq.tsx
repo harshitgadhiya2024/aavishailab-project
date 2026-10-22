@@ -19,7 +19,7 @@ export function Faq({ items }: { items: { q: string; a: string }[] }) {
               className="flex w-full items-center justify-between gap-6 py-6 text-left text-lg font-medium text-fg"
             >
               {it.q}
-              <motion.span animate={{ rotate: isOpen ? 45 : 0 }} transition={{ type: "spring", stiffness: 400, damping: 26 }} className="grid size-8 shrink-0 place-items-center rounded-full border border-line">
+              <motion.span animate={{ rotate: isOpen ? 45 : 0 }} transition={{ type: "spring", stiffness: 400, damping: 26 }} className="grid size-8 shrink-0 place-items-center rounded-[6px] border border-line">
                 <Plus size={14} weight="bold" />
               </motion.span>
             </button>

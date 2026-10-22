@@ -1,34 +1,32 @@
 import { CTA } from "@/lib/content";
-import Link from "next/link";
-import { Magnetic } from "./motion/magnetic";
+import { Reassurance } from "./landing/conversion";
+import { DitherField } from "./landing/dither-field";
+import { GridButton } from "./landing/grid-button";
 import { Reveal, WordRise } from "./motion/reveal";
 
+/** Closing call to action for inner pages: the landing page's final band, over the pixel terrain. */
 export function CtaBand({ title = "Put policy on every device this week." }: { title?: string }) {
   return (
-    <section className="mx-auto mt-32 max-w-6xl px-4 md:px-6">
-      <div className="relative ink-edge overflow-hidden rounded-[28px] bg-ink px-6 py-20 text-center text-ink-fg md:px-16 md:py-28">
-        <div className="dot-field-ink absolute inset-0 opacity-70" aria-hidden />
-        <div aria-hidden className="absolute -left-24 -top-24 size-72 rounded-full border border-brand/30" />
-        <div aria-hidden className="absolute left-1/2 top-full size-[520px] -translate-x-1/2 -translate-y-1/3 rounded-full bg-brand/25 blur-3xl" />
-        <div aria-hidden className="absolute -bottom-32 -right-20 size-96 rounded-full border border-ink-fg/10" />
-        <h2 className="relative mx-auto max-w-3xl text-4xl font-semibold leading-[1.05] tracking-tight md:text-6xl">
-          <WordRise text={title} />
-        </h2>
-        <Reveal delay={0.3} className="relative mt-6">
-          <p className="mx-auto max-w-[48ch] text-base leading-relaxed opacity-70 md:text-lg">
-            Install the agent, choose a policy, and watch the first events arrive in minutes.
-          </p>
-        </Reveal>
-        <Reveal delay={0.45} className="relative mt-10 flex justify-center">
-          <Magnetic>
-            <Link
-              href="/contact"
-              className="inline-flex h-12 items-center rounded-full bg-brand px-7 text-[15px] font-medium text-on-brand shadow-[0_10px_30px_-10px_rgb(255_112_0/0.8)] hover:bg-brand-dark transition-transform duration-200 active:scale-[0.97]"
-            >
-              {CTA.demo}
-            </Link>
-          </Magnetic>
-        </Reveal>
+    <section className="grid-band overflow-hidden">
+      <div className="relative min-h-[460px] md:min-h-[520px]">
+        <div className="absolute inset-x-0 bottom-0 h-[55%]" aria-hidden>
+          <DitherField variant="band" />
+        </div>
+        <div className="relative z-10 px-5 pb-12 pt-14 sm:px-8 md:px-12 md:pb-16 md:pt-20">
+          <h2 className="max-w-[18ch] text-[2.5rem] font-normal leading-[1] tracking-[-0.045em] text-fg md:text-[4.25rem]">
+            <WordRise text={title} />
+          </h2>
+          <Reveal delay={0.2}>
+            <p className="mt-5 max-w-[44ch] text-[15px] leading-relaxed text-fg-2">
+              Install the agent, choose a policy, and see every decision in one console. A pilot can be live in an afternoon.
+            </p>
+            <div className="mt-7 flex flex-wrap gap-3">
+              <GridButton href="/contact">{CTA.demo}</GridButton>
+              <GridButton href="/pricing" variant="ghost">See pricing</GridButton>
+            </div>
+            <Reassurance className="mt-5" />
+          </Reveal>
+        </div>
       </div>
     </section>
   );

@@ -1,70 +1,55 @@
-import { modules } from "@/lib/content";
-import { ModuleIcon } from "./icons";
-import { Float } from "./motion/float";
+import { H1Kicker } from "./landing/grid";
+import { FeedHero } from "./landing/hero-widgets";
 import { Enter, HeadlineRise } from "./motion/enter";
-import { Reveal } from "./motion/reveal";
 
-// Fixed positions for the floating icon constellation on the right.
-const spots = [
-  "left-[8%] top-[12%]",
-  "left-[46%] top-[2%]",
-  "right-[4%] top-[22%]",
-  "left-[22%] top-[46%]",
-  "right-[20%] top-[54%]",
-  "left-[4%] bottom-[6%]",
-  "right-[2%] bottom-[2%]",
-];
-
+/**
+ * Top band of every inner page, in the landing page's language: copy on the
+ * left (keyword line inside the H1, a regular-weight headline, the lead and
+ * buttons), and a product widget on the pixel-grid stage on the right. No
+ * dashboard screenshots in heroes: `visual` is always a widget (see
+ * landing/hero-widgets.tsx); the live decisions feed is the default.
+ *
+ * Height follows the landing hero: at least one screen on desktop, between
+ * 600px and 820px.
+ */
 export function PageHero({
   eyebrow,
   title,
   body,
   children,
-  aside = true,
   accent = [],
+  visual,
+  top,
 }: {
   eyebrow?: string;
   title: string;
   body: string;
   children?: React.ReactNode;
-  aside?: boolean;
   accent?: string[];
+  /** The hero widget; defaults to the live decisions feed. */
+  visual?: React.ReactNode;
+  /** Shown above the H1, e.g. breadcrumbs. */
+  top?: React.ReactNode;
+  /** @deprecated Every hero now has a widget. */
+  aside?: boolean;
 }) {
   return (
-    <section className="relative overflow-hidden">
-      <div className="dot-field absolute inset-0 -z-10" aria-hidden />
-      <div className={`mx-auto grid max-w-6xl items-center gap-10 px-4 pb-20 pt-36 md:px-6 md:pt-40 ${aside ? "lg:grid-cols-[1.3fr_1fr]" : ""}`}>
-        <div>
-          {eyebrow && (
-            <Enter>
-              <span className="text-[12px] font-medium uppercase tracking-[0.16em] text-brand-ink">{eyebrow}</span>
-            </Enter>
-          )}
-          <h1 className="mt-4 max-w-3xl text-[2.5rem] font-semibold leading-[1.03] tracking-[-0.035em] text-fg md:text-6xl">
+    <section className="grid-band">
+      <div className="grid grid-cols-1 lg:min-h-[clamp(600px,calc(100dvh-64px),820px)] lg:grid-cols-[1.1fr_1fr] [&>*]:min-w-0">
+        <div className="relative z-10 flex flex-col justify-center px-5 py-14 sm:px-8 md:px-12 md:py-20 xl:py-24">
+          {top && <Enter className="mb-10">{top}</Enter>}
+          <h1 className="max-w-[17ch] text-[2.5rem] font-normal leading-[1.04] tracking-[-0.04em] text-fg sm:text-[3.5rem] lg:text-[3.6rem] xl:text-[4.25rem]">
+            {eyebrow && <H1Kicker>{eyebrow}</H1Kicker>}
             <HeadlineRise text={title} accent={accent} />
           </h1>
           <Enter delay={0.15}>
-            <p className="mt-6 max-w-[52ch] text-lg leading-relaxed text-muted">{body}</p>
+            <p className="mt-7 max-w-[46ch] text-base leading-relaxed text-fg-2 md:text-[17px]">{body}</p>
           </Enter>
           {children && <Enter delay={0.25} className="mt-9 flex flex-wrap gap-3">{children}</Enter>}
         </div>
-        {aside && (
-          <div className="relative hidden h-[340px] lg:block" aria-hidden>
-            {modules.map((m, i) => (
-              <Float key={m.slug} className={`absolute ${spots[i]}`} amplitude={6 + (i % 3) * 3} duration={5 + i * 0.7} delay={i * 0.3} rotate={i % 2 ? 3 : -3}>
-                <Reveal delay={0.2 + i * 0.06} y={16}>
-                  <span
-                    className={`grid place-items-center rounded-2xl border border-line shadow-[var(--shadow)] ${
-                      i === 3 ? "size-20 bg-brand text-on-brand shadow-[0_24px_60px_-18px_rgb(255_112_0/0.7)]" : "glass size-14 text-fg"
-                    }`}
-                  >
-                    <ModuleIcon icon={m.icon} size={i === 3 ? 32 : 24} />
-                  </span>
-                </Reveal>
-              </Float>
-            ))}
-          </div>
-        )}
+        <Enter delay={0.3} className="flex border-t border-line p-4 sm:p-6 md:p-8 lg:border-l lg:border-t-0 [&>*]:w-full">
+          {visual ?? <FeedHero />}
+        </Enter>
       </div>
     </section>
   );

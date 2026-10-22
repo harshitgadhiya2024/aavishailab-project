@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { RolloutHero } from "@/components/landing/hero-widgets";
 import { Cloud, Laptop } from "@phosphor-icons/react/dist/ssr";
 import { Architecture } from "@/components/architecture";
 import { CardGrid, FaqSection, FeatureSplit } from "@/components/blocks";
@@ -13,7 +14,7 @@ import { JsonLd, SITE_URL, breadcrumbLd, faqLd } from "@/lib/seo";
 import { shots } from "@/lib/shots";
 
 export const metadata: Metadata = {
-  title: "How Aavishield Works: From Install to First Event in an Afternoon",
+  title: "How Endpoint Security Deployment Works",
   description: "How Aavishield is deployed: create your organisation, add employees, install the agent on macOS, Windows or Linux, set policy and watch events arrive.",
   alternates: { canonical: "/how-it-works" },
   openGraph: { url: "/how-it-works" },
@@ -81,17 +82,17 @@ export default function HowItWorksPage() {
       />
 
       {/* 1. Hero */}
-      <PageHero eyebrow="How it works" accent={["afternoon."]} title="From install to first event in an afternoon." body="No appliances, no network changes, no consultants. Here is exactly how Aavishield goes from sign-up to protecting every device.">
+      <PageHero visual={<RolloutHero />} eyebrow="How endpoint security deployment works" accent={["afternoon."]} title="From install to first event in an afternoon." body="No appliances, no network changes, no consultants. Here is exactly how Aavishield goes from sign-up to protecting every device.">
         <Button href="/contact" size="lg">{CTA.demo}</Button>
       </PageHero>
 
       {/* 2. Timeline */}
-      <section className="mx-auto max-w-6xl px-4 md:px-6">
-        <Stagger className="grid gap-px overflow-hidden rounded-[20px] border border-line bg-line md:grid-cols-5">
+      <section className="grid-band px-5 py-16 sm:px-8 md:px-12 md:py-24">
+        <Stagger className="grid gap-px overflow-hidden rounded-[6px] border border-line bg-line md:grid-cols-5">
           {timeline.map((t) => (
             <StaggerItem key={t.n} className="bg-bg p-6">
               <span className="font-mono text-sm text-brand-ink">{t.n}</span>
-              <h2 className="mt-4 text-lg font-semibold text-fg">{t.t}</h2>
+              <h2 className="mt-4 text-lg font-normal text-fg">{t.t}</h2>
               <p className="mt-2 text-sm leading-relaxed text-muted">{t.b}</p>
             </StaggerItem>
           ))}
@@ -119,18 +120,18 @@ export default function HowItWorksPage() {
       {/* 5. Device vs cloud */}
       <Section>
         <div className="grid gap-4 md:grid-cols-2">
-          <Reveal className="rounded-[20px] border border-line bg-surface p-8">
+          <Reveal className="rounded-[6px] border border-line bg-surface p-8">
             <Laptop size={30} weight="light" className="text-brand-ink" />
-            <h3 className="mt-5 text-xl font-semibold text-fg">On the device</h3>
+            <h3 className="mt-5 text-xl font-normal text-fg">On the device</h3>
             <ul className="mt-5 grid gap-3">
-              {onDevice.map((x) => <li key={x} className="flex gap-3 text-muted"><span className="mt-2.5 size-1.5 shrink-0 rounded-full bg-brand" />{x}</li>)}
+              {onDevice.map((x) => <li key={x} className="flex gap-3 text-muted"><span className="mt-2.5 size-1.5 shrink-0 bg-brand" />{x}</li>)}
             </ul>
           </Reveal>
-          <Reveal delay={0.1} className="ink-edge rounded-[20px] bg-ink p-8 text-ink-fg">
+          <Reveal delay={0.1} className="ink-edge rounded-[6px] bg-ink p-8 text-ink-fg">
             <Cloud size={30} weight="light" className="text-brand" />
-            <h3 className="mt-5 text-xl font-semibold">In the Aavishield cloud</h3>
+            <h3 className="mt-5 text-xl font-normal">In the Aavishield cloud</h3>
             <ul className="mt-5 grid gap-3">
-              {inCloud.map((x) => <li key={x} className="flex gap-3 opacity-80"><span className="mt-2.5 size-1.5 shrink-0 rounded-full bg-brand" />{x}</li>)}
+              {inCloud.map((x) => <li key={x} className="flex gap-3 opacity-80"><span className="mt-2.5 size-1.5 shrink-0 bg-brand" />{x}</li>)}
             </ul>
           </Reveal>
         </div>

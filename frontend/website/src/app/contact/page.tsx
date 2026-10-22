@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { H1Kicker } from "@/components/landing/grid";
 import { CalendarCheck, ChatCircleText, EnvelopeSimple, Laptop, Lifebuoy, ShieldCheck } from "@phosphor-icons/react/dist/ssr";
 import Image from "next/image";
 import { CardGrid, FaqSection, FeatureSplit, LinkCards } from "@/components/blocks";
@@ -12,7 +13,7 @@ import { shots } from "@/lib/shots";
 import { solutionsList } from "@/lib/solutions";
 
 export const metadata: Metadata = {
-  title: "Book a Demo",
+  title: "Book an Endpoint Security Demo",
   description: "See Aavishield on your own devices. Book a 30-minute demo of endpoint security, DLP and web filtering with our team.",
   alternates: { canonical: "/contact" },
   openGraph: { url: "/contact" },
@@ -52,11 +53,11 @@ export default function ContactPage() {
       <JsonLd data={faqLd(faq)} />
 
       {/* 1. Hero + form */}
-      <section className="relative overflow-hidden">
-        <div className="dot-field absolute inset-0 -z-10" aria-hidden />
-        <div className="mx-auto grid max-w-6xl gap-14 px-4 pb-10 pt-32 md:px-6 md:pt-40 lg:grid-cols-[1fr_1.15fr]">
+      <section className="grid-band relative overflow-hidden">
+        <div className="grid gap-14 px-5 pb-16 pt-14 sm:px-8 md:px-12 md:pt-20 lg:grid-cols-[1fr_1.15fr]">
           <div>
-            <h1 className="text-[2.6rem] font-semibold leading-[1.03] tracking-[-0.035em] text-fg md:text-6xl">
+            <h1 className="text-[2.6rem] font-normal leading-[1.03] tracking-[-0.035em] text-fg md:text-6xl">
+              <H1Kicker>Book an endpoint security demo</H1Kicker>
               <HeadlineRise text="See it on your own devices." accent={["devices."]} />
             </h1>
             <Enter delay={0.15}>
@@ -66,18 +67,18 @@ export default function ContactPage() {
               {expect.map(({ I, title, body }, i) => (
                 <Reveal key={title} delay={0.4 + i * 0.1}>
                   <li className="flex gap-4">
-                    <span className="grid size-11 shrink-0 place-items-center rounded-full bg-brand text-on-brand">
+                    <span className="grid size-11 shrink-0 place-items-center rounded-[4px] bg-brand text-on-brand">
                       <I size={20} weight="light" />
                     </span>
                     <span>
-                      <span className="block font-semibold text-fg">{title}</span>
+                      <span className="block font-medium text-fg">{title}</span>
                       <span className="mt-1 block leading-relaxed text-muted">{body}</span>
                     </span>
                   </li>
                 </Reveal>
               ))}
             </ul>
-            <Reveal delay={0.7} className="relative mt-12 hidden aspect-[4/3] overflow-hidden rounded-[28px] bg-ink lg:block">
+            <Reveal delay={0.7} className="relative mt-12 hidden aspect-[4/3] overflow-hidden rounded-[6px] bg-ink lg:block">
               <Image src="/images/contact-desk.webp" alt="A calm meeting room at dusk with a laptop on a dark oak table" fill sizes="480px" className="object-cover" />
             </Reveal>
           </div>
@@ -95,7 +96,7 @@ export default function ContactPage() {
       {/* 3. Agenda */}
       <Section>
         <SectionHead eyebrow="Agenda" title="How the 30 minutes go." />
-        <div className="mt-12 grid gap-px overflow-hidden rounded-[20px] border border-line bg-line md:grid-cols-4">
+        <div className="mt-12 grid gap-px overflow-hidden rounded-[6px] border border-line bg-line md:grid-cols-4">
           {agenda.map((a, i) => (
             <Reveal key={a.t} delay={i * 0.06} className="bg-bg p-6">
               <span className="font-mono text-sm text-brand-ink">{a.t}</span>
@@ -110,9 +111,9 @@ export default function ContactPage() {
         <SectionHead eyebrow="Other ways to reach us" title="Talk to the right people." />
         <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {channels.map(({ I, title, body }, i) => (
-            <Reveal key={title} delay={i * 0.05} className="rounded-[20px] border border-line bg-surface p-6">
+            <Reveal key={title} delay={i * 0.05} className="rounded-[6px] border border-line bg-surface p-6">
               <I size={26} weight="light" className="text-brand-ink" />
-              <h3 className="mt-5 font-semibold text-fg">{title}</h3>
+              <h3 className="mt-5 font-normal text-fg">{title}</h3>
               <p className="mt-2 break-words text-sm leading-relaxed text-muted">{body}</p>
             </Reveal>
           ))}

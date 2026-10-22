@@ -1,14 +1,13 @@
 import type { Metadata } from "next";
+import { ModuleVisual } from "@/components/landing/hero-widgets";
+import { PageHero } from "@/components/page-hero";
 import Image from "next/image";
 import { notFound } from "next/navigation";
 import { BeforeAfter, Breadcrumbs, CardGrid, FaqSection, FeatureSplit, LinkCards } from "@/components/blocks";
-import { BrowserFrame } from "@/components/browser-frame";
 import { Button } from "@/components/button";
 import { CtaBand } from "@/components/cta-band";
 import { ModuleIcon } from "@/components/icons";
-import { Enter, HeadlineRise } from "@/components/motion/enter";
 import { Reveal, Stagger, StaggerItem } from "@/components/motion/reveal";
-import { ScrollTilt } from "@/components/scroll-tilt";
 import { Section, SectionHead } from "@/components/section";
 import { SolutionIcon } from "@/components/solution-icon";
 import { CTA, getModule } from "@/lib/content";
@@ -51,54 +50,36 @@ export default async function SolutionPage(props: PageProps<"/solutions/[slug]">
       <JsonLd data={{ "@context": "https://schema.org", "@type": "WebPage", name: s.seoTitle, description: s.description, url: `${SITE_URL}${path}`, isPartOf: { "@id": `${SITE_URL}/#website` } }} />
 
       {/* 1. Hero */}
-      <section className="relative overflow-hidden">
-        <div className="dot-field absolute inset-0 -z-10" aria-hidden />
-        <div aria-hidden className="absolute left-1/2 top-[30%] -z-10 size-[620px] -translate-x-1/2 rounded-full bg-brand/10 blur-3xl" />
-        <div className="mx-auto max-w-6xl px-4 pt-28 md:px-6 md:pt-36">
-          <Enter><Breadcrumbs trail={[{ name: "Home", href: "/" }, { name: "Solutions", href: "/solutions" }, { name: s.name }]} /></Enter>
-          <div className="mt-8 grid items-end gap-8 lg:grid-cols-[1.35fr_1fr]">
-            <div>
-              <Enter delay={0.05} className="flex items-center gap-3">
-                <span className="grid size-11 place-items-center rounded-2xl bg-brand text-on-brand shadow-[0_16px_40px_-14px_rgb(255_112_0/0.8)]">
-                  <SolutionIcon icon={s.icon} size={22} />
-                </span>
-                <span className="text-sm font-medium uppercase tracking-[0.14em] text-brand-ink">{s.eyebrow}</span>
-              </Enter>
-              <h1 className="mt-6 text-[2.3rem] font-semibold leading-[1.04] tracking-[-0.035em] text-fg sm:text-5xl lg:text-[3.4rem]">
-                <HeadlineRise text={s.headline} accent={s.accent} />
-              </h1>
-            </div>
-            <div>
-              <Enter delay={0.15}><p className="max-w-[52ch] text-lg leading-relaxed text-muted">{s.intro}</p></Enter>
-              <Enter delay={0.25} className="mt-7 flex flex-wrap gap-3">
-                <Button href="/contact" size="lg">{CTA.demo}</Button>
-                <Button href="#how" size="lg" variant="ghost">How we solve it</Button>
-              </Enter>
-            </div>
-          </div>
-        </div>
-        <ScrollTilt className="mx-auto mt-14 max-w-6xl px-4 md:px-6">
-          <BrowserFrame shot={shots[s.hero]} priority sizes="(max-width: 1200px) 100vw, 1150px" />
-        </ScrollTilt>
-      </section>
+      <PageHero
+        top={<Breadcrumbs trail={[{ name: "Home", href: "/" }, { name: "Solutions", href: "/solutions" }, { name: s.name }]} />}
+        eyebrow={s.seoTitle}
+        title={s.headline}
+        accent={s.accent}
+        body={s.intro}
+        visual={<ModuleVisual slug={s.modules[0]} />}
+      >
+        <Button href="/contact" size="lg">{CTA.demo}</Button>
+        <Button href="#how" size="lg" variant="ghost">How we solve it</Button>
+      </PageHero>
 
       {/* 2. The problem */}
+
       <Section>
         <div className={`grid gap-12 ${s.image ? "lg:grid-cols-[1fr_1fr]" : ""}`}>
           <div>
             <SectionHead eyebrow="The problem" title={s.problem.title} body={s.problem.body} />
             <div className="mt-10 grid gap-4 sm:grid-cols-2">
               {s.problem.points.map((p, i) => (
-                <Reveal key={p.title} delay={i * 0.06} className="rounded-[20px] border border-line bg-surface p-6">
+                <Reveal key={p.title} delay={i * 0.06} className="rounded-[6px] border border-line bg-surface p-6">
                   <span className="font-mono text-xs text-brand-ink">0{i + 1}</span>
-                  <h3 className="mt-3 font-semibold text-fg">{p.title}</h3>
+                  <h3 className="mt-3 font-normal text-fg">{p.title}</h3>
                   <p className="mt-2 text-sm leading-relaxed text-muted">{p.body}</p>
                 </Reveal>
               ))}
             </div>
           </div>
           {s.image && (
-            <Reveal y={40} className="relative min-h-[420px] overflow-hidden rounded-[28px] bg-ink lg:min-h-0">
+            <Reveal y={40} className="relative min-h-[420px] overflow-hidden rounded-[6px] bg-ink lg:min-h-0">
               <Image src={s.image.src} alt={s.image.alt} fill sizes="(max-width: 1024px) 100vw, 560px" className="object-cover" />
               <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
               <p className="absolute inset-x-0 bottom-0 p-6 text-lg font-medium leading-snug text-white md:p-8">{s.menu}.</p>
@@ -109,18 +90,17 @@ export default async function SolutionPage(props: PageProps<"/solutions/[slug]">
 
       {/* 3. Why now */}
       <Section>
-        <div className="ink-edge relative overflow-hidden rounded-[28px] bg-ink p-8 text-ink-fg md:p-14">
+        <div className="ink-edge relative overflow-hidden rounded-[6px] bg-ink p-8 text-ink-fg md:p-14">
           <div className="dot-field-ink absolute inset-0 opacity-70" aria-hidden />
-          <div aria-hidden className="absolute -right-24 -top-24 size-80 rounded-full bg-brand/20 blur-3xl" />
           <SectionHead invert eyebrow="Why it is happening now" title="The market changed faster than the controls." className="relative" />
           <Stagger className="relative mt-12 grid gap-10 md:grid-cols-3" gap={0.12}>
             {s.why.map((w, i) => (
               <StaggerItem key={w.title}>
                 <div className="flex items-center gap-4">
-                  <span className="size-2.5 rounded-full bg-brand shadow-[0_0_12px_rgb(255_112_0)]" />
+                  <span className="size-2.5 rounded-full bg-brand" />
                   <span className={`h-px flex-1 ${i === s.why.length - 1 ? "bg-transparent" : "bg-ink-fg/20"}`} />
                 </div>
-                <h3 className="mt-6 text-xl font-semibold">{w.title}</h3>
+                <h3 className="mt-6 text-xl font-normal">{w.title}</h3>
                 <p className="mt-3 leading-relaxed opacity-70">{w.body}</p>
               </StaggerItem>
             ))}

@@ -197,6 +197,12 @@ func connectStores() (*gorm.DB, *redis.Client, error) {
 		return nil, nil, fmt.Errorf("failed to seed applications: %w", err)
 	}
 
+	// Starter blog posts and knowledge hub articles for the marketing site.
+	// Insert-only: edits made in the superadmin panel are never overwritten.
+	if err := database.SeedContent(db); err != nil {
+		return nil, nil, fmt.Errorf("failed to seed website content: %w", err)
+	}
+
 	// Dev seed data ships well-known default-password accounts (admin@acme.com
 	// etc.). It is gated on an explicit opt-in, not merely on APP_ENV, so a
 	// non-production-but-internet-reachable environment can never stand up with

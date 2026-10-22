@@ -79,6 +79,7 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	blocklistH := handlers.NewGlobalBlocklistHandler(db)
 	announceH := handlers.NewAnnouncementHandler(db)
 	demoH := handlers.NewDemoRequestHandler(db)
+	contentH := handlers.NewContentHandler(db)
 	flagH := handlers.NewFeatureFlagHandler(db)
 	complianceH := handlers.NewComplianceHandler(db)
 	revenueH := handlers.NewRevenueAnalyticsHandler(db)
@@ -107,6 +108,14 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	// "Book a demo" submissions from the marketing website's server
 	// (frontend/website). Gated on X-Internal-Secret inside the handler.
 	r.POST("/internal/website/demo-requests", demoH.Submit)
+
+	// Published blog posts and knowledge hub articles for the marketing
+	// website. Public on purpose: only published rows are ever returned.
+	// The limit is generous because the website's build fetches every page
+	// from one IP; it is there to stop scraping loops, not normal reads.
+	contentLimit := middleware.RateLimit(rdb, "public-content", 600, time.Minute)
+	r.GET("/public/content", contentLimit, contentH.PublicList)
+	r.GET("/public/content/:kind/:slug", contentLimit, contentH.PublicGet)
 
 	// Razorpay calls this directly — no session, gated entirely on the
 	// X-Razorpay-Signature header verified inside the handler.
@@ -251,6 +260,16 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 			announcements.POST("", middleware.SuperAdminFullOnly(), announceH.Create)
 			announcements.PATCH("/:id", middleware.SuperAdminFullOnly(), announceH.Update)
 			announcements.DELETE("/:id", middleware.SuperAdminFullOnly(), announceH.Delete)
+		}
+
+		// Website blog and knowledge hub.
+		content := superadmin.Group("/content")
+		{
+			content.GET("", contentH.List)
+			content.GET("/:id", contentH.Get)
+			content.POST("", middleware.SuperAdminFullOnly(), contentH.Create)
+			content.PATCH("/:id", middleware.SuperAdminFullOnly(), contentH.Update)
+			content.DELETE("/:id", middleware.SuperAdminFullOnly(), contentH.Delete)
 		}
 
 		flags := superadmin.Group("/feature-flags")

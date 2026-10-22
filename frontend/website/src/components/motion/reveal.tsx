@@ -73,7 +73,7 @@ export function WordRise({ text, className, delay = 0, accent = [] }: { text: st
       {words.map((w, i) => (
         <span key={i} aria-hidden className="inline-block overflow-hidden pb-[0.12em] align-top">
           <motion.span
-            className={`inline-block ${hot.has(clean(w)) ? "text-brand-ink" : ""}`}
+            className={`inline-block ${hot.has(clean(w)) ? "text-brand" : ""}`}
             initial={reduce ? false : { y: "110%" }}
             whileInView={{ y: "0%" }}
             viewport={{ once: true }}

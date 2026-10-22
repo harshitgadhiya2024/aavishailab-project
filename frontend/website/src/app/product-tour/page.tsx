@@ -1,19 +1,21 @@
 import type { Metadata } from "next";
+import { ScreenShowcase } from "@/components/screen-showcase";
+import { PixelPanel } from "@/components/landing/visuals";
+import { ModuleVisual } from "@/components/landing/hero-widgets";
 import { FeatureSplit } from "@/components/blocks";
 import { BrowserFrame } from "@/components/browser-frame";
 import { Button } from "@/components/button";
 import { CtaBand } from "@/components/cta-band";
 import { Reveal } from "@/components/motion/reveal";
 import { PageHero } from "@/components/page-hero";
-import { ScrollTilt } from "@/components/scroll-tilt";
 import { Section, SectionHead } from "@/components/section";
 import { CTA } from "@/lib/content";
 import { JsonLd, SITE_URL, breadcrumbLd } from "@/lib/seo";
 import { type ShotKey, shots } from "@/lib/shots";
 
 export const metadata: Metadata = {
-  title: "Product Tour: The Aavishield Console, Screen by Screen",
-  description: "Walk through the real Aavishield console: security overview, data loss prevention, web gateway, application control, activity, monitoring, reports and the employee portal.",
+  title: "Endpoint Security Console: Product Tour",
+  description: "Walk through the real Aavishield console: security overview, DLP, web gateway, application control, activity, reports and the employee portal.",
   alternates: { canonical: "/product-tour" },
   openGraph: { url: "/product-tour" },
 };
@@ -114,23 +116,21 @@ export default function ProductTourPage() {
         }}
       />
 
-      <PageHero eyebrow="Product tour" accent={["screen."]} title="The whole console, screen by screen." body="No mock-ups and no slides. Every image here is the real Aavishield console, captured with demo data from a fictional company." aside={false}>
+      <PageHero visual={<ModuleVisual slug="web-gateway" />} eyebrow="Endpoint security console tour" accent={["screen."]} title="The whole console, screen by screen." body="No mock-ups and no slides. Every image here is the real Aavishield console, captured with demo data from a fictional company.">
         <Button href="#protect" size="lg">Start the tour</Button>
         <Button href="/contact" size="lg" variant="ghost">{CTA.demo}</Button>
       </PageHero>
 
-      <section className="mx-auto max-w-6xl px-4 md:px-6">
-        <ScrollTilt>
-          <BrowserFrame shot={shots.overview} priority sizes="(max-width: 1200px) 100vw, 1150px" />
-        </ScrollTilt>
+      <section className="grid-band px-5 py-16 sm:px-8 md:px-12 md:py-24">
+        <ScreenShowcase shot={shots.overview} priority />
       </section>
 
       {/* Chapter index */}
-      <nav aria-label="Tour chapters" className="sticky top-[76px] z-30 mx-auto mt-16 max-w-6xl px-4 md:top-[84px] md:px-6">
-        <ul className="glass flex gap-1 overflow-x-auto rounded-full p-1 [scrollbar-width:none]">
+      <nav aria-label="Tour chapters" className="sticky top-16 z-30 border-b border-line bg-bg/95 px-5 py-3 backdrop-blur sm:px-8 md:px-12">
+        <ul className="glass flex gap-1 overflow-x-auto rounded-[10px] p-1 [scrollbar-width:none]">
           {chapters.map((c, i) => (
             <li key={c.id} className="shrink-0">
-              <a href={`#${c.id}`} className="block rounded-full px-4 py-2 text-sm text-muted transition-colors hover:bg-bg-2 hover:text-fg">
+              <a href={`#${c.id}`} className="block rounded-[6px] px-4 py-2 text-sm text-muted transition-colors hover:bg-bg-2 hover:text-fg">
                 <span className="mr-1.5 font-mono text-xs text-brand-ink">0{i + 1}</span>
                 {c.label}
               </a>
@@ -153,13 +153,13 @@ export default function ProductTourPage() {
       {/* Dark mode gallery */}
       <Section>
         <SectionHead center eyebrow="Dark mode" title="Every screen, in dark mode too." accent={["dark"]} />
-        <div className="mt-12 grid gap-4 md:grid-cols-2">
+        <PixelPanel className="mt-12 grid gap-4 p-4 sm:p-6 md:grid-cols-2 md:p-8">
           {(["overviewDark", "dlpDark", "activityDark", "screenshotsDark"] as const).map((k, i) => (
             <Reveal key={k} delay={(i % 2) * 0.08} className="min-w-0">
               <BrowserFrame shot={shots[k]} sizes="(max-width: 768px) 100vw, 560px" />
             </Reveal>
           ))}
-        </div>
+        </PixelPanel>
       </Section>
 
       <CtaBand title="Now see it with your own devices." />

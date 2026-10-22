@@ -39,7 +39,7 @@ export function ParallaxImage({
       whileInView={{ clipPath: "inset(0% 0% 0% 0% round 28px)", opacity: 1 }}
       viewport={{ once: true, amount: 0.2 }}
       transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
-      className={`relative overflow-hidden rounded-[28px] bg-ink ${aspect} ${className}`}
+      className={`relative overflow-hidden rounded-[6px] bg-ink ${aspect} ${className}`}
     >
       <motion.div style={{ y }} className="absolute -inset-y-[12%] inset-x-0">
         <Image

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { TrustHero } from "@/components/landing/hero-widgets";
 import { Eye, Fingerprint, Key, LockKey, Signature, UsersThree } from "@phosphor-icons/react/dist/ssr";
 import { CardGrid, FaqSection, FeatureSplit, LinkCards } from "@/components/blocks";
 import { CtaBand } from "@/components/cta-band";
@@ -11,9 +12,9 @@ import { JsonLd, breadcrumbLd, faqLd } from "@/lib/seo";
 import { shots } from "@/lib/shots";
 
 export const metadata: Metadata = {
-  title: "Trust and Security: How Aavishield Protects Your Data",
+  title: "Trust and Security: How We Protect Your Data",
   description:
-    "Signed policy bundles, monitor-only DLP, per-organisation isolation, encrypted keys and signed media links. How Aavishield protects the policy it enforces and the data it sees.",
+    "Signed policy, monitor-only DLP, per-company isolation and two-factor sign-in: how Aavishield protects the policy it enforces and the data it sees.",
   alternates: { canonical: "/security" },
   openGraph: { url: "/security" },
 };
@@ -50,10 +51,10 @@ export default function SecurityPage() {
       <JsonLd data={faqLd(faq)} />
 
       {/* 1. Hero */}
-      <PageHero eyebrow="Trust" accent={["trust"]} title="A security product has to earn trust first." body="Aavishield sees sensitive traffic on your devices. Here is how we protect the policy we enforce and the data we see." />
+      <PageHero visual={<TrustHero />} eyebrow="Trust and data security" accent={["trust"]} title="A security product has to earn trust first." body="Aavishield sees sensitive traffic on your devices. Here is how we protect the policy we enforce and the data we see." />
 
       {/* 2. Image */}
-      <section className="mx-auto max-w-[1400px] px-3 sm:px-4 md:px-6">
+      <section className="grid-band p-3 sm:p-4 md:p-6">
         <ParallaxImage src="/images/security-vault.webp" alt="A heavy circular vault door slightly ajar with a thin ring of orange light around its edge" sizes="(max-width: 1400px) 100vw, 1400px" aspect="aspect-[4/3] sm:aspect-[21/9]" eager />
       </section>
 
@@ -65,12 +66,12 @@ export default function SecurityPage() {
         <div className="grid gap-4">
           {principles.map(({ I, title, body }, i) => (
             <Reveal key={title} delay={i * 0.04}>
-              <div className="group flex gap-5 rounded-[20px] border border-line bg-surface p-6 transition-transform duration-500 ease-out-expo hover:-translate-y-1 md:p-8">
-                <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-brand text-on-brand transition-transform duration-500 ease-out-expo group-hover:rotate-[-6deg]">
+              <div className="group flex gap-5 rounded-[6px] border border-line bg-surface p-6 transition-transform duration-500 ease-out-expo hover:-translate-y-1 md:p-8">
+                <span className="grid size-12 shrink-0 place-items-center rounded-[4px] bg-brand text-on-brand transition-transform duration-500 ease-out-expo group-hover:rotate-[-6deg]">
                   <I size={22} weight="light" />
                 </span>
                 <div>
-                  <h3 className="text-xl font-semibold tracking-tight text-fg">{title}</h3>
+                  <h3 className="text-xl font-normal tracking-tight text-fg">{title}</h3>
                   <p className="mt-2 leading-relaxed text-muted">{body}</p>
                 </div>
               </div>
@@ -97,23 +98,23 @@ export default function SecurityPage() {
 
       {/* 7. Data flow */}
       <Section>
-        <div className="ink-edge relative overflow-hidden rounded-[28px] bg-ink p-8 text-ink-fg md:p-14">
+        <div className="ink-edge relative overflow-hidden rounded-[6px] bg-ink p-8 text-ink-fg md:p-14">
           <div className="dot-field-ink absolute inset-0 opacity-70" aria-hidden />
           <SectionHead invert eyebrow="Data flow" title="What leaves the device, and what does not." className="relative" />
           <div className="relative mt-10 grid gap-8 md:grid-cols-2">
             <div>
-              <h3 className="font-semibold text-brand">Sent to Aavishield</h3>
+              <h3 className="font-normal text-brand">Sent to Aavishield</h3>
               <ul className="mt-4 grid gap-2.5 opacity-80">
                 {["Policy decisions: blocked and alerted events", "DLP findings with a masked preview", "Device posture and installed applications", "Screenshots, only on monitored devices"].map((x) => (
-                  <li key={x} className="flex gap-3"><span className="mt-2.5 size-1.5 shrink-0 rounded-full bg-brand" />{x}</li>
+                  <li key={x} className="flex gap-3"><span className="mt-2.5 size-1.5 shrink-0 bg-brand" />{x}</li>
                 ))}
               </ul>
             </div>
             <div>
-              <h3 className="font-semibold text-brand">Not stored</h3>
+              <h3 className="font-normal text-brand">Not stored</h3>
               <ul className="mt-4 grid gap-2.5 opacity-80">
                 {["Routine allowed browsing", "Full copies of uploaded files", "Query strings that may carry session tokens", "Anything from devices outside your organisation"].map((x) => (
-                  <li key={x} className="flex gap-3"><span className="mt-2.5 size-1.5 shrink-0 rounded-full bg-ink-fg/40" />{x}</li>
+                  <li key={x} className="flex gap-3"><span className="mt-2.5 size-1.5 shrink-0 bg-ink-fg/40" />{x}</li>
                 ))}
               </ul>
             </div>
@@ -123,12 +124,12 @@ export default function SecurityPage() {
 
       {/* 8. Responsible disclosure */}
       <Section>
-        <Reveal className="grid gap-6 rounded-[28px] border border-line bg-surface p-8 md:grid-cols-[1.4fr_1fr] md:items-center md:p-12">
+        <Reveal className="grid gap-6 rounded-[6px] border border-line bg-surface p-8 md:grid-cols-[1.4fr_1fr] md:items-center md:p-12">
           <div>
-            <h2 className="text-3xl font-semibold tracking-tight text-fg">Found a vulnerability?</h2>
+            <h2 className="text-3xl font-normal tracking-tight text-fg">Found a vulnerability?</h2>
             <p className="mt-3 max-w-[52ch] leading-relaxed text-muted">We welcome reports from security researchers. Please give us reasonable time to fix an issue before disclosing it, and do not access other customers&apos; data.</p>
           </div>
-          <a href="mailto:info@aavishailab.com?subject=Security%20report" className="inline-flex h-12 items-center justify-center rounded-full bg-brand px-6 font-medium text-on-brand hover:bg-brand-dark md:justify-self-end">Report an issue</a>
+          <a href="mailto:info@aavishailab.com?subject=Security%20report" className="inline-flex h-12 items-center justify-center rounded-[6px] bg-brand px-6 font-medium text-on-brand hover:bg-brand-dark md:justify-self-end">Report an issue</a>
         </Reveal>
       </Section>
 

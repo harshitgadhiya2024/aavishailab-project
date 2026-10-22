@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Building2, Activity, Settings, ChevronLeft, ChevronRight, Download, AppWindow,
-  HeartPulse, ClipboardList, Users2, CreditCard, ShieldAlert, Megaphone, Flag, LifeBuoy, Inbox,
+  HeartPulse, ClipboardList, Users2, CreditCard, ShieldAlert, Megaphone, Flag, LifeBuoy, Inbox, Newspaper, BookOpen,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { overviewApi } from "@/lib/api";
@@ -36,6 +36,13 @@ export const NAV: { section: string; items: Item[] }[] = [
       { href: "/dashboard/threat-intel", icon: ShieldAlert, label: "Threat Intel" },
       { href: "/dashboard/feature-flags", icon: Flag, label: "Feature Flags" },
       { href: "/dashboard/announcements", icon: Megaphone, label: "Announcements" },
+    ],
+  },
+  {
+    section: "Website",
+    items: [
+      { href: "/dashboard/content/blog", icon: Newspaper, label: "Blog" },
+      { href: "/dashboard/content/knowledge-hub", icon: BookOpen, label: "Knowledge Hub" },
     ],
   },
   {

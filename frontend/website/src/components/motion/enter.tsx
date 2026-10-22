@@ -20,7 +20,7 @@ export function HeadlineRise({ text, accent = [], delay = 0 }: { text: string; a
       <span className="sr-only">{text}</span>
       {words.map((w, i) => (
         <span key={i} aria-hidden className="inline-block overflow-hidden pb-[0.12em] align-top">
-          <span className={`rise inline-block ${hot.has(clean(w)) ? "text-brand-ink" : ""}`} style={{ animationDelay: `${delay + i * 0.05}s` }}>
+          <span className={`rise inline-block ${hot.has(clean(w)) ? "text-brand" : ""}`} style={{ animationDelay: `${delay + i * 0.05}s` }}>
             {w}
             {i < words.length - 1 ? "\u00a0" : ""}
           </span>

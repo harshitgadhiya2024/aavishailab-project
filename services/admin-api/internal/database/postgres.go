@@ -116,5 +116,6 @@ func AutoMigrate(db *gorm.DB) error {
 		&models.OrgDataResidency{},
 		&models.EmployeeNotification{},
 		&models.EmployeeNotificationState{},
+		&models.ContentPost{},
 	)
 }

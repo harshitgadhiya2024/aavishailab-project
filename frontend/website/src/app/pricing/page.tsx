@@ -1,40 +1,23 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import { PricingPlans } from "@/components/pricing-plans";
+import { plans } from "@/lib/pricing";
+import { PlanHero } from "@/components/landing/hero-widgets";
 import { Check, Minus } from "@phosphor-icons/react/dist/ssr";
 import { CardGrid, FaqSection, FeatureSplit } from "@/components/blocks";
 import { Button } from "@/components/button";
 import { CtaBand } from "@/components/cta-band";
-import { Reveal, Stagger, StaggerItem } from "@/components/motion/reveal";
+import { Reveal } from "@/components/motion/reveal";
 import { PageHero } from "@/components/page-hero";
 import { Section, SectionHead } from "@/components/section";
 import { JsonLd, breadcrumbLd, faqLd } from "@/lib/seo";
 import { shots } from "@/lib/shots";
 
 export const metadata: Metadata = {
-  title: "Pricing: Per-Device Endpoint Security Plans",
-  description: "Aavishield pricing is per device, billed annually. Compare Essentials, Business and Enterprise plans and get a quote.",
+  title: "Endpoint Security Pricing, Per Device",
+  description: "Aavishield pricing is per device, billed annually: Essentials or Business for up to 50 devices, Enterprise above 50. Pick your device count and get a quote.",
   alternates: { canonical: "/pricing" },
   openGraph: { url: "/pricing" },
 };
-
-const plans = [
-  {
-    name: "Essentials",
-    for: "For small teams getting their first policy in place.",
-    features: ["Web Gateway", "VPN Control", "Malware Scanning", "Device Posture", "Admin console"],
-  },
-  {
-    name: "Business",
-    for: "For companies that handle customer or financial data.",
-    features: ["Everything in Essentials", "Data Loss Prevention", "Application Control", "AI classification of files", "Per-group policies"],
-    featured: true,
-  },
-  {
-    name: "Enterprise",
-    for: "For large fleets with audit and monitoring needs.",
-    features: ["Everything in Business", "Activity Monitoring", "Custom data retention", "Dedicated onboarding", "Priority support"],
-  },
-];
 
 type Cell = boolean | string;
 const table: { group: string; rows: { label: string; v: [Cell, Cell, Cell] }[] }[] = [
@@ -84,7 +67,7 @@ const how = [
 ];
 
 const faq = [
-  { q: "How is Aavishield priced?", a: "Per enrolled device, billed annually. The quote depends on your plan and the number of devices. Book a demo and we will send one within a day." },
+  { q: "How is Aavishield priced?", a: "Per enrolled device, billed annually. Essentials and Business cover up to 50 devices; more than 50 devices is Enterprise. The quote depends on your plan and device count. Book a demo and we will send one within a day." },
   { q: "Which operating systems are supported?", a: "macOS, Windows and Linux. The same agent binary and the same policy work on all three." },
   { q: "Will DLP block my employees' work?", a: "No. Data loss prevention is monitor-only. It records what sensitive data left and where it went, without ever blocking the upload." },
   { q: "Do we need to route traffic through an office or VPN?", a: "No. Enforcement happens on the device itself, so it works on any network with nothing to route." },
@@ -93,7 +76,7 @@ const faq = [
 ];
 
 function CellView({ v }: { v: Cell }) {
-  if (v === true) return <span className="inline-grid size-6 place-items-center rounded-full bg-brand text-on-brand"><Check size={12} weight="bold" /></span>;
+  if (v === true) return <span className="inline-grid size-6 place-items-center rounded-[4px] bg-brand text-on-brand"><Check size={12} weight="bold" /></span>;
   if (v === false) return <Minus size={14} className="inline text-muted" />;
   return <span className="text-sm text-fg">{v}</span>;
 }
@@ -105,45 +88,11 @@ export default function PricingPage() {
       <JsonLd data={breadcrumbLd([{ name: "Home", path: "" }, { name: "Pricing", path: "/pricing" }])} />
 
       {/* 1. Hero */}
-      <PageHero eyebrow="Pricing" accent={["rack."]} title="Pay per device. Nothing to rack." body="Every plan includes the agent for macOS, Windows and Linux, the admin console, and employee self-enrollment." aside={false} />
+      <PageHero visual={<PlanHero />} eyebrow="Endpoint security pricing" accent={["rack."]} title="Pay per device. Nothing to rack." body="Tell us how many devices you have. Essentials and Business cover up to 50; Enterprise is for larger fleets. Every plan includes the agent for macOS, Windows and Linux." />
 
-      {/* 2. Plans */}
-      <section className="mx-auto max-w-6xl px-4 md:px-6">
-        <Stagger className="grid gap-4 lg:grid-cols-3" gap={0.1}>
-          {plans.map((p) => (
-            <StaggerItem key={p.name} className="h-full">
-              <div
-                className={`flex h-full flex-col rounded-[20px] p-8 transition-transform duration-500 ease-out-expo hover:-translate-y-1.5 ${
-                  p.featured ? "ink-edge bg-ink text-ink-fg shadow-[0_40px_80px_-30px_rgb(0_0_0/0.45)] lg:-my-4 lg:py-12" : "border border-line bg-surface text-fg"
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <h2 className="text-2xl font-semibold tracking-tight">{p.name}</h2>
-                  {p.featured && <span className="rounded-full bg-brand px-3 py-1 text-[12px] font-medium text-on-brand">Most chosen</span>}
-                </div>
-                <p className={`mt-3 leading-relaxed ${p.featured ? "opacity-70" : "text-muted"}`}>{p.for}</p>
-                <p className="mt-8 text-4xl font-semibold tracking-tight">Custom</p>
-                <p className={`mt-1 text-sm ${p.featured ? "opacity-60" : "text-muted"}`}>per device, billed annually</p>
-                <ul className="mb-10 mt-8 grid gap-3">
-                  {p.features.map((f) => (
-                    <li key={f} className="flex items-center gap-3 text-[15px]">
-                      <Check size={16} weight="bold" className={`shrink-0 ${p.featured ? "text-brand" : "text-brand-ink"}`} />
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <Link
-                  href="/contact"
-                  className={`mt-auto inline-flex h-12 shrink-0 items-center justify-center rounded-full text-[15px] font-medium transition-transform duration-200 active:scale-[0.97] ${
-                    p.featured ? "bg-brand text-on-brand hover:bg-brand-dark" : "border border-line-strong text-fg hover:bg-bg-2"
-                  }`}
-                >
-                  Get a quote
-                </Link>
-              </div>
-            </StaggerItem>
-          ))}
-        </Stagger>
+      {/* 2. Plans, sized by device count */}
+      <section className="grid-band px-5 py-16 sm:px-8 md:px-12 md:py-24">
+        <PricingPlans />
       </section>
 
       {/* 3. Included */}
@@ -155,13 +104,13 @@ export default function PricingPage() {
       {/* 4. Comparison */}
       <Section id="compare">
         <SectionHead eyebrow="Compare plans" title="Everything, side by side." />
-        <Reveal className="mt-12 overflow-x-auto rounded-[20px] border border-line bg-surface">
+        <Reveal className="mt-12 overflow-x-auto rounded-[6px] border border-line bg-surface">
           <table className="w-full min-w-[640px] text-left">
             <thead>
               <tr className="border-b border-line bg-bg-2 text-sm">
                 <th className="px-5 py-4 font-medium text-fg">Feature</th>
                 {plans.map((p) => (
-                  <th key={p.name} className={`px-4 py-4 text-center font-semibold ${p.featured ? "text-brand-ink" : "text-fg"}`}>{p.name}</th>
+                  <th key={p.name} className={`px-4 py-4 text-center font-medium ${p.name === "Business" ? "text-brand-ink" : "text-fg"}`}>{p.name}</th>
                 ))}
               </tr>
             </thead>
@@ -199,9 +148,9 @@ export default function PricingPage() {
 
       {/* 7. Pilot */}
       <Section>
-        <Reveal className="grid gap-8 rounded-[28px] border border-line bg-surface p-8 md:grid-cols-[1.4fr_1fr] md:items-center md:p-12">
+        <Reveal className="grid gap-8 rounded-[6px] border border-line bg-surface p-8 md:grid-cols-[1.4fr_1fr] md:items-center md:p-12">
           <div>
-            <h2 className="text-3xl font-semibold tracking-tight text-fg md:text-4xl">Not sure which plan? Start with a pilot.</h2>
+            <h2 className="text-3xl font-normal tracking-tight text-fg md:text-4xl">Not sure which plan? Start with a pilot.</h2>
             <p className="mt-4 max-w-[52ch] text-lg leading-relaxed text-muted">Enroll a handful of devices, see real events from your own team, and choose a plan based on what you actually find.</p>
           </div>
           <div className="flex flex-wrap gap-3 md:justify-end">

@@ -1,14 +1,13 @@
 "use client";
 
 import { CaretDown, List, X } from "@phosphor-icons/react";
-import { AnimatePresence, motion, useMotionValueEvent, useScroll, useSpring } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRef, useState } from "react";
 import { CTA, nav, resources } from "@/lib/content";
-import { Button } from "./button";
-import { ThemeToggle } from "./theme-toggle";
+import { GridButton } from "./landing/grid-button";
 import { Wordmark } from "./wordmark";
 
 // Panels load on first hover/focus (see warmMenus), not with the page.
@@ -21,9 +20,6 @@ type MenuKey = "platform" | "solutions" | "resources";
 
 export function Nav() {
   const pathname = usePathname();
-  const { scrollY, scrollYProgress } = useScroll();
-  const progress = useSpring(scrollYProgress, { stiffness: 200, damping: 40, restDelta: 0.001 });
-  const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
   const [menu, setMenu] = useState<MenuKey | null>(null);
   const [openedAt, setOpenedAt] = useState(pathname);
@@ -34,12 +30,6 @@ export function Nav() {
     setOpen(false);
     setMenu(null);
   }
-
-  // Boolean flip only; the scroll position itself never enters React state.
-  useMotionValueEvent(scrollY, "change", (v) => {
-    const next = v > 24;
-    if (next !== scrolled) setScrolled(next);
-  });
 
   const openMenu = (k: MenuKey) => {
     void loadMenus();
@@ -58,18 +48,18 @@ export function Nav() {
         : pathname.startsWith(href);
 
   return (
-    <header className="fixed inset-x-0 top-0 z-40 px-3 pt-3 sm:px-4 md:pt-4">
-      <motion.div aria-hidden style={{ scaleX: progress }} className="fixed inset-x-0 top-0 h-[2px] origin-left bg-brand" />
+    // A flat bar pinned to the top, aligned to the page frame (.frame-w)
+    // columns: solid background and a single hairline, no shadow or float.
+    <header className="fixed inset-x-0 top-0 z-40 border-b border-line bg-bg">
       <nav
         aria-label="Main"
         onKeyDown={(e) => e.key === "Escape" && (setMenu(null), setOpen(false))}
-        className={`nav-in relative mx-auto flex h-14 max-w-6xl items-center justify-between rounded-full pl-4 pr-2 transition-[background-color,border-color,box-shadow,backdrop-filter] duration-500 sm:pl-5 ${
-          scrolled || open || menu ? "glass" : "border border-transparent"
-        }`}
+        className="nav-in relative frame-w flex h-16 items-center justify-between gap-6 border-x border-line px-5 sm:px-8 md:px-12"
       >
         <Wordmark />
 
-        <ul className="hidden items-center gap-0.5 lg:flex">
+        <div className="flex items-center gap-1">
+        <ul className="mr-3 hidden items-center gap-0.5 lg:flex">
           {nav.map((item) => {
             const key = "menu" in item ? (item.menu as MenuKey) : undefined;
             const active = isActive(item.href, key);
@@ -92,10 +82,10 @@ export function Nav() {
                   href={item.href}
                   aria-expanded={key ? menu === key : undefined}
                   aria-haspopup={key ? "true" : undefined}
-                  className={`relative flex items-center gap-1 rounded-full px-4 py-2 text-sm transition-colors duration-200 ${active ? "text-fg" : "text-muted hover:text-fg"}`}
+                  className={`relative flex items-center gap-1 rounded-[6px] px-3.5 py-2 text-sm font-medium transition-colors duration-200 ${active ? "text-fg" : "text-fg-2 hover:text-fg"}`}
                 >
                   {active && (
-                    <motion.span layoutId="nav-active" className="absolute inset-0 -z-10 rounded-full bg-bg-2" transition={{ type: "spring", stiffness: 380, damping: 32 }} />
+                    <motion.span layoutId="nav-active" className="absolute inset-0 -z-10 rounded-[6px] bg-bg-2" transition={{ type: "spring", stiffness: 380, damping: 32 }} />
                   )}
                   {item.label}
                   {key && <CaretDown size={11} weight="bold" className={`transition-transform duration-300 ${menu === key ? "rotate-180" : ""}`} />}
@@ -113,9 +103,8 @@ export function Nav() {
         </ul>
 
         <div className="flex items-center gap-2">
-          <ThemeToggle />
           <div className="hidden sm:block">
-            <Button href="/contact">{CTA.demo}</Button>
+            <GridButton href="/contact" className="h-10">{CTA.demo}</GridButton>
           </div>
           <button
             type="button"
@@ -125,10 +114,11 @@ export function Nav() {
               setOpen((o) => !o);
               setOpenedAt(pathname);
             }}
-            className="grid size-9 place-items-center rounded-full border border-line text-fg active:scale-[0.94] lg:hidden"
+            className="grid size-9 place-items-center rounded-[6px] border border-line text-fg active:scale-[0.94] lg:hidden"
           >
             {open ? <X size={16} weight="bold" /> : <List size={16} weight="bold" />}
           </button>
+        </div>
         </div>
       </nav>
 

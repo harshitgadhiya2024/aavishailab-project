@@ -1,4 +1,8 @@
 import type { Metadata } from "next";
+import { ScreenShowcase } from "@/components/screen-showcase";
+import { LiveFeed } from "@/components/landing/live-feed";
+import { PixelPanel } from "@/components/landing/visuals";
+import { ControlsHero } from "@/components/landing/hero-widgets";
 import Image from "next/image";
 import Link from "next/link";
 import { AppleLogo, ArrowUpRight, LinuxLogo, WindowsLogo } from "@phosphor-icons/react/dist/ssr";
@@ -11,7 +15,6 @@ import { ModuleIcon } from "@/components/icons";
 import { PageHero } from "@/components/page-hero";
 import { Spotlight } from "@/components/motion/spotlight";
 import { Reveal, Stagger, StaggerItem } from "@/components/motion/reveal";
-import { ScrollTilt } from "@/components/scroll-tilt";
 import { Section, SectionHead } from "@/components/section";
 import { CTA, modules } from "@/lib/content";
 import { moduleShots } from "@/lib/module-shots";
@@ -19,9 +22,9 @@ import { JsonLd, SITE_URL, breadcrumbLd, faqLd } from "@/lib/seo";
 import { shots } from "@/lib/shots";
 
 export const metadata: Metadata = {
-  title: "Platform: Seven Endpoint Security Controls in One Agent",
+  title: "Endpoint Security Platform: One Agent, Seven Controls",
   description:
-    "Explore the Aavishield platform: secure web gateway, data loss prevention, application control, VPN control, malware scanning, device posture and activity monitoring in one lightweight agent.",
+    "One lightweight agent for web filtering, data loss prevention, app and VPN control, malware scanning, device posture and activity monitoring.",
   alternates: { canonical: "/platform" },
   openGraph: { url: "/platform" },
 };
@@ -62,16 +65,14 @@ export default function PlatformPage() {
       />
 
       {/* 1. Hero */}
-      <PageHero accent={["agent."]} eyebrow="Platform" title="Every control your devices need, in one agent." body="Seven security controls share a single lightweight agent and a single console. Turn each one on when you are ready.">
+      <PageHero visual={<ControlsHero />} accent={["agent."]} eyebrow="Endpoint security platform" title="Every control your devices need, in one agent." body="Seven security controls share a single lightweight agent and a single console. Turn each one on when you are ready.">
         <Button href="/contact" size="lg">{CTA.demo}</Button>
         <Button href="/product-tour" size="lg" variant="ghost">Product tour</Button>
       </PageHero>
 
       {/* 2. Console */}
-      <section className="mx-auto max-w-6xl px-4 md:px-6">
-        <ScrollTilt>
-          <BrowserFrame shot={shots.activity} priority sizes="(max-width: 1200px) 100vw, 1150px" />
-        </ScrollTilt>
+      <section className="grid-band px-5 py-16 sm:px-8 md:px-12 md:py-24">
+        <ScreenShowcase shot={shots.activity} priority widget={<LiveFeed />} />
       </section>
 
       {/* 3. Modules */}
@@ -82,7 +83,7 @@ export default function PlatformPage() {
             <StaggerItem key={m.slug} className={i === modules.length - 1 ? "md:col-span-2" : ""}>
               <Spotlight className="h-full">
                 <Link href={`/platform/${m.slug}`} className={`grid h-full ${i === modules.length - 1 ? "md:grid-cols-2" : ""}`}>
-                  <div className={`relative m-2 overflow-hidden rounded-[14px] bg-bg-2 ${i === modules.length - 1 ? "aspect-[16/9] md:aspect-auto md:min-h-[260px]" : "aspect-[16/9]"}`}>
+                  <div className={`relative m-2 overflow-hidden rounded-[6px] bg-bg-2 ${i === modules.length - 1 ? "aspect-[16/9] md:aspect-auto md:min-h-[260px]" : "aspect-[16/9]"}`}>
                     <Image
                       src={shots[moduleShots[m.slug].hero].src}
                       alt={shots[moduleShots[m.slug].hero].alt}
@@ -93,13 +94,13 @@ export default function PlatformPage() {
                   </div>
                   <div className="flex flex-col justify-between gap-8 p-6 md:p-8">
                     <div className="flex items-start justify-between">
-                      <span className="grid size-12 place-items-center rounded-2xl border border-line text-fg transition-colors duration-300 group-hover:border-brand group-hover:bg-brand group-hover:text-on-brand">
+                      <span className="grid size-12 place-items-center rounded-[4px] border border-line text-fg transition-colors duration-300 group-hover:border-brand group-hover:bg-brand group-hover:text-on-brand">
                         <ModuleIcon icon={m.icon} size={24} />
                       </span>
                       <ArrowUpRight size={20} className="text-muted transition-[transform,color] duration-300 ease-out-expo group-hover:-translate-y-1 group-hover:translate-x-1 group-hover:text-brand-ink" />
                     </div>
                     <div>
-                      <h2 className="text-2xl font-semibold tracking-tight text-fg">{m.name}</h2>
+                      <h2 className="text-2xl font-normal tracking-tight text-fg">{m.name}</h2>
                       <p className="mt-2 max-w-[48ch] leading-relaxed text-muted">{m.short}</p>
                     </div>
                   </div>
@@ -133,17 +134,17 @@ export default function PlatformPage() {
             <SectionHead eyebrow="Cross-platform" title="One agent for macOS, Windows and Linux." accent={["One", "agent"]} body="Employees download a native installer from their portal. The same policy works on every operating system." />
             <div className="mt-10 grid gap-3">
               {os.map(({ I, name, body }, i) => (
-                <Reveal key={name} delay={i * 0.06} className="flex items-start gap-4 rounded-[18px] border border-line bg-surface p-5">
+                <Reveal key={name} delay={i * 0.06} className="flex items-start gap-4 rounded-[6px] border border-line bg-surface p-5">
                   <I size={26} weight="fill" className="shrink-0 text-fg" />
                   <span>
-                    <span className="block font-semibold text-fg">{name}</span>
+                    <span className="block font-medium text-fg">{name}</span>
                     <span className="mt-1 block text-sm text-muted">{body}</span>
                   </span>
                 </Reveal>
               ))}
             </div>
           </div>
-          <Reveal y={40} className="min-w-0"><BrowserFrame shot={shots.portalDownload} crop={{ x: 0, y: 0, scale: 1.7 }} aspect="aspect-[16/11]" sizes="(max-width: 1024px) 100vw, 600px" /></Reveal>
+          <Reveal y={40} className="min-w-0"><PixelPanel className="p-4 sm:p-6"><BrowserFrame shot={shots.portalDownload} crop={{ x: 0, y: 0, scale: 1.7 }} aspect="aspect-[16/11]" sizes="(max-width: 1024px) 100vw, 600px" /></PixelPanel></Reveal>
         </div>
       </Section>
 

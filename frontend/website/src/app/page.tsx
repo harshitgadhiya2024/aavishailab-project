@@ -1,84 +1,116 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import Link from "next/link";
-import { ArrowUpRight, Eye, Signature, UsersThree } from "@phosphor-icons/react/dist/ssr";
-import { FaqSection, FeatureSplit } from "@/components/blocks";
-import { ModulesBento } from "@/components/bento";
-import { BrowserFrame } from "@/components/browser-frame";
-import { Button } from "@/components/button";
-import { CountUp } from "@/components/count-up";
-import { CtaBand } from "@/components/cta-band";
-import { HeroField } from "@/components/hero-field";
-import { Marquee } from "@/components/marquee";
-import { ParallaxImage } from "@/components/parallax-image";
-import { Enter, HeadlineRise } from "@/components/motion/enter";
+import {
+  AirplaneTilt,
+  AppleLogo,
+  AppWindow,
+  Detective,
+  FileArrowUp,
+  DropboxLogo,
+  GithubLogo,
+  GoogleDriveLogo,
+  GoogleLogo,
+  LinuxLogo,
+  MicrosoftOutlookLogo,
+  MicrosoftTeamsLogo,
+  WhatsappLogo,
+  OpenAiLogo,
+  PlayCircle,
+  SlackLogo,
+  WindowsLogo,
+} from "@phosphor-icons/react/dist/ssr";
+import { DitherField } from "@/components/landing/dither-field";
+import { GridButton } from "@/components/landing/grid-button";
+import { GridFrame, GridHeading, GridRow, H1Kicker, Label } from "@/components/landing/grid";
+import { WhyGrid } from "@/components/landing/why-grid";
+import { EarlyAccess, MidCta, OBJECTIONS, Objections, Reassurance, TrustSection } from "@/components/landing/conversion";
+import { StickyCta } from "@/components/landing/sticky-cta";
+import { LiveFeed } from "@/components/landing/live-feed";
+import { AgentTag, AppControlVisual, DlpVisual, FlowDiagram, PixelPanel, PostureVisual, WebGatewayVisual } from "@/components/landing/visuals";
+import { ConsoleShowcase, type ConsoleScreen } from "@/components/landing/console-showcase";
+import { Enter } from "@/components/motion/enter";
 import { Reveal, Stagger, StaggerItem } from "@/components/motion/reveal";
-import { ProductTabs } from "@/components/product-tabs";
-import { ScrollText } from "@/components/scroll-text";
-import { ScrollTilt } from "@/components/scroll-tilt";
-import { Section, SectionHead } from "@/components/section";
-import { SolutionIcon } from "@/components/solution-icon";
-import { StickySteps, type Step } from "@/components/sticky-steps";
 import { CTA, modules } from "@/lib/content";
 import { JsonLd, SITE_URL, faqLd } from "@/lib/seo";
 import { shots } from "@/lib/shots";
-import { industries, solutionsList } from "@/lib/solutions";
 
 export const metadata: Metadata = { alternates: { canonical: "/" } };
 
-const steps: Step[] = [
+const coverage = [
+  { I: AppleLogo, name: "macOS" },
+  { I: WindowsLogo, name: "Windows" },
+  { I: LinuxLogo, name: "Linux" },
+  { I: GoogleLogo, name: "Gmail" },
+  { I: MicrosoftOutlookLogo, name: "Outlook" },
+  { I: MicrosoftTeamsLogo, name: "Teams" },
+  { I: OpenAiLogo, name: "ChatGPT" },
+  { I: SlackLogo, name: "Slack" },
+  { I: WhatsappLogo, name: "WhatsApp" },
+  { I: GoogleDriveLogo, name: "Google Drive" },
+  { I: DropboxLogo, name: "Dropbox" },
+  { I: GithubLogo, name: "GitHub" },
+];
+
+const problems = [
+  { I: FileArrowUp, title: "Data Leaving Through AI Tools", body: "Customer lists pasted into ChatGPT and contracts uploaded to personal drives happen every day, unseen." },
+  { I: Detective, title: "VPNs That Switch Policy Off", body: "One free VPN client or browser extension, and every web rule you set quietly stops applying." },
+  { I: AppWindow, title: "Apps Nobody Approved", body: "People install whatever gets the job done. IT finds out when something breaks or leaks." },
+  { I: AirplaneTilt, title: "Laptops Off The Office Network", body: "The office firewall protects the office. Home Wi-Fi, hotels and airports get nothing." },
+];
+
+const platform = [
   {
-    verb: "Install",
-    icon: "install",
-    title: "One agent. Every operating system.",
-    body: "A single lightweight binary runs the same way on macOS, Windows and Linux. Employees enroll their own device from a link.",
-    detail: ["Native .pkg, .msi and .deb installers", "Self-enrollment portal for employees", "Automatic updates, no reinstalling"],
+    kicker: "Block risky sites anywhere",
+    title: "The Web Your Company Approves, On Any Network",
+    body: "Every request leaves the laptop through the agent, so category and domain rules hold at home, in hotels and on hotspots.",
+    points: ["Social, AI, gambling and custom lists", "Every visit logged to the person", "No appliance or VPN to route through"],
+    href: "/platform/web-gateway",
+    Visual: WebGatewayVisual,
   },
   {
-    verb: "Set policy",
-    icon: "policy",
-    title: "Choose what is allowed, once.",
-    body: "Pick web categories, apps to block and data to watch from the admin console. Devices pull the signed policy and enforce it locally.",
-    detail: ["Category and custom domain lists", "Per-employee and per-group rules", "Ed25519-signed policy bundles"],
+    kicker: "See what leaves",
+    title: "Know Exactly What Left The Building",
+    body: "Uploads, messages and email to Gmail, Teams, ChatGPT and any other site are read inside, including PDFs and photographed pages.",
+    points: ["Card numbers, PAN, bank details, API keys", "AI spots salary sheets and contracts", "Monitor-only: work is never blocked"],
+    href: "/platform/data-loss-prevention",
+    Visual: DlpVisual,
   },
   {
-    verb: "See everything",
-    icon: "observe",
-    title: "Every decision, in one console.",
-    body: "Blocked sites, flagged uploads, stopped downloads and posture gaps arrive in real time, tied to the person and the device.",
-    detail: ["Live event stream per device", "Sensitive-data findings with the file", "Posture status across the fleet"],
+    kicker: "Stop the workarounds",
+    title: "No Unapproved Apps. No VPN Loopholes.",
+    body: "Block desktop apps by name or from what is installed, while VPN clients, downloads and extensions stay blocked by default.",
+    points: ["Installed-app inventory per device", "VPNs blocked with zero setup", "One switch per app"],
+    href: "/platform/application-control",
+    Visual: AppControlVisual,
   },
+  {
+    kicker: "Keep every laptop healthy",
+    title: "Healthy Devices, Clean Downloads",
+    body: "Posture checks run on every device, and downloads are scanned for malware before they finish landing on disk.",
+    points: ["Encryption, firewall, antivirus, patches", "Malware scored and stopped in transit", "Gaps listed by device and owner"],
+    href: "/platform/device-posture",
+    Visual: PostureVisual,
+  },
+];
+
+const tour: ConsoleScreen[] = [
+  { id: "overview", label: "Security overview", title: "Your whole company on one screen", body: "Devices online, employee coverage, laptops that need a fix and incidents by control, refreshed every minute.", shot: shots.overview, callouts: ["23 of 24 devices online", "Incidents by control"] },
+  { id: "dlp", label: "Data loss prevention", title: "Every sensitive upload, with the file and the person", body: "Who sent what, to which site or app, which detectors fired and the risk score.", shot: shots.dlp, callouts: ["Who, what and where", "Risk score per finding"] },
+  { id: "web", label: "Web gateway", title: "Policies you can read and test", body: "Category and domain policies, with a URL checker that tests any address against them.", shot: shots.urlChecker, callouts: ["Test any address", "Blocked by category"] },
+  { id: "apps", label: "Application control", title: "Every installed app, every device", body: "An inventory across macOS, Windows and Linux with one switch to block each app.", shot: shots.applications, callouts: ["Inventory per device", "One switch to block"] },
+  { id: "activity", label: "Activity feed", title: "One feed for every control", body: "Blocked and alerted events from web, DLP, apps, downloads and posture, searchable by person.", shot: shots.activity, callouts: ["Every control, one feed", "Filter by person"] },
 ];
 
 const stats = [
-  { n: 1, label: "agent binary", body: "Written in Rust, identical on every platform." },
-  { n: 3, label: "operating systems", body: "macOS, Windows and Linux from day one." },
-  { n: 7, label: "security controls", body: "From web filtering to device posture." },
-  { n: 0, label: "appliances to rack", body: "Enforcement lives on the device itself." },
+  { value: "1", label: "Agent On Every Device" },
+  { value: "7", label: "Security Controls" },
+  { value: "0", label: "Appliances To Rack" },
 ];
 
-const tour = [
-  { id: "overview", label: "Overview", title: "Your whole company on one screen", body: "Devices online, employee coverage, laptops that need a fix and incidents by control, refreshed every minute.", shot: shots.overview },
-  { id: "dlp", label: "Data loss", title: "Every sensitive upload, with the file and the person", body: "Gmail, Outlook, Teams, WhatsApp, ChatGPT and more: who sent what, where, and why it was flagged.", shot: shots.dlp },
-  { id: "web", label: "Web gateway", title: "Policies you can read", body: "Category and domain policies, who they apply to and what they blocked, with a URL checker to test any address.", shot: shots.urlChecker },
-  { id: "apps", label: "Applications", title: "Every installed app, every device", body: "An inventory across macOS, Windows and Linux with a switch to block each app.", shot: shots.applications },
-  { id: "activity", label: "Activity", title: "One feed for every control", body: "Blocked and alerted events from web, DLP, apps, downloads and posture, searchable and filterable.", shot: shots.activity },
-  { id: "reports", label: "Reports", title: "Reports for leadership and auditors", body: "Executive summary, compliance and risk reports, exported to PDF, Excel or CSV.", shot: shots.reports },
-  { id: "monitoring", label: "Monitoring", title: "Activity insight where you need it", body: "Timeline, work sessions and periodic screenshots for the devices you choose to monitor.", shot: shots.screenshots },
-];
-
-const trust = [
-  { I: Signature, title: "Signed policy", body: "Policy bundles are signed with Ed25519 and verified on every device." },
-  { I: Eye, title: "Monitor-only DLP", body: "DLP records findings and never blocks anyone's work." },
-  { I: UsersThree, title: "Isolated per company", body: "Every organisation's data is scoped to that organisation alone." },
-];
-
-const faq = [
-  { q: "What is Aavishield?", a: "Aavishield is endpoint security for companies. One lightweight agent on each laptop enforces web filtering, data loss prevention, application control, VPN blocking, malware scanning, device posture checks and optional activity monitoring, all managed from one console." },
-  { q: "Which operating systems does it support?", a: "macOS, Windows and Linux. The same agent binary and the same policy work on all three." },
-  { q: "Do we need a VPN or office firewall?", a: "No. Enforcement runs on the device itself, so it works on any network with nothing to route." },
-  { q: "Will DLP interrupt employees?", a: "No. Data loss prevention is monitor-only. It records what sensitive data left and where it went, without blocking the upload." },
-  { q: "How long does setup take?", a: "Most teams install the agent and switch on their first policy in an afternoon." },
+const steps = [
+  { title: "Install The Agent", body: "Employees enroll their own laptop from a link. Native installers for macOS, Windows and Linux." },
+  { title: "Set Policy Once", body: "Pick web categories, apps to block and data to watch. Devices pull the signed policy and enforce it locally." },
+  { title: "See Every Decision", body: "Blocked sites, flagged uploads, stopped downloads and posture gaps arrive live, tied to the person and device." },
 ];
 
 export default function Home() {
@@ -99,222 +131,240 @@ export default function Home() {
           publisher: { "@id": `${SITE_URL}/#org` },
         }}
       />
-      <JsonLd data={faqLd(faq)} />
+      <JsonLd data={faqLd(OBJECTIONS)} />
 
-      {/* 1. Hero */}
-      <section className="relative overflow-hidden">
-        <div className="dot-field absolute inset-0 -z-10" aria-hidden />
-        <div className="mx-auto grid min-h-[92dvh] max-w-6xl items-center gap-12 px-4 pb-10 pt-28 md:px-6 xl:grid-cols-[1.12fr_1fr] xl:pt-24">
-          <div>
-            <Enter>
-              <span className="inline-flex items-center gap-2 rounded-full border border-line bg-surface/60 px-3 py-1 text-[12px] text-fg-2 backdrop-blur">
-                <span className="size-1.5 rounded-full bg-signal" />
-                Endpoint security for modern companies
-              </span>
-            </Enter>
-            <h1 className="mt-6 text-[2.6rem] font-semibold leading-[1.02] tracking-[-0.035em] text-fg sm:text-6xl xl:text-[3.6rem]">
-              <HeadlineRise text="Security that travels with every laptop." accent={["laptop."]} />
-            </h1>
-            <Enter delay={0.15}>
-              <p className="mt-6 max-w-[46ch] text-lg leading-relaxed text-muted">
-                One agent enforces your web, data and application policy on every device, on any network. One console shows you everything it sees.
-              </p>
-            </Enter>
-            <Enter delay={0.25} className="mt-9 flex flex-wrap gap-3">
-              <Button href="/contact" size="lg">{CTA.demo}</Button>
-              <Button href="/product-tour" size="lg" variant="ghost">Take the product tour</Button>
-            </Enter>
-            <Enter delay={0.35} className="mt-8 flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted">
-              <span>macOS · Windows · Linux</span>
-              <span>No VPN or appliance</span>
-              <span>Live in an afternoon</span>
-            </Enter>
-          </div>
-          <Reveal delay={0.2} y={40} className="flex h-[370px] min-w-0 justify-center overflow-hidden sm:h-auto sm:overflow-visible">
-            {/* Below sm the field renders at desktop size and is scaled, so chips never collide. */}
-            <div className="w-[520px] shrink-0 origin-top scale-[0.68] sm:w-full sm:shrink sm:scale-100">
-              <HeroField />
+      <div>
+        <GridFrame>
+          {/* 1. Hero */}
+          <GridRow className="overflow-hidden">
+            {/* At least one screen tall (between 720px and 900px) so the copy has room to breathe. */}
+            <div className="relative min-h-[680px] md:min-h-[clamp(720px,calc(100dvh-64px),900px)]">
+              {/* The terrain stays in the lower right, clear of the copy. */}
+              <div className="absolute inset-x-0 bottom-0 h-[30%] md:left-[30%] md:h-[52%]">
+                <DitherField variant="hero" />
+              </div>
+              <div className="relative z-10 px-5 pt-16 sm:px-8 md:px-12 md:pt-24 xl:pt-28">
+                {/* The category leads the H1, so search and ad visitors (and search engines) know what this is. */}
+                <h1 className="enter max-w-[15ch] text-[2.75rem] font-normal leading-[1.02] tracking-[-0.04em] text-fg sm:text-[4rem] lg:max-w-[17ch] lg:text-[4.75rem] xl:text-[5.25rem]">
+                  <H1Kicker>Endpoint security · Web filtering · DLP · App &amp; VPN control</H1Kicker>
+                  Every laptop <span className="text-brand">deserves</span> the same security <span className="text-brand">as the office.</span>
+                </h1>
+                <Enter delay={0.15}>
+                  <p className="mt-8 max-w-[40ch] text-base leading-relaxed text-fg-2 md:text-[17px]">
+                    Enforce web, data and app policy on every device, on any network, and see everything it blocks.
+                  </p>
+                </Enter>
+                <Enter delay={0.25} className="mt-10">
+                  <div id="hero-cta" className="flex flex-wrap gap-3">
+                    <GridButton href="/contact">{CTA.demo}</GridButton>
+                    <GridButton href="/product-tour" variant="ghost" icon={PlayCircle}>View the tour</GridButton>
+                  </div>
+                  <Reassurance className="mt-6" />
+                </Enter>
+              </div>
+              {/* Beside the copy only from 1280px; on narrower screens it sits below, so they never collide. */}
+              <Enter delay={0.4} className="relative z-10 mt-14 px-5 pb-12 sm:px-8 md:px-12 lg:ml-auto lg:w-[460px] xl:absolute xl:bottom-16 xl:right-12 xl:mt-0 xl:w-[400px] xl:p-0">
+                <AgentTag className="-top-9 left-6 hidden xl:flex">Aavishield agent</AgentTag>
+                <LiveFeed />
+              </Enter>
             </div>
-          </Reveal>
-        </div>
-      </section>
+          </GridRow>
 
-      {/* 2. The console */}
-      <section className="relative mx-auto max-w-6xl px-4 md:px-6">
-        <div aria-hidden className="absolute inset-x-10 top-20 -z-10 h-[60%] rounded-full bg-brand/15 blur-3xl" />
-        <ScrollTilt>
-          <BrowserFrame shot={shots.overview} sizes="(max-width: 1200px) 100vw, 1150px" />
-        </ScrollTilt>
-        <Reveal className="mt-6 text-center text-sm text-muted">The real Aavishield console. Every screenshot on this site is the product, with demo data.</Reveal>
-      </section>
+          {/* 2. Coverage */}
+          <GridRow>
+            <div className="border-b border-line px-5 py-4 sm:px-8 md:px-12">
+              <Label>Works with the tools your team already uses</Label>
+            </div>
+            {/* Two copies of the list scroll as one strip; the second is hidden from assistive tech. */}
+            <div className="group overflow-hidden py-8 [mask-image:linear-gradient(90deg,transparent,#000_8%,#000_92%,transparent)]">
+              <div className="flex w-max animate-marquee group-hover:[animation-play-state:paused]">
+                {[0, 1].map((copy) => (
+                  <ul key={copy} aria-hidden={copy === 1} className="flex shrink-0 items-center gap-16 pr-16">
+                    {coverage.map(({ I, name }) => (
+                      <li key={name} className="flex items-center gap-2 whitespace-nowrap text-fg">
+                        <I size={26} weight="fill" />
+                        <span className="font-display text-lg font-bold tracking-[-0.02em]">{name}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ))}
+              </div>
+            </div>
+          </GridRow>
 
-      {/* 3. Coverage */}
-      <Section>
-        <p className="mb-8 text-center text-sm text-muted">Enforces policy across the platforms and apps your people already use</p>
-        <Marquee />
-      </Section>
+          {/* 3. The problem */}
+          <GridRow>
+            <div className="grid gap-10 px-5 py-16 sm:px-8 md:grid-cols-[0.85fr_1.15fr] md:gap-16 md:px-12 md:py-20">
+              <GridHeading
+                label="The problem"
+                title="What Keeps IT Teams Up At Night"
+                body="Companies set web, data and app rules on the office network. Then everyone took their laptop home."
+              />
+              <ol>
+                {problems.map(({ I, title, body }, i) => (
+                  <li key={title} className="border-b border-line first:pt-0 last:border-b-0">
+                    <Reveal delay={i * 0.05} className="grid grid-cols-[2.5rem_1fr_auto] items-start gap-4 py-6">
+                      <span className="font-mono text-[15px] text-brand-ink">{String(i + 1).padStart(2, "0")}</span>
+                      <div>
+                        <h3 className="text-lg font-normal tracking-[-0.015em] text-fg">{title}</h3>
+                        <p className="mt-2 max-w-[44ch] text-sm leading-relaxed text-muted">{body}</p>
+                      </div>
+                      <span className="grid size-8 place-items-center rounded-[4px] border border-brand/30 bg-brand-soft text-brand-ink">
+                        <I size={16} />
+                      </span>
+                    </Reveal>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          </GridRow>
 
-      {/* 4. Problems */}
-      <Section>
-        <div className="flex flex-wrap items-end justify-between gap-6">
-          <SectionHead eyebrow="Problems we solve" title="Start from the problem keeping you up at night." accent={["night."]} />
-          <Reveal><Button href="/solutions" variant="ghost">All solutions</Button></Reveal>
-        </div>
-        <Stagger className="mt-12 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {solutionsList.map((s) => (
-            <StaggerItem key={s.slug}>
-              <Link href={`/solutions/${s.slug}`} className="group flex h-full items-start gap-4 rounded-[20px] border border-line bg-surface p-5 transition-colors duration-300 hover:border-brand/50">
-                <span className="grid size-11 shrink-0 place-items-center rounded-2xl border border-line text-fg transition-colors duration-300 group-hover:border-brand group-hover:bg-brand group-hover:text-on-brand">
-                  <SolutionIcon icon={s.icon} size={20} />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block font-semibold text-fg">{s.name}</span>
-                  <span className="mt-1 block text-sm leading-relaxed text-muted">{s.menu}</span>
-                </span>
-                <ArrowUpRight size={16} className="mt-1 shrink-0 text-muted transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
-              </Link>
-            </StaggerItem>
-          ))}
-        </Stagger>
-      </Section>
-
-      {/* 5. Manifesto */}
-      <section className="mx-auto max-w-5xl px-4 py-32 md:px-6 md:py-44">
-        <ScrollText
-          className="text-3xl font-medium leading-[1.2] tracking-tight text-fg md:text-5xl"
-          text="Your people work from home, from airports and from coffee shops. The office firewall never left the office. Aavishield puts the policy on the device itself, so it goes wherever they go."
-        />
-      </section>
-
-      {/* 6. Anywhere */}
-      <section className="mx-auto max-w-[1400px] px-3 sm:px-4 md:px-6">
-        <ParallaxImage
-          src="/images/home-anywhere.webp"
-          alt="An employee working on a laptop in an airport lounge at dusk, the laptop edged with an orange protective glow"
-          sizes="(max-width: 1400px) 100vw, 1400px"
-          aspect="aspect-[4/3] sm:aspect-[21/9]"
-          strength={70}
-        />
-      </section>
-
-      {/* 7. Modules */}
-      <Section>
-        <SectionHead eyebrow="Platform" title="Seven controls. One agent." accent={["agent."]} body="Turn on what you need today. Everything runs in the same agent and reports to the same console." />
-        <div className="mt-12"><ModulesBento /></div>
-      </Section>
-
-      {/* 8. Product tour tabs */}
-      <Section>
-        <SectionHead center eyebrow="Inside the console" title="Click through the real product." accent={["real"]} body="No mock-ups. These are live screens from Aavishield, captured with demo data." />
-        <div className="mt-12"><ProductTabs tabs={tour} /></div>
-      </Section>
-
-      {/* 9. How it works */}
-      <Section>
-        <SectionHead eyebrow="How it works" title="Live in an afternoon." accent={["afternoon."]} />
-        <div className="mt-12"><StickySteps steps={steps} /></div>
-        <Reveal className="mt-10"><Button href="/how-it-works" variant="ghost">The full rollout guide</Button></Reveal>
-      </Section>
-
-      {/* 10. DLP spotlight */}
-      <Section>
-        <FeatureSplit
-          eyebrow="Data loss prevention"
-          title="Know exactly what left the building."
-          body="Aavishield reads inside uploads and messages to Gmail, Outlook, Teams, WhatsApp, ChatGPT and any other site or app, including scanned images, and records every sensitive finding without blocking anyone."
-          points={["Card numbers, PAN, Aadhaar, bank details", "API keys, tokens and source code", "AI classification of contracts, salary sheets and IDs"]}
-          shot={shots.dlp}
-        >
-          <Button href="/platform/data-loss-prevention" variant="ghost">Explore DLP</Button>
-        </FeatureSplit>
-      </Section>
-
-      {/* 11. Assistant spotlight */}
-      <Section>
-        <FeatureSplit
-          eyebrow="Built-in assistant"
-          title="Ask your security data a question."
-          body="The Aavishield assistant answers in plain language from your live data: which laptops need a fix, who had the most incidents this week, what the latest DLP alerts were. It reads, it never changes anything."
-          points={["Answers from live console data", "Exports reports on request", "Read-only by design"]}
-          shot={shots.ai}
-          reverse
-        />
-      </Section>
-
-      {/* 12. Light and dark */}
-      <Section>
-        <SectionHead center eyebrow="Designed for daily use" title="Light by day. Dark by night." accent={["Dark"]} body="A console people actually want to open, in the theme they prefer." />
-        <div className="mt-12 grid gap-4 md:grid-cols-2">
-          <Reveal className="min-w-0"><BrowserFrame shot={shots.reports} sizes="(max-width: 768px) 100vw, 560px" /></Reveal>
-          <Reveal delay={0.1} className="min-w-0"><BrowserFrame shot={shots.reportsDark} sizes="(max-width: 768px) 100vw, 560px" /></Reveal>
-        </div>
-      </Section>
-
-      {/* 13. Industries */}
-      <Section>
-        <SectionHead eyebrow="Industries" title="Shaped around the data you handle." />
-        <Stagger className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          {industries.map((ind) => (
-            <StaggerItem key={ind.slug}>
-              <Link href={`/industries/${ind.slug}`} className="group block h-full rounded-[20px] border border-line bg-surface p-6 transition-colors duration-300 hover:border-brand/50">
-                <SolutionIcon icon={ind.icon} size={26} className="text-brand-ink" />
-                <h3 className="mt-6 font-semibold text-fg">{ind.name}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-muted">{ind.menu}</p>
-              </Link>
-            </StaggerItem>
-          ))}
-        </Stagger>
-      </Section>
-
-      {/* 14. Agent */}
-      <Section className="grid items-center gap-10 lg:grid-cols-[1fr_1.1fr]">
-        <Reveal y={40} className="relative aspect-[4/3] overflow-hidden rounded-[28px] bg-ink">
-          <Image
-            src="/images/home-agent.webp"
-            alt="Close-up of a glowing orange chip embedded in a dark laptop chassis with light traces radiating outward"
-            fill
-            sizes="(max-width: 1024px) 100vw, 540px"
-            className="object-cover transition-transform duration-[1.2s] ease-out-expo hover:scale-105"
-          />
-        </Reveal>
-        <div>
-          <SectionHead title="Small agent. Serious engineering." accent={["Serious"]} body="Built in Rust as a single binary, the agent intercepts traffic locally and verifies every policy it receives." />
-          <div className="mt-10 grid grid-cols-2 gap-px overflow-hidden rounded-[20px] border border-line bg-line">
-            {stats.map((s, i) => (
-              <Reveal key={s.label} delay={i * 0.08} className="bg-bg p-6">
-                <p className="text-5xl font-semibold tracking-tighter text-fg">
-                  <CountUp to={s.n} />
-                  <span className="text-brand">.</span>
-                </p>
-                <p className="mt-2 text-sm font-medium text-fg">{s.label}</p>
-                <p className="mt-1 text-[13px] leading-relaxed text-muted">{s.body}</p>
-              </Reveal>
+          {/* 4. The platform: one row per control, each with a product visual */}
+          <GridRow>
+            <div className="border-b border-line px-5 py-16 sm:px-8 md:px-12 md:py-20">
+              <GridHeading
+                label="Our solution"
+                title="Layered Protection For Every Device"
+                body="From the websites people open to the files they upload, one agent covers every route data can take off a laptop."
+              />
+            </div>
+            {platform.map((p, i) => (
+              <div key={p.title} className={`grid grid-cols-1 border-line md:grid-cols-2 ${i < platform.length - 1 ? "border-b" : ""}`}>
+                <Reveal className={`flex flex-col px-5 py-12 sm:px-8 md:px-12 md:py-16 ${i % 2 ? "md:order-2" : ""}`}>
+                  <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-fg">
+                    <span className="text-brand-ink">{String(i + 1).padStart(2, "0")}</span>&nbsp;&nbsp;{p.kicker}
+                  </span>
+                  <h3 className="mt-5 max-w-[18ch] text-[1.9rem] font-normal leading-[1.08] tracking-[-0.03em] text-fg md:text-[2.25rem]">{p.title}</h3>
+                  <p className="mt-4 max-w-[42ch] text-[15px] leading-relaxed text-muted">{p.body}</p>
+                  <ul className="mt-6 grid gap-2">
+                    {p.points.map((pt) => (
+                      <li key={pt} className="flex items-center gap-2.5 text-sm text-fg-2">
+                        <span className="size-1.5 bg-brand" />
+                        {pt}
+                      </li>
+                    ))}
+                  </ul>
+                  <Link href={p.href} className="mt-auto w-fit pt-10 font-mono text-[11px] uppercase tracking-[0.1em] text-fg underline decoration-fg/40 underline-offset-4 hover:text-brand-ink">
+                    Learn more
+                  </Link>
+                </Reveal>
+                <Reveal delay={0.1} className={`border-line p-4 sm:p-6 md:p-8 ${i % 2 ? "md:order-1 md:border-r" : "md:border-l"}`}>
+                  <p.Visual />
+                </Reveal>
+              </div>
             ))}
-          </div>
-        </div>
-      </Section>
+          </GridRow>
 
-      {/* 15. Trust */}
-      <Section>
-        <div className="flex flex-wrap items-end justify-between gap-6">
-          <SectionHead eyebrow="Trust" title="A security product has to earn trust first." accent={["trust"]} />
-          <Reveal><Button href="/security" variant="ghost">How we protect your data</Button></Reveal>
-        </div>
-        <div className="mt-12 grid gap-4 md:grid-cols-3">
-          {trust.map(({ I, title, body }, i) => (
-            <Reveal key={title} delay={i * 0.06} className="rounded-[20px] border border-line bg-surface p-7">
-              <span className="grid size-12 place-items-center rounded-2xl bg-brand text-on-brand"><I size={22} weight="light" /></span>
-              <h3 className="mt-6 text-lg font-semibold text-fg">{title}</h3>
-              <p className="mt-2 leading-relaxed text-muted">{body}</p>
+          {/* 4b. Mid-page call to action, after the product has been shown */}
+          <GridRow>
+            <MidCta title="See It On Your Own Laptops" body="Start with a small pilot group before rolling out. A pilot can be live in an afternoon." />
+          </GridRow>
+
+          {/* 5. Numbers */}
+          <GridRow>
+            <div className="grid sm:grid-cols-3">
+              {stats.map((s, i) => (
+                <Reveal key={s.label} delay={i * 0.06} className={`border-line px-5 py-10 sm:px-8 md:px-12 md:py-14 ${i < 2 ? "border-b sm:border-b-0 sm:border-r" : ""}`}>
+                  <p className="font-mono text-[4.5rem] leading-none tracking-[-0.04em] text-fg md:text-[5.5rem]">{s.value}</p>
+                  <p className="mt-4 text-sm text-muted">{s.label}</p>
+                </Reveal>
+              ))}
+            </div>
+          </GridRow>
+
+          {/* 5b. Inside the console: real screenshots */}
+          <GridRow>
+            <div className="px-5 pt-16 sm:px-8 md:px-12 md:pt-20">
+              <GridHeading
+                label="Inside the console"
+                title="Every Decision, In One Place"
+                body="Every screen here is the real Aavishield console, captured with demo data. No mock-ups."
+              />
+            </div>
+            <div className="px-5 pb-16 pt-10 sm:px-8 md:px-12 md:pb-20">
+              <PixelPanel className="px-4 py-8 sm:px-6 md:px-10 md:py-12">
+                <ConsoleShowcase screens={tour} />
+              </PixelPanel>
+            </div>
+          </GridRow>
+
+          {/* 6. Why companies choose us */}
+          <GridRow>
+            <div className="px-5 py-16 sm:px-8 md:px-12 md:pb-12 md:pt-20">
+              <GridHeading
+                label="Why Aavishield"
+                title="Why Companies Choose Us"
+                body="Enforcement runs on the laptop, not on a box in the server room, so policy is on wherever the laptop is open."
+              />
+            </div>
+            <WhyGrid />
+          </GridRow>
+
+          {/* 6b. Trust: how the product protects customer data */}
+          <GridRow>
+            <TrustSection />
+          </GridRow>
+
+          {/* 7. How it works */}
+          <GridRow>
+            <div className="px-5 pt-16 sm:px-8 md:px-12 md:pt-20">
+              <GridHeading label="How it works" title="Three Steps To Protection, Zero Workflow Disruption" />
+            </div>
+            <Reveal className="mx-5 mt-10 sm:mx-8 md:mx-12">
+              <PixelPanel className="px-4 py-8 md:px-8">
+                <FlowDiagram />
+              </PixelPanel>
             </Reveal>
-          ))}
-        </div>
-      </Section>
+            <Stagger className="grid px-5 pb-16 pt-12 sm:px-8 md:grid-cols-3 md:px-12 md:pb-20">
+              {steps.map((s, i) => (
+                <StaggerItem key={s.title} className={`border-line py-6 md:py-0 ${i > 0 ? "border-t md:border-l md:border-t-0 md:pl-8" : ""} ${i < 2 ? "md:pr-8" : ""}`}>
+                  <span className="grid size-8 place-items-center rounded-[4px] bg-brand font-mono text-[12px] text-on-brand">{String(i + 1).padStart(2, "0")}</span>
+                  <h3 className="mt-6 text-lg font-normal tracking-[-0.015em] text-fg">{s.title}</h3>
+                  <p className="mt-2 max-w-[36ch] text-sm leading-relaxed text-muted">{s.body}</p>
+                </StaggerItem>
+              ))}
+            </Stagger>
+          </GridRow>
 
-      {/* 16. FAQ */}
-      <FaqSection title="Questions, answered." items={faq} />
+          {/* 7b. Early access, then the questions buyers ask before a pilot */}
+          <GridRow>
+            <EarlyAccess />
+          </GridRow>
+          <GridRow>
+            <Objections />
+          </GridRow>
 
-      <CtaBand />
+          {/* 8. Closing call to action */}
+          <GridRow className="overflow-hidden">
+            <div className="relative min-h-[520px] md:min-h-[600px]">
+              <div className="absolute inset-x-0 bottom-0 h-[62%]">
+                <DitherField variant="band" />
+              </div>
+              <div className="relative z-10 px-5 pt-14 sm:px-8 md:px-12 md:pt-20">
+                <Reveal>
+                  <h2 className="max-w-[16ch] text-[2.75rem] font-normal leading-[1] tracking-[-0.045em] text-fg md:text-[5.25rem]">
+                    See What Every Laptop Is Really Doing
+                  </h2>
+                </Reveal>
+              </div>
+              <div className="absolute inset-x-0 bottom-0 z-10 px-5 pb-12 sm:px-8 md:px-12 md:pb-16">
+                <Reveal>
+                  <p className="max-w-[40ch] text-[15px] leading-relaxed text-fg-2">
+                    Install the agent, choose a policy, and see every decision in one console. A pilot can be live in an afternoon.
+                  </p>
+                  <div className="mt-6 flex flex-wrap gap-3">
+                    <GridButton href="/contact">{CTA.demo}</GridButton>
+                    <GridButton href="/pricing" variant="ghost">See pricing</GridButton>
+                  </div>
+                  <Reassurance className="mt-5" />
+                  <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.08em] text-muted">Priced per device, billed annually</p>
+                </Reveal>
+              </div>
+            </div>
+          </GridRow>
+        </GridFrame>
+      </div>
+      <StickyCta />
     </>
   );
 }

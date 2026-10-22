@@ -34,10 +34,10 @@ export function Architecture() {
           transition={{ duration: 0.8, delay: 0.2 + i * 0.18, ease: [0.16, 1, 0.3, 1] }}
           className="relative"
         >
-          <div className={`relative z-[1] grid size-[88px] place-items-center rounded-full border ${i === 0 ? "border-transparent bg-brand text-on-brand shadow-[0_20px_50px_-15px_rgb(255_112_0/0.7)]" : "border-line bg-surface text-fg"}`}>
+          <div className={`relative z-[1] grid size-[88px] place-items-center rounded-[6px] border ${i === 0 ? "border-transparent bg-brand text-on-brand" : "border-line bg-surface text-fg"}`}>
             <I size={30} weight="light" />
           </div>
-          <h3 className="mt-6 text-lg font-semibold tracking-tight text-fg">{title}</h3>
+          <h3 className="mt-6 text-lg font-normal tracking-tight text-fg">{title}</h3>
           <p className="mt-2 max-w-[30ch] text-sm leading-relaxed text-muted">{body}</p>
         </motion.div>
       ))}

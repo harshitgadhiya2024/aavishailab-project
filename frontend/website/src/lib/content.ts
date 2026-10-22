@@ -220,6 +220,8 @@ export const nav = [
 ] as const;
 
 export const resources = [
+  { href: "/knowledge-hub", label: "Knowledge hub", body: "Step-by-step guides for setup, policy and rollout." },
+  { href: "/blog", label: "Blog", body: "Notes on DLP, AI tools and remote work security." },
   { href: "/product-tour", label: "Product tour", body: "Walk through the real console, screen by screen." },
   { href: "/how-it-works", label: "How it works", body: "From install to first event in an afternoon." },
   { href: "/why-aavishield", label: "Why Aavishield", body: "One agent instead of four separate tools." },
@@ -245,7 +247,7 @@ export const moduleExtras: Record<ModuleSlug, ModuleExtra> = {
   "web-gateway": {
     image: "/images/web-gateway.webp",
     alt: "Streams of light passing through a dark archway, with a few stopped by an orange barrier",
-    seoTitle: "Secure Web Gateway for Every Laptop",
+    seoTitle: "Secure Web Gateway and Web Filtering Software",
     description:
       "Block and log websites by category or domain on every employee device, on any network. Aavishield's endpoint web gateway needs no appliance or VPN.",
     keywords: ["secure web gateway", "web filtering", "URL filtering", "block websites for employees", "endpoint web filter"],
@@ -265,7 +267,7 @@ export const moduleExtras: Record<ModuleSlug, ModuleExtra> = {
     alt: "Blank documents floating in the dark, scanned by a plane of light, with one flagged in orange",
     seoTitle: "Endpoint Data Loss Prevention (DLP) with AI",
     description:
-      "Detect card numbers, IDs, API keys, source code and sensitive files leaving through Gmail, Outlook, Teams, OneDrive and ChatGPT. Monitor-only DLP with OCR and AI classification.",
+      "Detect card numbers, IDs, API keys and source code leaving via Gmail, Teams, OneDrive or ChatGPT. Monitor-only endpoint DLP with OCR and AI.",
     keywords: ["data loss prevention", "DLP software", "endpoint DLP", "ChatGPT data leak", "sensitive data monitoring", "OCR DLP"],
     useCases: [
       { title: "Stop secrets reaching AI tools", body: "See when API keys, credentials or source code are pasted or uploaded into ChatGPT and other AI tools." },
@@ -281,7 +283,7 @@ export const moduleExtras: Record<ModuleSlug, ModuleExtra> = {
   "application-control": {
     image: "/images/application-control.webp",
     alt: "A grid of frosted glass tiles with one sealed by an orange lock of light",
-    seoTitle: "Application Control and App Blocking for Windows, macOS and Linux",
+    seoTitle: "Application Control and App Blocking Software",
     description:
       "Block desktop applications by name or from your device inventory, for everyone or a single employee. Cross-platform application control from one console.",
     keywords: ["application control", "block applications", "app blocking software", "application allowlisting", "software inventory"],
@@ -299,7 +301,7 @@ export const moduleExtras: Record<ModuleSlug, ModuleExtra> = {
   "vpn-control": {
     image: "/images/vpn-control.webp",
     alt: "A long dark tunnel of light blocked near the end by a wall of orange light",
-    seoTitle: "Block Personal VPNs and Anonymizers on Company Devices",
+    seoTitle: "Block Personal VPNs on Company Devices",
     description:
       "Aavishield blocks VPN clients, VPN installers and proxy browser extensions on every device by default, so employees cannot tunnel around your web policy.",
     keywords: ["block VPN", "VPN blocking software", "block anonymizer", "block proxy extension", "VPN control"],
@@ -335,7 +337,7 @@ export const moduleExtras: Record<ModuleSlug, ModuleExtra> = {
   "device-posture": {
     image: "/images/device-posture.webp",
     alt: "An open laptop on a pedestal encircled by rings of light, the inner ring orange",
-    seoTitle: "Device Posture Checks: Encryption, Firewall, Patches, Antivirus",
+    seoTitle: "Device Posture Checks for Every Laptop",
     description:
       "Continuously check disk encryption, firewall, OS patch level and antivirus on every Mac, Windows and Linux device, and see which ones fall short.",
     keywords: ["device posture", "device compliance", "disk encryption check", "patch compliance", "endpoint compliance"],

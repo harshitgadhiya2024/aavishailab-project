@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
+import { MarkHero } from "@/components/landing/hero-widgets";
+import { PageHero } from "@/components/page-hero";
 import Image from "next/image";
 import { CardGrid, FactStrip, FeatureSplit, LinkCards } from "@/components/blocks";
 import { CtaBand } from "@/components/cta-band";
 import { ParallaxImage } from "@/components/parallax-image";
-import { Enter, HeadlineRise } from "@/components/motion/enter";
-import { Float } from "@/components/motion/float";
 import { Reveal } from "@/components/motion/reveal";
 import { ScrollText } from "@/components/scroll-text";
 import { Section, SectionHead } from "@/components/section";
@@ -12,7 +12,7 @@ import { JsonLd, breadcrumbLd } from "@/lib/seo";
 import { shots } from "@/lib/shots";
 
 export const metadata: Metadata = {
-  title: "About Aavishield",
+  title: "About Aavish AI Lab, Makers of Aavishield",
   description: "Aavishield is built by Aavish AI Lab to make endpoint security simple enough for every company to switch on.",
   alternates: { canonical: "/company" },
   openGraph: { url: "/company" },
@@ -40,40 +40,22 @@ export default function CompanyPage() {
       <JsonLd data={breadcrumbLd([{ name: "Home", path: "" }, { name: "Company", path: "/company" }])} />
 
       {/* 1. Hero */}
-      <section className="relative overflow-hidden">
-        <div className="dot-field absolute inset-0 -z-10" aria-hidden />
-        <div className="mx-auto max-w-6xl px-4 pb-24 pt-36 md:px-6 md:pt-44">
-          <h1 className="max-w-4xl text-[2.6rem] font-semibold leading-[1.02] tracking-[-0.04em] text-fg md:text-7xl">
-            <HeadlineRise text="We make company security simple enough to switch on." accent={["switch", "on."]} />
-          </h1>
-          <div className="relative mt-16 grid gap-10 md:grid-cols-[1fr_1fr]">
-            <Enter delay={0.15}>
-              <p className="max-w-[52ch] text-lg leading-relaxed text-muted">
-                Aavishield is built by Aavish AI Lab. We started with a simple observation: small and mid-sized companies face the same threats as large enterprises, but get tools designed for teams ten times their size.
-              </p>
-            </Enter>
-            <div className="relative hidden h-40 md:block" aria-hidden>
-              <Float className="absolute left-[10%] top-0" amplitude={10} duration={6}>
-                <span className="block size-24 rounded-full border border-line-strong" />
-              </Float>
-              <Float className="absolute left-[38%] top-8" amplitude={14} duration={7.5} delay={0.6}>
-                <span className="block size-32 rounded-full bg-brand shadow-[0_30px_80px_-20px_rgb(255_112_0/0.8)]" />
-              </Float>
-              <Float className="absolute right-[8%] top-2" amplitude={8} duration={5.5} delay={1.2}>
-                <span className="glass block size-20 rounded-[20px]" />
-              </Float>
-            </div>
-          </div>
-        </div>
-      </section>
+      <PageHero
+        eyebrow="About Aavish AI Lab, the team behind Aavishield"
+        title="We make company security simple enough to switch on."
+        accent={["switch", "on."]}
+        body="Aavishield is built by Aavish AI Lab. We started with a simple observation: small and mid-sized companies face the same threats as large enterprises, but get tools designed for teams ten times their size."
+        visual={<MarkHero />}
+      />
 
       {/* 2. Team image */}
-      <section className="mx-auto max-w-[1400px] px-3 sm:px-4 md:px-6">
+
+      <section className="grid-band p-3 sm:p-4 md:p-6">
         <ParallaxImage src="/images/company-team.webp" alt="The team collaborating around a large table in a minimal studio office" sizes="(max-width: 1400px) 100vw, 1400px" aspect="aspect-[4/3] sm:aspect-[16/7]" eager />
       </section>
 
       {/* 3. Story */}
-      <section className="mx-auto max-w-5xl px-4 py-24 md:px-6 md:py-36">
+      <section className="grid-band px-5 py-24 sm:px-8 md:px-12 md:py-32">
         <ScrollText
           className="text-3xl font-medium leading-[1.2] tracking-tight text-fg md:text-5xl"
           text="So we built one agent that does the job of a web gateway, a DLP product, an application blocker and a posture checker, and a console a single IT person can run."
@@ -81,7 +63,7 @@ export default function CompanyPage() {
       </section>
 
       {/* 4. Facts */}
-      <section className="mx-auto max-w-6xl px-4 md:px-6">
+      <section className="grid-band px-5 py-16 sm:px-8 md:px-12 md:py-24">
         <FactStrip items={[{ k: "1", label: "agent for every device" }, { k: "7", label: "security controls" }, { k: "3", label: "operating systems" }, { k: "27", label: "web categories" }]} />
       </section>
 
@@ -90,7 +72,7 @@ export default function CompanyPage() {
         <div className="grid items-start gap-12 lg:grid-cols-[0.9fr_1.1fr]">
           <div className="lg:sticky lg:top-28">
             <SectionHead title="What we believe." accent={["believe."]} />
-            <Reveal delay={0.15} y={36} className="relative mt-10 aspect-[4/3] overflow-hidden rounded-[28px] bg-ink">
+            <Reveal delay={0.15} y={36} className="relative mt-10 aspect-[4/3] overflow-hidden rounded-[6px] bg-ink">
               <Image src="/images/company-detail.webp" alt="Hands sketching a system diagram in pencil beside a laptop" fill sizes="(max-width: 1024px) 100vw, 480px" className="object-cover" />
             </Reveal>
           </div>
@@ -98,7 +80,7 @@ export default function CompanyPage() {
             {beliefs.map((b, i) => (
               <Reveal key={b.title} delay={i * 0.05}>
                 <div className="border-l-2 border-brand pl-6">
-                  <h3 className="text-2xl font-semibold tracking-tight text-fg">{b.title}</h3>
+                  <h3 className="text-2xl font-normal tracking-tight text-fg">{b.title}</h3>
                   <p className="mt-3 max-w-[46ch] leading-relaxed text-muted">{b.body}</p>
                 </div>
               </Reveal>
@@ -120,12 +102,11 @@ export default function CompanyPage() {
 
       {/* 8. Aavish AI Lab */}
       <Section>
-        <div className="ink-edge relative overflow-hidden rounded-[28px] bg-ink p-8 text-ink-fg md:p-14">
+        <div className="ink-edge relative overflow-hidden rounded-[6px] bg-ink p-8 text-ink-fg md:p-14">
           <div className="dot-field-ink absolute inset-0 opacity-70" aria-hidden />
-          <div aria-hidden className="absolute -right-24 -top-24 size-80 rounded-full bg-brand/20 blur-3xl" />
           <div className="relative grid gap-10 md:grid-cols-[1.2fr_1fr] md:items-center">
             <SectionHead invert eyebrow="Aavish AI Lab" title="The AI studio behind Aavishield." body="Aavish AI Lab builds AI-driven products and software. Aavishield brings that work to endpoint security: AI classification of documents, OCR of images and an assistant that explains your security data." />
-            <Reveal delay={0.1} className="relative aspect-[4/3] overflow-hidden rounded-[20px]">
+            <Reveal delay={0.1} className="relative aspect-[4/3] overflow-hidden rounded-[6px]">
               <Image src="/images/contact-desk.webp" alt="A calm meeting room at dusk with a laptop on a dark oak table" fill sizes="(max-width: 768px) 100vw, 480px" className="object-cover" />
             </Reveal>
           </div>
