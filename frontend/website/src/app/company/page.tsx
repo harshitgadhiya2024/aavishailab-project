@@ -1,10 +1,9 @@
+import { AiLabWidget } from "@/components/landing/section-widgets";
 import type { Metadata } from "next";
 import { MarkHero } from "@/components/landing/hero-widgets";
 import { PageHero } from "@/components/page-hero";
-import Image from "next/image";
 import { CardGrid, FactStrip, FeatureSplit, LinkCards } from "@/components/blocks";
 import { CtaBand } from "@/components/cta-band";
-import { ParallaxImage } from "@/components/parallax-image";
 import { Reveal } from "@/components/motion/reveal";
 import { ScrollText } from "@/components/scroll-text";
 import { Section, SectionHead } from "@/components/section";
@@ -26,7 +25,7 @@ const beliefs = [
 ];
 
 const how = [
-  { title: "Ship what is real", body: "Everything on this site is something the product does today. Screenshots are the real console." },
+  { title: "Ship what is real", body: "Everything on this site is something the product does today. The product tour shows the real console." },
   { title: "Engineer for the endpoint", body: "A Rust agent that behaves the same on macOS, Windows and Linux, tested on all three." },
   { title: "Listen to the IT person", body: "Our users are often one person running IT for a whole company. We design for their afternoon." },
   { title: "Respect the employee", body: "Opt-in monitoring, monitor-only DLP and a portal that shows people what was blocked." },
@@ -48,12 +47,6 @@ export default function CompanyPage() {
         visual={<MarkHero />}
       />
 
-      {/* 2. Team image */}
-
-      <section className="grid-band p-3 sm:p-4 md:p-6">
-        <ParallaxImage src="/images/company-team.webp" alt="The team collaborating around a large table in a minimal studio office" sizes="(max-width: 1400px) 100vw, 1400px" aspect="aspect-[4/3] sm:aspect-[16/7]" eager />
-      </section>
-
       {/* 3. Story */}
       <section className="grid-band px-5 py-24 sm:px-8 md:px-12 md:py-32">
         <ScrollText
@@ -72,9 +65,6 @@ export default function CompanyPage() {
         <div className="grid items-start gap-12 lg:grid-cols-[0.9fr_1.1fr]">
           <div className="lg:sticky lg:top-28">
             <SectionHead title="What we believe." accent={["believe."]} />
-            <Reveal delay={0.15} y={36} className="relative mt-10 aspect-[4/3] overflow-hidden rounded-[6px] bg-ink">
-              <Image src="/images/company-detail.webp" alt="Hands sketching a system diagram in pencil beside a laptop" fill sizes="(max-width: 1024px) 100vw, 480px" className="object-cover" />
-            </Reveal>
           </div>
           <div className="grid gap-y-12">
             {beliefs.map((b, i) => (
@@ -101,17 +91,15 @@ export default function CompanyPage() {
       </Section>
 
       {/* 8. Aavish AI Lab */}
-      <Section>
-        <div className="ink-edge relative overflow-hidden rounded-[6px] bg-ink p-8 text-ink-fg md:p-14">
-          <div className="dot-field-ink absolute inset-0 opacity-70" aria-hidden />
-          <div className="relative grid gap-10 md:grid-cols-[1.2fr_1fr] md:items-center">
-            <SectionHead invert eyebrow="Aavish AI Lab" title="The AI studio behind Aavishield." body="Aavish AI Lab builds AI-driven products and software. Aavishield brings that work to endpoint security: AI classification of documents, OCR of images and an assistant that explains your security data." />
-            <Reveal delay={0.1} className="relative aspect-[4/3] overflow-hidden rounded-[6px]">
-              <Image src="/images/contact-desk.webp" alt="A calm meeting room at dusk with a laptop on a dark oak table" fill sizes="(max-width: 768px) 100vw, 480px" className="object-cover" />
-            </Reveal>
-          </div>
+      {/* Full-width black band, as on the landing and feature pages. */}
+      <section className="grid-band bg-ink px-5 py-16 text-ink-fg sm:px-8 md:px-12 md:py-20">
+        <div className="grid gap-10 md:grid-cols-[1.1fr_1fr] md:items-center md:gap-16">
+          <SectionHead invert eyebrow="Aavish AI Lab" title="The AI studio behind Aavishield." accent={["Aavishield."]} body="Aavish AI Lab builds AI-driven products and software. Aavishield brings that work to endpoint security: AI classification of documents, OCR of images and an assistant that explains your security data." />
+          <Reveal delay={0.1} className="min-w-0">
+            <AiLabWidget />
+          </Reveal>
         </div>
-      </Section>
+      </section>
 
       {/* 9. Next steps */}
       <Section>

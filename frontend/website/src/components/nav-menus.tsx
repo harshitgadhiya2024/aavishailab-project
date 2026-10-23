@@ -35,7 +35,8 @@ const mono = "font-mono text-[11px] uppercase tracking-[0.12em]";
 function MegaPanel({ children }: { children: React.ReactNode }) {
   return (
     <motion.div {...panel} className="fixed inset-x-0 top-16 z-40">
-      <div className="frame-w border-x border-b border-line bg-bg shadow-[0_30px_60px_-30px_rgb(24_24_27/0.3)]">{children}</div>
+      {/* Never taller than the screen below the header; scrolls inside if it ever has to. */}
+      <div className="frame-w max-h-[calc(100dvh-4rem)] overflow-y-auto overscroll-contain border-x border-b border-line bg-bg shadow-[0_30px_60px_-30px_rgb(24_24_27/0.3)]">{children}</div>
     </motion.div>
   );
 }
@@ -49,36 +50,25 @@ function ColumnLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** A menu link: icon, name and a one-line hint of what is behind it. */
-function MenuLink({ href, icon, children, sub, onNavigate, onHover, active = false }: { href: string; icon: React.ReactNode; children: React.ReactNode; sub: string; onNavigate: () => void; onHover?: () => void; active?: boolean }) {
+/** A menu link: icon and name, with an optional one-line hint. */
+function MenuLink({ href, icon, children, sub, onNavigate, onHover, active = false }: { href: string; icon: React.ReactNode; children: React.ReactNode; sub?: string; onNavigate: () => void; onHover?: () => void; active?: boolean }) {
   return (
     <Link
       href={href}
       onClick={onNavigate}
       onPointerEnter={onHover}
       onFocus={onHover}
-      className={`group -mx-3 flex items-start gap-3 rounded-[4px] px-3 py-2 transition-colors duration-200 ${active ? "bg-brand-soft" : "hover:bg-brand-soft"}`}
+      className={`group -mx-3 flex gap-3 rounded-[4px] px-3 py-2 transition-colors duration-200 ${sub ? "items-start" : "items-center"} ${active ? "bg-brand-soft" : "hover:bg-brand-soft"}`}
     >
-      <span className="mt-[3px] shrink-0">{icon}</span>
+      <span className={`shrink-0 ${sub ? "mt-[3px]" : ""}`}>{icon}</span>
       <span className="min-w-0 flex-1">
         <span className={`block text-[15px] leading-snug transition-colors ${active ? "text-fg" : "text-fg-2 group-hover:text-fg"}`}>{children}</span>
-        <span className="mt-0.5 block text-[12.5px] leading-snug text-muted">{sub}</span>
+        {sub && <span className="mt-0.5 block text-[12.5px] leading-snug text-muted">{sub}</span>}
       </span>
-      <ArrowRight size={13} className={`mt-[5px] shrink-0 text-brand-ink transition-[opacity,transform] duration-200 ${active ? "translate-x-0 opacity-100" : "-translate-x-1 opacity-0 group-hover:translate-x-0 group-hover:opacity-100"}`} />
+      <ArrowRight size={13} className={`shrink-0 ${sub ? "mt-[5px]" : ""} text-brand-ink transition-[opacity,transform] duration-200 ${active ? "translate-x-0 opacity-100" : "-translate-x-1 opacity-0 group-hover:translate-x-0 group-hover:opacity-100"}`} />
     </Link>
   );
 }
-
-// One short line per control for the menu; the full summaries are too long here.
-const MODULE_HINT: Record<ModuleSlug, string> = {
-  "web-gateway": "Block sites by category or domain",
-  "data-loss-prevention": "See sensitive data leaving devices",
-  "application-control": "Stop unapproved desktop apps",
-  "vpn-control": "Block VPNs and anonymizers",
-  "malware-scanning": "Scan every download on arrival",
-  "device-posture": "Encryption, firewall and patch checks",
-  "activity-monitoring": "Screenshots and app usage",
-};
 
 function AllLink({ href, children, onNavigate }: { href: string; children: React.ReactNode; onNavigate: () => void }) {
   return (
@@ -89,18 +79,21 @@ function AllLink({ href, children, onNavigate }: { href: string; children: React
 }
 
 /** Right-hand stage: a live product widget on a tall pixel-grid stage. */
-function Stage({ children }: { children: React.ReactNode }) {
-  return <div className="border-l border-line p-8 [&_.pixel-grid]:min-h-[380px] [&>*]:h-full">{children}</div>;
+function Stage({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return <div className={`border-l border-line p-8 [&_.pixel-grid]:min-h-[380px] [&>*]:h-full ${className}`}>{children}</div>;
 }
 
 /** A small callout card used to close a column: label, line, and a button. */
 function Callout({ label, title, href, cta, onNavigate }: { label: string; title: string; href: string; cta: string; onNavigate: () => void }) {
+  // Sits at the bottom of its column, but always at least 2rem below the list above.
   return (
-    <div className="pixel-grid mt-auto rounded-[6px] border border-brand/20 bg-brand-soft p-5">
-      <p className={`${mono} text-brand-ink`}>{label}</p>
-      <p className="mt-2 font-display text-[18px] leading-snug tracking-[-0.015em] text-fg">{title}</p>
-      <div className="mt-4" onClick={onNavigate}>
-        <GridButton href={href}>{cta}</GridButton>
+    <div className="mt-auto pt-8">
+      <div className="pixel-grid rounded-[6px] border border-brand/20 bg-brand-soft p-5">
+        <p className={`${mono} text-brand-ink`}>{label}</p>
+        <p className="mt-2 font-display text-[18px] leading-snug tracking-[-0.015em] text-fg">{title}</p>
+        <div className="mt-4" onClick={onNavigate}>
+          <GridButton href={href}>{cta}</GridButton>
+        </div>
       </div>
     </div>
   );
@@ -125,7 +118,6 @@ export function PlatformMenu({ onNavigate }: { onNavigate: () => void }) {
                 <MenuLink
                   href={`/platform/${m.slug}`}
                   icon={<ModuleIcon icon={m.icon} size={17} className="text-brand-ink" />}
-                  sub={MODULE_HINT[m.slug]}
                   onNavigate={onNavigate}
                   onHover={() => setHover(m.slug)}
                   active={hover === m.slug}
@@ -158,13 +150,14 @@ export function PlatformMenu({ onNavigate }: { onNavigate: () => void }) {
 export function SolutionsMenu({ onNavigate }: { onNavigate: () => void }) {
   return (
     <MegaPanel>
+      {/* Names only (no hints) so the nine problems fit a small laptop in one column. */}
       <div className={TAB}>
         <div className={COL}>
           <ColumnLabel>By problem</ColumnLabel>
           <ul>
             {solutionsList.map((s) => (
               <li key={s.slug}>
-                <MenuLink href={`/solutions/${s.slug}`} icon={<SolutionIcon icon={s.icon} size={16} className="text-brand-ink" />} sub={s.menu} onNavigate={onNavigate}>
+                <MenuLink href={`/solutions/${s.slug}`} icon={<SolutionIcon icon={s.icon} size={16} className="text-brand-ink" />} onNavigate={onNavigate}>
                   {s.name}
                 </MenuLink>
               </li>
@@ -177,7 +170,7 @@ export function SolutionsMenu({ onNavigate }: { onNavigate: () => void }) {
           <ul>
             {industries.map((ind) => (
               <li key={ind.slug}>
-                <MenuLink href={`/industries/${ind.slug}`} icon={<SolutionIcon icon={ind.icon} size={16} className="text-brand-ink" />} sub={ind.menu} onNavigate={onNavigate}>
+                <MenuLink href={`/industries/${ind.slug}`} icon={<SolutionIcon icon={ind.icon} size={16} className="text-brand-ink" />} onNavigate={onNavigate}>
                   {ind.name}
                 </MenuLink>
               </li>
@@ -199,15 +192,12 @@ export function ResourcesMenu({ onNavigate }: { onNavigate: () => void }) {
       <div className={TAB}>
         <div className={COL}>
           <ColumnLabel>Resources</ColumnLabel>
-          <ul className="grid gap-1">
+          <ul>
             {resources.map((r) => (
               <li key={r.href}>
-                <Link href={r.href} onClick={onNavigate} className="group -mx-3 block rounded-[4px] px-3 py-2.5 transition-colors duration-200 hover:bg-brand-soft">
-                  <span className="flex items-center gap-2 text-[15px] text-fg">
-                    {r.label}
-                    <ArrowRight size={13} className="-translate-x-1 text-brand-ink opacity-0 transition-[opacity,transform] duration-200 group-hover:translate-x-0 group-hover:opacity-100" />
-                  </span>
-                  <span className="mt-0.5 block text-[13px] leading-snug text-muted">{r.body}</span>
+                <Link href={r.href} onClick={onNavigate} className="group -mx-3 flex items-center gap-3 rounded-[4px] px-3 py-2 text-[15px] text-fg-2 transition-colors duration-200 hover:bg-brand-soft hover:text-fg">
+                  {r.label}
+                  <ArrowRight size={13} className="ml-auto -translate-x-1 text-brand-ink opacity-0 transition-[opacity,transform] duration-200 group-hover:translate-x-0 group-hover:opacity-100" />
                 </Link>
               </li>
             ))}

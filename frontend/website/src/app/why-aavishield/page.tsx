@@ -1,10 +1,9 @@
+import { CompliancePanel, DlpIncidentPanel } from "@/components/panels/screens";
 import type { Metadata } from "next";
 import { PixelPanel } from "@/components/landing/visuals";
-import { ConsolidateHero } from "@/components/landing/hero-widgets";
-import Image from "next/image";
+import { ConsolidateHero, ControlsHero } from "@/components/landing/hero-widgets";
 import { Check, Minus, X } from "@phosphor-icons/react/dist/ssr";
 import { BeforeAfter, CardGrid, FaqSection, FeatureSplit } from "@/components/blocks";
-import { BrowserFrame } from "@/components/browser-frame";
 import { Button } from "@/components/button";
 import { CtaBand } from "@/components/cta-band";
 import { Reveal } from "@/components/motion/reveal";
@@ -135,8 +134,8 @@ export default function WhyPage() {
       {/* 7. What you stop paying for */}
       <Section>
         <div className="grid items-center gap-12 lg:grid-cols-2">
-          <Reveal y={40} className="relative aspect-[4/3] overflow-hidden rounded-[6px] bg-ink">
-            <Image src="/images/home-agent.webp" alt="Close-up of a glowing orange chip embedded in a dark laptop chassis" fill sizes="(max-width: 1024px) 100vw, 560px" className="object-cover" />
+          <Reveal y={40}>
+            <ControlsHero />
           </Reveal>
           <div>
             <SectionHead eyebrow="Consolidation" title="What you can stop paying for." accent={["stop"]} />
@@ -156,9 +155,9 @@ export default function WhyPage() {
 
       {/* 8. Visual proof */}
       <Section>
-        <PixelPanel className="grid gap-4 p-4 sm:p-6 md:grid-cols-2 md:p-8">
-          <Reveal className="min-w-0"><BrowserFrame shot={shots.dlp} sizes="(max-width: 768px) 100vw, 560px" /></Reveal>
-          <Reveal delay={0.1} className="min-w-0"><BrowserFrame shot={shots.reportsCompliance} sizes="(max-width: 768px) 100vw, 560px" /></Reveal>
+        <PixelPanel className="grid items-start gap-4 p-4 sm:p-6 md:grid-cols-2 md:p-8 [&>*]:min-w-0">
+          <Reveal><DlpIncidentPanel /></Reveal>
+          <Reveal delay={0.1}><CompliancePanel /></Reveal>
         </PixelPanel>
       </Section>
 

@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { H1Kicker } from "@/components/landing/grid";
 import { CalendarCheck, ChatCircleText, EnvelopeSimple, Laptop, Lifebuoy, ShieldCheck } from "@phosphor-icons/react/dist/ssr";
-import Image from "next/image";
 import { CardGrid, FaqSection, FeatureSplit, LinkCards } from "@/components/blocks";
 import { ContactForm } from "@/components/contact-form";
 import { Enter, HeadlineRise } from "@/components/motion/enter";
@@ -78,9 +77,6 @@ export default function ContactPage() {
                 </Reveal>
               ))}
             </ul>
-            <Reveal delay={0.7} className="relative mt-12 hidden aspect-[4/3] overflow-hidden rounded-[6px] bg-ink lg:block">
-              <Image src="/images/contact-desk.webp" alt="A calm meeting room at dusk with a laptop on a dark oak table" fill sizes="480px" className="object-cover" />
-            </Reveal>
           </div>
           <Reveal delay={0.2} y={36}>
             <ContactForm />
@@ -138,7 +134,7 @@ export default function ContactPage() {
       <Section>
         <SectionHead eyebrow="Before the call" title="Read up on the problem you have." />
         <div className="mt-10">
-          <LinkCards items={solutionsList.slice(0, 6).map((s) => ({ href: `/solutions/${s.slug}`, title: s.name, body: s.menu, icon: <SolutionIcon icon={s.icon} size={22} /> }))} />
+          <LinkCards items={solutionsList.slice(0, 6).map((s) => ({ href: `/solutions/${s.slug}`, title: s.name, body: s.menu, icon: <SolutionIcon icon={s.icon} size={22} /> }))} more={{ href: "/solutions", label: "All solutions" }} />
         </div>
       </Section>
 

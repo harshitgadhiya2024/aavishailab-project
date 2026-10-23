@@ -1,13 +1,14 @@
+import { ArtBand } from "@/components/flow-steps";
+import { ThreatQueueWidget } from "@/components/landing/section-widgets";
 import type { Metadata } from "next";
 import { ModuleVisual } from "@/components/landing/hero-widgets";
 import { PageHero } from "@/components/page-hero";
-import Image from "next/image";
 import { notFound } from "next/navigation";
 import { BeforeAfter, Breadcrumbs, CardGrid, FaqSection, FeatureSplit, LinkCards } from "@/components/blocks";
 import { Button } from "@/components/button";
 import { CtaBand } from "@/components/cta-band";
 import { ModuleIcon } from "@/components/icons";
-import { Reveal, Stagger, StaggerItem } from "@/components/motion/reveal";
+import { Reveal } from "@/components/motion/reveal";
 import { Section, SectionHead } from "@/components/section";
 import { SolutionIcon } from "@/components/solution-icon";
 import { CTA, getModule } from "@/lib/content";
@@ -65,7 +66,7 @@ export default async function SolutionPage(props: PageProps<"/solutions/[slug]">
       {/* 2. The problem */}
 
       <Section>
-        <div className={`grid gap-12 ${s.image ? "lg:grid-cols-[1fr_1fr]" : ""}`}>
+        <div className="grid gap-12 lg:grid-cols-[1fr_1fr] [&>*]:min-w-0">
           <div>
             <SectionHead eyebrow="The problem" title={s.problem.title} body={s.problem.body} />
             <div className="mt-10 grid gap-4 sm:grid-cols-2">
@@ -78,35 +79,24 @@ export default async function SolutionPage(props: PageProps<"/solutions/[slug]">
               ))}
             </div>
           </div>
-          {s.image && (
-            <Reveal y={40} className="relative min-h-[420px] overflow-hidden rounded-[6px] bg-ink lg:min-h-0">
-              <Image src={s.image.src} alt={s.image.alt} fill sizes="(max-width: 1024px) 100vw, 560px" className="object-cover" />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
-              <p className="absolute inset-x-0 bottom-0 p-6 text-lg font-medium leading-snug text-white md:p-8">{s.menu}.</p>
-            </Reveal>
-          )}
+          <Reveal y={40}>
+            <ThreatQueueWidget items={s.problem.points} modules={s.modules} />
+          </Reveal>
         </div>
       </Section>
 
       {/* 3. Why now */}
-      <Section>
-        <div className="ink-edge relative overflow-hidden rounded-[6px] bg-ink p-8 text-ink-fg md:p-14">
-          <div className="dot-field-ink absolute inset-0 opacity-70" aria-hidden />
-          <SectionHead invert eyebrow="Why it is happening now" title="The market changed faster than the controls." className="relative" />
-          <Stagger className="relative mt-12 grid gap-10 md:grid-cols-3" gap={0.12}>
-            {s.why.map((w, i) => (
-              <StaggerItem key={w.title}>
-                <div className="flex items-center gap-4">
-                  <span className="size-2.5 rounded-full bg-brand" />
-                  <span className={`h-px flex-1 ${i === s.why.length - 1 ? "bg-transparent" : "bg-ink-fg/20"}`} />
-                </div>
-                <h3 className="mt-6 text-xl font-normal">{w.title}</h3>
-                <p className="mt-3 leading-relaxed opacity-70">{w.body}</p>
-              </StaggerItem>
-            ))}
-          </Stagger>
-        </div>
-      </Section>
+      {/* Full-width black band with line art, as on the feature pages. Each
+          point borrows art from the controls this solution uses, so the
+          three differ from one solution page to the next. */}
+      <section className="grid-band">
+        <ArtBand
+          label="Why it is happening now"
+          title="The market changed faster than the"
+          accent="controls."
+          items={s.why.map((w, i) => ({ title: w.title, body: w.body, art: { slug: s.modules[i % s.modules.length], kind: i } }))}
+        />
+      </section>
 
       {/* 4. Cost of ignoring it */}
       <Section>
@@ -116,7 +106,7 @@ export default async function SolutionPage(props: PageProps<"/solutions/[slug]">
 
       {/* 5. How Aavishield solves it */}
       <Section id="how">
-        <SectionHead eyebrow="How Aavishield solves it" title="Three steps, shown in the real console." accent={["real"]} body="Every screen below is a real capture of the Aavishield console with demo data." />
+        <SectionHead eyebrow="How Aavishield solves it" title="Three steps, screen by screen." accent={["screen"]} body="The console screens behind each step, shown with demo data." />
         <div className="mt-16 grid gap-24">
           {s.steps.map((st, i) => (
             <FeatureSplit key={st.title} eyebrow={`Step ${i + 1} · ${st.verb}`} title={st.title} body={st.body} shot={shots[st.shot]} reverse={i % 2 === 1} />
@@ -156,11 +146,11 @@ export default async function SolutionPage(props: PageProps<"/solutions/[slug]">
       <Section>
         <SectionHead eyebrow="Keep exploring" title="Related problems we solve." />
         <div className="mt-10">
-          <LinkCards items={related.map((r) => ({ href: `/solutions/${r.slug}`, title: r.name, body: r.menu, icon: <SolutionIcon icon={r.icon} size={22} /> }))} />
+          <LinkCards items={related.map((r) => ({ href: `/solutions/${r.slug}`, title: r.name, body: r.menu, icon: <SolutionIcon icon={r.icon} size={22} /> }))} more={{ href: "/solutions", label: "All solutions" }} />
         </div>
         {inds.length > 0 && (
           <div className="mt-6">
-            <LinkCards items={inds.map((r) => ({ href: `/industries/${r.slug}`, title: r.name, body: r.menu, icon: <SolutionIcon icon={r.icon} size={22} /> }))} />
+            <LinkCards items={inds.map((r) => ({ href: `/industries/${r.slug}`, title: r.name, body: r.menu, icon: <SolutionIcon icon={r.icon} size={22} /> }))} more={{ href: "/industries", label: "All industries" }} />
           </div>
         )}
       </Section>

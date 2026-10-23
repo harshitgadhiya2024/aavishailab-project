@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowUpRight, EnvelopeSimple } from "@phosphor-icons/react/dist/ssr";
+import { ArrowUpRight, ChatsCircle, Clock, EnvelopeSimple } from "@phosphor-icons/react/dist/ssr";
+import { Label } from "./landing/grid";
 import { Breadcrumbs } from "./blocks";
 import { Enter, HeadlineRise } from "./motion/enter";
 import { Reveal, Stagger, StaggerItem } from "./motion/reveal";
@@ -79,25 +80,56 @@ export function LegalDoc({ slug }: { slug: string }) {
         </div>
       </section>
 
-      <section className="grid-band px-5 py-16 sm:px-8 md:px-12">
-        <Reveal className="ink-edge relative flex flex-col gap-6 overflow-hidden rounded-[6px] bg-ink p-8 text-ink-fg md:flex-row md:items-center md:justify-between md:p-12">
-          <div className="relative">
-            <h2 className="text-2xl font-normal tracking-tight md:text-3xl">Questions about this policy?</h2>
-            <p className="mt-2 max-w-[48ch] opacity-70">Write to us and a real person will answer, usually within two working days.</p>
-          </div>
-          <a href={`mailto:${LEGAL_EMAIL}`} className="relative inline-flex h-12 shrink-0 items-center gap-2 rounded-[6px] bg-brand px-6 text-[15px] font-medium text-on-brand hover:bg-brand-dark">
-            <EnvelopeSimple size={18} /> {LEGAL_EMAIL}
-          </a>
-        </Reveal>
+      {/* Full-width black band with a hairline grid of contact options, like the other dark bands. */}
+      <section className="grid-band bg-ink px-5 py-16 text-ink-fg sm:px-8 md:px-12 md:py-20">
+        <div className="grid gap-10 md:grid-cols-[1.1fr_1fr] md:items-center md:gap-16">
+          <Reveal>
+            <Label invert>Legal questions</Label>
+            <h2 className="mt-5 text-[2rem] font-normal leading-[1.08] tracking-[-0.03em] md:text-[2.6rem]">
+              Questions about this <span className="text-brand">policy?</span>
+            </h2>
+            <p className="mt-4 max-w-[46ch] text-[15px] leading-relaxed text-ink-fg/65">Write to us and a real person will answer.</p>
+            <p className="mt-6 inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-ink-fg/50">
+              <Clock size={14} className="text-brand" /> Usually within two working days
+            </p>
+          </Reveal>
+          <Reveal delay={0.1}>
+            <div className="grid grid-cols-1 gap-px overflow-hidden rounded-[6px] border border-white/10 bg-white/10 sm:grid-cols-2">
+              {[
+                { href: `mailto:${LEGAL_EMAIL}`, I: EnvelopeSimple, label: "Email us", value: LEGAL_EMAIL },
+                { href: "/contact", I: ChatsCircle, label: "Talk to the team", value: "Book a call or ask a question" },
+              ].map(({ href, I, label, value }) => {
+                const inner = (
+                  <>
+                    <span className="flex items-start justify-between">
+                      <span className="grid size-11 place-items-center rounded-[4px] border border-white/15 text-ink-fg transition-colors duration-300 group-hover:border-brand group-hover:bg-brand group-hover:text-on-brand">
+                        <I size={20} />
+                      </span>
+                      <ArrowUpRight size={18} className="text-ink-fg/40 transition-[transform,color] duration-300 ease-out-expo group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-brand" />
+                    </span>
+                    <span className="mt-8 block font-mono text-[11px] uppercase tracking-[0.1em] text-brand">{label}</span>
+                    <span className="mt-2 block text-[16px] text-ink-fg">{value}</span>
+                  </>
+                );
+                const cls = "group block bg-ink p-6 transition-shadow duration-300 hover:shadow-[inset_0_0_0_1px_rgb(255_112_0/0.5)] md:p-7";
+                return href.startsWith("mailto:") ? (
+                  <a key={label} href={href} className={cls}>{inner}</a>
+                ) : (
+                  <Link key={label} href={href} className={cls}>{inner}</Link>
+                );
+              })}
+            </div>
+          </Reveal>
+        </div>
       </section>
 
       <section className="grid-band px-5 py-16 sm:px-8 md:px-12">
         <h2 className="text-lg font-normal text-fg">Other policies</h2>
         <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {legalPages.filter((l) => l.slug !== slug).map((l) => (
-            <Link key={l.slug} href={`/${l.slug}`} className="group flex items-center justify-between rounded-[6px] border border-line p-5 transition-colors hover:border-brand/50 hover:bg-surface">
+            <Link key={l.slug} href={`/${l.slug}`} className="group flex items-center justify-between rounded-[6px] border border-line p-5 transition-colors duration-300 hover:border-brand/40">
               <span className="font-medium text-fg">{l.title}</span>
-              <ArrowUpRight size={16} className="text-muted transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+              <ArrowUpRight size={16} className="text-muted transition-[transform,color] duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-brand-ink" />
             </Link>
           ))}
         </div>

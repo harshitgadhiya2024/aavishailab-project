@@ -3,13 +3,16 @@
 import { AnimatePresence, motion, useInView, useReducedMotion } from "motion/react";
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
-import type { Shot } from "@/lib/shots";
-import { AgentTag } from "./visuals";
+import { CheckCircle } from "@phosphor-icons/react";
+import { sidebarShare, type Shot } from "@/lib/shots";
 
 export type ConsoleScreen = { id: string; label: string; title: string; body: string; shot: Shot; callouts: [string, string] };
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 const DWELL = 60; // ticks of 100ms per screen
+// Share of each screen's height shown: the top of the page, where the action is,
+// in a wider frame. The bottom of the capture is trimmed, never squashed.
+const VISIBLE_H = 0.78;
 
 /**
  * Real console screenshots with a numbered list beside them. The list
@@ -37,6 +40,7 @@ export function ConsoleShowcase({ screens }: { screens: ConsoleScreen[] }) {
   }, [inView, reduce, paused, screens.length]);
 
   const s = screens[active];
+  const side = sidebarShare(s.shot);
   const pick = (i: number) => {
     setActive(i);
     setT(0);
@@ -90,7 +94,7 @@ export function ConsoleShowcase({ screens }: { screens: ConsoleScreen[] }) {
             <span className="mx-auto hidden max-w-[60%] truncate rounded-[4px] bg-surface px-3 py-0.5 font-mono text-[11px] text-muted sm:block">{s.shot.url}</span>
             <span className="w-10" />
           </div>
-          <div className="skeleton relative overflow-hidden" style={{ aspectRatio: `${s.shot.w * 0.83} / ${s.shot.h}` }}>
+          <div className="skeleton relative overflow-hidden" style={{ aspectRatio: `${s.shot.w * (1 - side)} / ${s.shot.h * VISIBLE_H}` }}>
             <AnimatePresence initial={false}>
               <motion.div
                 key={s.id}
@@ -100,26 +104,34 @@ export function ConsoleShowcase({ screens }: { screens: ConsoleScreen[] }) {
                 transition={{ duration: 0.6, ease: EASE }}
                 className="absolute inset-0"
               >
-                {/* The screen minus its sidebar strip, at true scale: full height, pinned right. */}
+                {/* The screen minus the console sidebar, at true scale: full height, pinned right. */}
                 <Image
                   src={s.shot.src}
                   alt={s.shot.alt}
                   width={s.shot.w}
                   height={s.shot.h}
-                  sizes="(max-width: 1024px) 120vw, 1040px"
-                  className="absolute right-0 top-0 h-full max-w-none"
-                  style={{ width: `${100 / 0.83}%` }}
+                  // Drawn wider than the frame by the cropped sidebar, so ask for that width.
+                  sizes="(max-width: 1024px) 125vw, 1400px"
+                  quality={90}
+                  className="absolute right-0 top-0 h-auto max-w-none"
+                  style={{ width: `${100 / (1 - side)}%` }}
                 />
               </motion.div>
             </AnimatePresence>
           </div>
           <figcaption className="sr-only">{s.title}</figcaption>
         </figure>
+        {/* What to look at on this screen, under the image so nothing covers the console. */}
         <AnimatePresence mode="wait">
-          <motion.div key={s.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }} className="hidden sm:block">
-            <AgentTag className="-top-4 right-[8%]">{s.callouts[0]}</AgentTag>
-            <AgentTag tone="ink" className="-bottom-5 left-[6%]">{s.callouts[1]}</AgentTag>
-          </motion.div>
+          <motion.ul key={s.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }} className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2">
+            {s.callouts.map((c) => (
+              <li key={c} className="flex items-center gap-1.5 text-[13px] text-fg-2">
+                <CheckCircle size={15} weight="fill" className="text-brand" />
+                {c}
+              </li>
+            ))}
+            <li className="ml-auto font-mono text-[10.5px] uppercase tracking-[0.08em] text-muted">Real console · demo data</li>
+          </motion.ul>
         </AnimatePresence>
       </div>
     </div>

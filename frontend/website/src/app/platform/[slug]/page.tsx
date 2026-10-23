@@ -1,6 +1,9 @@
+import { SetupPanel } from "@/components/panels/screens";
+import { FlowSteps } from "@/components/flow-steps";
 import type { Metadata } from "next";
 import { CheckCircle } from "@phosphor-icons/react/dist/ssr";
 import { PixelPanel, UiCard } from "@/components/landing/visuals";
+import { moduleGalleryPanel, moduleShowcase } from "@/components/panels";
 import { ScreenShowcase } from "@/components/screen-showcase";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -85,9 +88,9 @@ export default async function ModulePage(props: PageProps<"/platform/[slug]">) {
         <Button href="#faq" size="lg" variant="ghost">Read FAQs</Button>
       </PageHero>
 
-      {/* The real console, shown the landing page's way */}
+      {/* The console, as this control's overview panel */}
       <section className="grid-band px-5 py-16 sm:px-8 md:px-12 md:py-24">
-        <ScreenShowcase shot={shots[ms.hero]} priority widget={<EventPanel title={m.name} events={m.events} />} />
+        <ScreenShowcase shot={shots[ms.hero]} panel={moduleShowcase(m.slug as ModuleSlug)} />
       </section>
 
 
@@ -109,10 +112,10 @@ export default async function ModulePage(props: PageProps<"/platform/[slug]">) {
 
       {/* Gallery: the console, screen by screen */}
       <Section>
-        <SectionHead eyebrow="In the console" title={`${m.name}, screen by screen.`} accent={["screen"]} body="Real captures of the Aavishield console with demo data." />
+        <SectionHead eyebrow="In the console" title={`${m.name}, screen by screen.`} accent={["screen"]} body="The screens you will use most, with demo data." />
         <div className="mt-16 grid gap-24">
           {ms.gallery.map((g, i) => (
-            <FeatureSplit key={g.title} eyebrow={`0${i + 1}`} title={g.title} body={g.body} points={g.points} shot={shots[g.shot]} crop={g.crop} reverse={i % 2 === 1} />
+            <FeatureSplit key={g.title} eyebrow={`0${i + 1}`} title={g.title} body={g.body} points={g.points} shot={shots[g.shot]} visual={moduleGalleryPanel(m.slug as ModuleSlug, i)} crop={g.crop} reverse={i % 2 === 1} />
           ))}
         </div>
       </Section>
@@ -122,13 +125,13 @@ export default async function ModulePage(props: PageProps<"/platform/[slug]">) {
         <SectionHead eyebrow="At a glance" title={`${m.name}, in three cards.`} accent={["three"]} />
         <div className="mt-12 grid grid-cols-1 gap-px overflow-hidden rounded-[4px] border border-line bg-line lg:grid-cols-3">
           <div className="flex flex-col bg-bg">
-            <PixelPanel className="grid min-h-[300px] place-items-center rounded-none border-0 border-b border-line p-6">
+            <PixelPanel className="grid h-[360px] place-items-center rounded-none border-0 border-b border-line p-6">
               <EventPanel title={m.name} events={m.events} className="w-full max-w-[340px]" />
             </PixelPanel>
             <p className="px-6 py-5 text-sm leading-relaxed text-muted">What a day of {m.name.toLowerCase()} decisions looks like in the console.</p>
           </div>
           <div className="flex flex-col bg-bg">
-            <PixelPanel className="grid min-h-[300px] place-items-center rounded-none border-0 border-b border-line p-6">
+            <PixelPanel className="grid h-[360px] place-items-center rounded-none border-0 border-b border-line p-6">
               <UiCard title="What it covers" className="w-full max-w-[340px]">
                 <ul className="grid gap-2.5">
                   {m.capabilities.map((c) => (
@@ -143,7 +146,7 @@ export default async function ModulePage(props: PageProps<"/platform/[slug]">) {
             <p className="px-6 py-5 text-sm leading-relaxed text-muted">{m.short}</p>
           </div>
           <div className="flex flex-col bg-bg">
-            <PixelPanel className="grid min-h-[300px] place-items-center rounded-none border-0 border-b border-line p-6">
+            <PixelPanel className="grid h-[360px] place-items-center rounded-none border-0 border-b border-line p-6">
               <UiCard title="How it decides" className="w-full max-w-[340px]">
                 <ol className="relative grid gap-4">
                   <span aria-hidden className="absolute bottom-3 left-[11px] top-3 w-px bg-line" />
@@ -166,39 +169,31 @@ export default async function ModulePage(props: PageProps<"/platform/[slug]">) {
 
 
       {/* Flow */}
-      <section className="grid-band px-5 py-16 sm:px-8 md:px-12 md:py-24">
-        <div className="ink-edge relative overflow-hidden rounded-[6px] bg-ink p-8 text-ink-fg md:p-14">
-          <div className="dot-field-ink absolute inset-0 opacity-70" aria-hidden />
-          <h2 className="relative text-3xl font-normal tracking-tight md:text-4xl">Under the hood</h2>
-          <Stagger className="relative mt-12 grid gap-10 md:grid-cols-3" gap={0.15}>
-            {m.flow.map((f, i) => (
-              <StaggerItem key={f.verb}>
-                <div className="flex items-center gap-4">
-                  <span className="size-2.5 rounded-full bg-brand" />
-                  <span className={`h-px flex-1 ${i === m.flow.length - 1 ? "bg-transparent" : "bg-ink-fg/20"}`} />
-                </div>
-                <h3 className="mt-6 text-2xl font-normal">{f.verb}</h3>
-                <p className="mt-3 leading-relaxed opacity-70">{f.body}</p>
-              </StaggerItem>
-            ))}
-          </Stagger>
-        </div>
+      <section className="grid-band">
+        <FlowSteps slug={m.slug as ModuleSlug} name={m.name} steps={m.flow} />
       </section>
 
       {/* Setup */}
       <Section>
-        <div className="grid gap-12 lg:grid-cols-[0.9fr_1.1fr]">
-          <SectionHead eyebrow="Setup" title="Switched on in minutes." accent={["minutes."]} body="No appliance, no network change, no separate agent." />
-          <ol className="grid gap-3">
-            {ms.setup.map((st, i) => (
-              <li key={st}>
-                <Reveal delay={i * 0.06} className="flex items-center gap-5 rounded-[6px] border border-line bg-surface p-5">
-                  <span className="grid size-10 shrink-0 place-items-center rounded-[4px] bg-brand font-mono text-sm font-medium text-on-brand">{i + 1}</span>
-                  <span className="text-fg-2">{st}</span>
+        <div className="grid items-center gap-12 lg:grid-cols-[0.85fr_1.15fr] lg:gap-14">
+          <div>
+            <SectionHead eyebrow="Setup" title="Switched on in minutes." accent={["minutes."]} body={`${m.name} runs in the same agent and console as every other control. Turning it on is a few choices in a policy.`} />
+            <div className="mt-8 grid gap-3">
+              {["No appliance to install", "No network or VPN change", "No separate agent on the device"].map((x, i) => (
+                <Reveal key={x} delay={0.1 + i * 0.06} className="flex items-center gap-3 text-[15px] text-fg-2">
+                  <CheckCircle size={18} weight="fill" className="shrink-0 text-brand" />
+                  {x}
                 </Reveal>
-              </li>
-            ))}
-          </ol>
+              ))}
+            </div>
+          </div>
+          <Reveal y={40} className="min-w-0">
+            <PixelPanel className="grid place-items-center p-4 sm:p-8 lg:h-[600px] lg:p-10">
+              <div className="w-full max-w-[560px]">
+                <SetupPanel name={m.name} steps={ms.setup} />
+              </div>
+            </PixelPanel>
+          </Reveal>
         </div>
       </Section>
 
@@ -224,7 +219,7 @@ export default async function ModulePage(props: PageProps<"/platform/[slug]">) {
         <Section>
           <SectionHead eyebrow="Problems it solves" title={`Where ${m.name} makes the difference.`} />
           <div className="mt-12">
-            <LinkCards items={sols.map((x2) => ({ href: `/solutions/${x2.slug}`, title: x2.name, body: x2.menu, icon: <SolutionIcon icon={x2.icon} size={22} /> }))} />
+            <LinkCards items={sols.map((x2) => ({ href: `/solutions/${x2.slug}`, title: x2.name, body: x2.menu, icon: <SolutionIcon icon={x2.icon} size={22} /> }))} more={{ href: "/solutions", label: "All solutions" }} />
           </div>
         </Section>
       )}
@@ -244,7 +239,7 @@ export default async function ModulePage(props: PageProps<"/platform/[slug]">) {
         <h2 className="text-2xl font-normal tracking-tight text-fg">Works well with</h2>
         <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-2 [&>*]:min-w-0">
           {related.map((r) => (
-            <Link key={r.slug} href={`/platform/${r.slug}`} className="group flex items-center gap-5 rounded-[6px] border border-line p-6 transition-colors duration-300 hover:border-brand/50 hover:bg-surface">
+            <Link key={r.slug} href={`/platform/${r.slug}`} className="group flex items-center gap-5 rounded-[6px] border border-line p-6 transition-colors duration-300 hover:border-brand/40">
               <span className="grid size-12 shrink-0 place-items-center rounded-[4px] border border-line text-fg transition-colors duration-300 group-hover:border-brand group-hover:bg-brand group-hover:text-on-brand">
                 <ModuleIcon icon={r.icon} size={22} />
               </span>
@@ -252,7 +247,7 @@ export default async function ModulePage(props: PageProps<"/platform/[slug]">) {
                 <span className="block font-medium text-fg">{r.name}</span>
                 <span className="mt-1 block truncate text-sm text-muted">{r.short}</span>
               </span>
-              <ArrowUpRight size={18} className="shrink-0 text-muted transition-transform duration-300 ease-out-expo group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+              <ArrowUpRight size={18} className="shrink-0 text-muted transition-[transform,color] duration-300 ease-out-expo group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-brand-ink" />
             </Link>
           ))}
         </div>

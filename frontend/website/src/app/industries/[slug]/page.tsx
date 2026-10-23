@@ -1,7 +1,8 @@
+import { ArtBand } from "@/components/flow-steps";
+import { DataScanWidget } from "@/components/landing/section-widgets";
 import type { Metadata } from "next";
 import { ModuleVisual } from "@/components/landing/hero-widgets";
 import { PageHero } from "@/components/page-hero";
-import Image from "next/image";
 import { notFound } from "next/navigation";
 import { Breadcrumbs, CardGrid, FaqSection, FeatureSplit, LinkCards } from "@/components/blocks";
 import { Button } from "@/components/button";
@@ -10,7 +11,7 @@ import { ModuleIcon } from "@/components/icons";
 import { Reveal } from "@/components/motion/reveal";
 import { Section, SectionHead } from "@/components/section";
 import { SolutionIcon } from "@/components/solution-icon";
-import { CTA, getModule } from "@/lib/content";
+import { CTA, getModule, type ModuleSlug } from "@/lib/content";
 import { JsonLd, breadcrumbLd, faqLd } from "@/lib/seo";
 import { shots } from "@/lib/shots";
 import { getIndustry, getSolution, industries } from "@/lib/solutions";
@@ -38,6 +39,15 @@ const rollout = [
   { title: "Week 2: review", body: "Look at real findings with your team and decide what to block, allow or watch." },
   { title: "Week 3: roll out", body: "Send the enrollment link to everyone. Policy applies the moment each device enrolls." },
   { title: "Ongoing: report", body: "Use the executive summary and compliance reports for leadership, clients and auditors." },
+];
+
+// Line art for each rollout stage: choosing pilot devices, reviewing findings,
+// devices enrolling, and reports measured against the baseline.
+const ROLLOUT_ART: { slug: ModuleSlug; kind: number }[] = [
+  { slug: "activity-monitoring", kind: 0 },
+  { slug: "data-loss-prevention", kind: 2 },
+  { slug: "application-control", kind: 0 },
+  { slug: "device-posture", kind: 1 },
 ];
 
 export default async function IndustryPage(props: PageProps<"/industries/[slug]">) {
@@ -73,7 +83,7 @@ export default async function IndustryPage(props: PageProps<"/industries/[slug]"
 
       {/* 3. Sensitive data */}
       <Section>
-        <div className={`grid items-center gap-12 ${ind.image ? "lg:grid-cols-2" : ""}`}>
+        <div className="grid items-center gap-12 lg:grid-cols-2 [&>*]:min-w-0">
           <div>
             <SectionHead eyebrow="The data at stake" title="Aavishield knows what this data looks like." accent={["looks"]} body="Pattern detectors and AI classification recognise it in files, images and messages, and record when it leaves a device." />
             <Reveal delay={0.2} className="mt-8 flex flex-wrap gap-2.5">
@@ -82,11 +92,9 @@ export default async function IndustryPage(props: PageProps<"/industries/[slug]"
               ))}
             </Reveal>
           </div>
-          {ind.image && (
-            <Reveal y={40} className="relative aspect-[4/3] overflow-hidden rounded-[6px] bg-ink">
-              <Image src={ind.image.src} alt={ind.image.alt} fill sizes="(max-width: 1024px) 100vw, 560px" className="object-cover" />
-            </Reveal>
-          )}
+          <Reveal y={40}>
+            <DataScanWidget items={ind.data} />
+          </Reveal>
         </div>
       </Section>
 
@@ -104,32 +112,25 @@ export default async function IndustryPage(props: PageProps<"/industries/[slug]"
       <Section>
         <SectionHead eyebrow="Controls" title="The controls that matter most here." />
         <div className="mt-12">
-          <LinkCards items={ind.modules.map((slug) => { const m = getModule(slug)!; return { href: `/platform/${m.slug}`, title: m.name, body: m.short, icon: <ModuleIcon icon={m.icon} size={22} /> }; })} />
+          <LinkCards items={ind.modules.map((slug) => { const m = getModule(slug)!; return { href: `/platform/${m.slug}`, title: m.name, body: m.short, icon: <ModuleIcon icon={m.icon} size={22} /> }; })} more={{ href: "/platform", label: "All seven controls" }} />
         </div>
       </Section>
 
       {/* 6. Rollout */}
-      <Section>
-        <div className="ink-edge relative overflow-hidden rounded-[6px] bg-ink p-8 text-ink-fg md:p-14">
-          <div className="dot-field-ink absolute inset-0 opacity-70" aria-hidden />
-          <SectionHead invert eyebrow="Rollout" title="From pilot to every device in three weeks." className="relative" />
-          <div className="relative mt-12 grid gap-8 md:grid-cols-4">
-            {rollout.map((r, i) => (
-              <Reveal key={r.title} delay={i * 0.08}>
-                <span className="font-mono text-sm text-brand">0{i + 1}</span>
-                <h3 className="mt-3 text-lg font-normal">{r.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed opacity-70">{r.body}</p>
-              </Reveal>
-            ))}
-          </div>
-        </div>
-      </Section>
+      <section className="grid-band">
+        <ArtBand
+          label="Rollout"
+          title="From pilot to every device in"
+          accent="three weeks."
+          items={rollout.map((r, i) => ({ title: r.title, body: r.body, art: ROLLOUT_ART[i] }))}
+        />
+      </section>
 
       {/* 7. Related problems */}
       <Section>
         <SectionHead eyebrow="Related problems" title="Problems we solve in this industry." />
         <div className="mt-12">
-          <LinkCards items={ind.solutions.map((sl) => { const s = getSolution(sl)!; return { href: `/solutions/${s.slug}`, title: s.name, body: s.menu, icon: <SolutionIcon icon={s.icon} size={22} /> }; })} />
+          <LinkCards items={ind.solutions.map((sl) => { const s = getSolution(sl)!; return { href: `/solutions/${s.slug}`, title: s.name, body: s.menu, icon: <SolutionIcon icon={s.icon} size={22} /> }; })} more={{ href: "/solutions", label: "All solutions" }} />
         </div>
       </Section>
 
@@ -140,7 +141,7 @@ export default async function IndustryPage(props: PageProps<"/industries/[slug]"
       <Section>
         <h2 className="text-2xl font-normal tracking-tight text-fg">Other industries</h2>
         <div className="mt-8">
-          <LinkCards items={others.map((o) => ({ href: `/industries/${o.slug}`, title: o.name, body: o.menu, icon: <SolutionIcon icon={o.icon} size={22} /> }))} />
+          <LinkCards items={others.map((o) => ({ href: `/industries/${o.slug}`, title: o.name, body: o.menu, icon: <SolutionIcon icon={o.icon} size={22} /> }))} more={{ href: "/industries", label: "All industries" }} />
         </div>
       </Section>
 

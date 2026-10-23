@@ -35,7 +35,7 @@ export const POP = { initial: { opacity: 0, scale: 0.9, y: 4 }, animate: { opaci
 /** A looping tick counter that runs only while `ref` is in view. */
 export function useTimeline(period: number, final: number) {
   const ref = useRef<HTMLDivElement>(null);
-  const inView = useInView(ref, { amount: 0.35 });
+  const inView = useInView(ref, { amount: 0.15 });
   const reduce = useReducedMotion();
   const [t, setT] = useState(0);
   useEffect(() => {
@@ -78,7 +78,7 @@ export function AgentTag({ children, tone = "brand", className = "" }: { childre
 /** Small UI card shell: mono title bar, then content. */
 export function UiCard({ title, meta, children, className = "" }: { title: string; meta?: React.ReactNode; children: React.ReactNode; className?: string }) {
   return (
-    <div className={`relative rounded-[6px] border border-line-strong/70 bg-surface shadow-[0_18px_40px_-24px_rgb(120_50_0/0.35)] ${className}`}>
+    <div className={`ui-panel relative rounded-[6px] border border-line-strong/70 bg-surface shadow-[0_18px_40px_-24px_rgb(120_50_0/0.35)] ${className}`}>
       <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-2.5">
         <span className="font-mono text-[10.5px] uppercase tracking-[0.1em] text-fg">{title}</span>
         {meta}
@@ -98,7 +98,7 @@ export type EventState = keyof typeof STATE;
 export function StatePill({ state }: { state: EventState }) {
   const s = STATE[state];
   return (
-    <span className={`inline-flex shrink-0 items-center gap-1 rounded-[4px] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.06em] ${s.cls}`}>
+    <span className={`ui-pill inline-flex shrink-0 items-center gap-1 rounded-[4px] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.06em] ${s.cls}`}>
       <s.I size={11} weight="fill" />
       {s.label}
     </span>

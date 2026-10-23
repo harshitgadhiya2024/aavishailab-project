@@ -30,7 +30,6 @@ export type Solution = {
   headline: string;
   accent: string[];
   intro: string;
-  image?: { src: string; alt: string };
   hero: ShotKey;
   problem: { title: string; body: string; points: { title: string; body: string }[] };
   why: { title: string; body: string }[]; // why it's happening now
@@ -57,7 +56,6 @@ export const solutionsList: Solution[] = [
     accent: ["paste"],
     intro:
       "Generative AI arrived faster than any policy. Engineers paste stack traces with secrets, finance uploads salary sheets for a quick summary, sales drops a customer export in for a cleaner list. Aavishield shows you exactly what reaches AI tools, and lets you decide which tools are allowed at all.",
-    image: { src: "/images/solution-ai.webp", alt: "A professional working on a laptop with faint orange particles rising from the screen" },
     hero: "dlp",
     problem: {
       title: "The fastest-growing data leak has a friendly chat window.",
@@ -113,7 +111,6 @@ export const solutionsList: Solution[] = [
     accent: ["did", "not."],
     intro:
       "Hybrid work moved company laptops onto home routers, café Wi-Fi and hotel networks. The perimeter you paid for only protects the days people come in. Aavishield puts the policy on the laptop itself, so it is enforced on every network, every day.",
-    image: { src: "/images/solution-remote.webp", alt: "A woman working on a laptop in a cafe by a rainy window at dusk" },
     hero: "devices",
     problem: {
       title: "Most company traffic no longer passes anything you control.",
@@ -169,7 +166,6 @@ export const solutionsList: Solution[] = [
     accent: ["resignation"],
     intro:
       "Most data that leaves a company leaves with someone who had legitimate access: a salesperson exporting the CRM before a move, an engineer zipping a repository, a contractor syncing a folder to personal storage. Aavishield connects data movement, unapproved tools and activity context so you see risk building, early.",
-    image: { src: "/images/solution-insider.webp", alt: "A silhouetted person in an empty office at night beside an orange desk lamp" },
     hero: "reportsRisk",
     problem: {
       title: "The riskiest user already has the password.",
@@ -225,7 +221,6 @@ export const solutionsList: Solution[] = [
     accent: ["evidence,"],
     intro:
       "Audits and security questionnaires ask the same things every time. Are laptops encrypted? Is the firewall on? Are patches current? Where does sensitive data go? Most teams answer with screenshots collected by hand. Aavishield keeps that evidence current and exportable.",
-    image: { src: "/images/solution-compliance.webp", alt: "Orderly archive boxes on dark shelves with one small orange indicator light" },
     hero: "reportsCompliance",
     problem: {
       title: "Evidence collection eats the week before every audit.",
@@ -336,7 +331,6 @@ export const solutionsList: Solution[] = [
     accent: ["tunnels"],
     intro:
       "A free VPN, a proxy website or a browser extension is the quickest way around any web filter, and they are advertised everywhere. Aavishield blocks VPN clients, their installers, proxy sites and known extensions on every device from the moment it enrolls.",
-    image: { src: "/images/vpn-control.webp", alt: "A long dark tunnel of light blocked near the end by a wall of orange light" },
     hero: "overview",
     problem: {
       title: "One free VPN undoes every policy you set.",
@@ -392,7 +386,6 @@ export const solutionsList: Solution[] = [
     accent: ["double-clicks"],
     intro:
       "Most attacks on small and mid-sized companies still start the same way: a convincing invoice, a fake login page, a cracked installer. Aavishield blocks known phishing and malware sites and scans downloads in flight, so the dangerous file never reaches the disk.",
-    image: { src: "/images/malware-scanning.webp", alt: "A black cube split open by an orange laser plane revealing a corrupted core" },
     hero: "activityDownloads",
     problem: {
       title: "Attackers only need one click.",
@@ -503,7 +496,6 @@ export const solutionsList: Solution[] = [
     accent: ["first", "login."],
     intro:
       "New joiners, interns and contractors get access to real systems on day one, often on laptops IT never touched. Aavishield turns onboarding into a link: the person installs the agent, the device enrolls, and your full policy applies immediately, with posture checked from the first minute.",
-    image: { src: "/images/company-team.webp", alt: "A team collaborating around a large table in a minimal studio office" },
     hero: "portalDownload",
     problem: {
       title: "Day one is when devices are least protected.",
@@ -562,7 +554,6 @@ export type Industry = {
   accent: string[];
   intro: string;
   hero: ShotKey;
-  image?: { src: string; alt: string };
   challenges: { title: string; body: string }[];
   data: string[]; // the sensitive data this industry handles
   useCases: { title: string; body: string; shot: ShotKey }[];
@@ -583,7 +574,6 @@ export const industries: Industry[] = [
     accent: ["secrets."],
     intro: "Software teams handle client code, production credentials and customer data on laptops that move between home and office. Aavishield catches secrets leaving, blocks risky tools and gives client audits the evidence they ask for.",
     hero: "dlp",
-    image: { src: "/images/company-detail.webp", alt: "Hands sketching a system diagram in pencil beside a laptop" },
     challenges: [
       { title: "Secrets in chat and AI tools", body: "Keys and tokens pasted into Teams, Slack or ChatGPT while debugging." },
       { title: "Client code confidentiality", body: "Client contracts often forbid code leaving approved systems." },
@@ -677,7 +667,6 @@ export const industries: Industry[] = [
     accent: ["consistent"],
     intro: "Contact centres and support teams give large numbers of agents access to customer records, often across shifts and locations. Aavishield enforces the same web and data policy on every seat and shows how time is spent where monitoring is part of the job.",
     hero: "screenshots",
-    image: { src: "/images/home-anywhere.webp", alt: "An employee working on a laptop in an airport lounge at dusk" },
     challenges: [
       { title: "Customer records at scale", body: "Agents see customer names, phone numbers and payment details." },
       { title: "Client requirements", body: "Clients mandate strict controls and monitoring." },

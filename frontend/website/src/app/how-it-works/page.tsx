@@ -7,7 +7,6 @@ import { Button } from "@/components/button";
 import { CtaBand } from "@/components/cta-band";
 import { Reveal, Stagger, StaggerItem } from "@/components/motion/reveal";
 import { PageHero } from "@/components/page-hero";
-import { ParallaxImage } from "@/components/parallax-image";
 import { Section, SectionHead } from "@/components/section";
 import { CTA } from "@/lib/content";
 import { JsonLd, SITE_URL, breadcrumbLd, faqLd } from "@/lib/seo";
@@ -135,11 +134,6 @@ export default function HowItWorksPage() {
             </ul>
           </Reveal>
         </div>
-      </Section>
-
-      {/* 6. Image */}
-      <Section wide>
-        <ParallaxImage src="/images/company-team.webp" alt="A team collaborating around a large table in a minimal studio office" sizes="(max-width: 1400px) 100vw, 1400px" aspect="aspect-[4/3] sm:aspect-[21/9]" />
       </Section>
 
       {/* 7. Rollout plan */}

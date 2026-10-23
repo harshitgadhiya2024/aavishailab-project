@@ -157,7 +157,7 @@ export function ArticleView({ post, related, siblings = [] }: { post: Post; rela
           {isGuide ? (
             <div className="mt-8 grid grid-cols-1 gap-px overflow-hidden rounded-[6px] border border-line bg-line md:grid-cols-3">
               {related.map((r) => (
-                <Link key={r.slug} href={`${base}/${r.slug}`} className="group flex flex-col bg-bg p-6 transition-colors duration-300 hover:bg-brand-soft">
+                <Link key={r.slug} href={`${base}/${r.slug}`} className="group flex flex-col bg-bg p-6 transition-shadow duration-300 hover:shadow-[inset_0_0_0_1px_rgb(255_112_0/0.45)]">
                   <span className="text-[1.1rem] leading-snug tracking-[-0.015em] text-fg">{r.title}</span>
                   <span className="mt-2 line-clamp-2 text-sm text-muted">{r.excerpt}</span>
                   <span className="mt-5 inline-flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-fg group-hover:text-brand-ink">

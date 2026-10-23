@@ -1,8 +1,10 @@
+import { panelForShot } from "@/components/panels";
+import { PanelThumb } from "@/components/panels/thumb";
+import { ModesWidget } from "@/components/landing/section-widgets";
 import type { Metadata } from "next";
 import { ScreenShowcase } from "@/components/screen-showcase";
 import { LiveFeed } from "@/components/landing/live-feed";
 import { FeedHero } from "@/components/landing/hero-widgets";
-import Image from "next/image";
 import Link from "next/link";
 import { ArrowUpRight, Check } from "@phosphor-icons/react/dist/ssr";
 import { CardGrid, FaqSection } from "@/components/blocks";
@@ -59,7 +61,7 @@ export default function SolutionsPage() {
       />
 
       {/* 1. Hero */}
-      <PageHero visual={<FeedHero />} eyebrow="Endpoint security solutions" accent={["today."]} title="Start from the problem you have today." body="Nine problems companies face right now, and exactly how Aavishield solves each one, shown in the real console.">
+      <PageHero visual={<FeedHero />} eyebrow="Endpoint security solutions" accent={["today."]} title="Start from the problem you have today." body="Nine problems companies face right now, and exactly how Aavishield solves each one.">
         <Button href="#problems" size="lg">See the problems</Button>
         <Button href="/contact" size="lg" variant="ghost">{CTA.demo}</Button>
       </PageHero>
@@ -72,7 +74,7 @@ export default function SolutionsPage() {
               <Spotlight className="h-full">
                 <Link href={`/solutions/${s.slug}`} className="flex h-full flex-col">
                   <div className="relative m-2 aspect-[16/10] overflow-hidden rounded-[6px] bg-bg-2">
-                    <Image src={shots[s.hero].src} alt={shots[s.hero].alt} fill sizes="(max-width: 768px) 100vw, 380px" className="object-cover object-left-top transition-transform duration-[1.1s] ease-out-expo group-hover:scale-[1.05]" />
+                    <PanelThumb panel={panelForShot(shots[s.hero])} className="absolute inset-0" />
                   </div>
                   <div className="flex flex-1 flex-col p-6 pt-4">
                     <div className="flex items-center justify-between">
@@ -149,8 +151,13 @@ export default function SolutionsPage() {
         <Stagger className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           {industries.map((ind) => (
             <StaggerItem key={ind.slug}>
-              <Link href={`/industries/${ind.slug}`} className="group block h-full rounded-[6px] border border-line bg-surface p-6 transition-colors duration-300 hover:border-brand/50">
-                <SolutionIcon icon={ind.icon} size={26} className="text-brand-ink" />
+              <Link href={`/industries/${ind.slug}`} className="group block h-full rounded-[6px] border border-line bg-surface p-6 transition-colors duration-300 hover:border-brand/40">
+                <span className="flex items-start justify-between">
+                  <span className="grid size-11 place-items-center rounded-[4px] border border-line text-fg transition-colors duration-300 group-hover:border-brand group-hover:bg-brand group-hover:text-on-brand">
+                    <SolutionIcon icon={ind.icon} size={22} />
+                  </span>
+                  <ArrowUpRight size={18} className="text-muted transition-[transform,color] duration-300 ease-out-expo group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-brand-ink" />
+                </span>
                 <h3 className="mt-6 font-normal text-fg">{ind.name}</h3>
                 <p className="mt-2 text-sm leading-relaxed text-muted">{ind.menu}</p>
               </Link>
@@ -162,8 +169,8 @@ export default function SolutionsPage() {
       {/* 6. Approach */}
       <Section>
         <div className="grid items-center gap-12 lg:grid-cols-[1fr_1fr]">
-          <Reveal y={40} className="relative aspect-[4/3] overflow-hidden rounded-[6px] bg-ink">
-            <Image src="/images/company-team.webp" alt="A team collaborating around a large table in a minimal studio office" fill sizes="(max-width: 1024px) 100vw, 560px" className="object-cover" />
+          <Reveal y={40}>
+            <ModesWidget />
           </Reveal>
           <div>
             <SectionHead eyebrow="Our approach" title="Visibility first. Enforcement where it is clearly right." accent={["Visibility"]} />
