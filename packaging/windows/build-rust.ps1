@@ -1,8 +1,8 @@
 ﻿<#
 Builds a Windows .msi installer for the Rust Aavishield connector
-(services/endpoint-agent). A sibling to build.ps1, which does the same for
-the Python connector — see packaging/macos/build-rust.sh's header for why
-this is a separate script rather than one shared with a language flag.
+(services/endpoint-agent). It replaced build.ps1, the removed Python
+connector's builder — every "build.ps1" mention below points at that script
+in git history.
 
     powershell -ExecutionPolicy Bypass -File packaging\windows\build-rust.ps1 -Version 1.0.0
 

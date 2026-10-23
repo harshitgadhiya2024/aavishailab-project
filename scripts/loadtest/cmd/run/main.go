@@ -1,6 +1,6 @@
 // run drives simulated devices against admin-api's /internal/agent/*
 // endpoints at the real shipped-agent poll cadence (rules every 10s,
-// activity every 5s, heartbeat every 60s — see scripts/agent/aavishield-agent.py),
+// activity every 5s, heartbeat every 60s — see services/endpoint-agent),
 // and reports p50/p95/p99 latency per endpoint. This is the Phase 0
 // baseline the Rust migration plan's later phases are measured against.
 package main

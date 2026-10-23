@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
 # Builds a Linux .deb (and a portable .tar.gz) for the Rust Aavishield
-# connector (services/endpoint-agent). A sibling to build.sh, which does the
-# same for the Python connector — see packaging/macos/build-rust.sh's header
-# for why this is a separate script rather than a shared one with a flag.
+# connector (services/endpoint-agent). It replaced build.sh, the removed
+# Python connector's builder — every "build.sh" mention below points at that
+# script in git history.
 #
 #   ./packaging/linux/build-rust.sh [version]
 #

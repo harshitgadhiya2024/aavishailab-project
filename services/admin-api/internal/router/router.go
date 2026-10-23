@@ -86,8 +86,7 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	ticketH := handlers.NewTicketHandler(db)
 	overviewH := handlers.NewSuperadminOverviewHandler(db)
 
-	// ─── Agent script + native packages (public — used by installers) ──────────
-	r.GET("/agent/aavishield-agent.py", handlers.ServeAgentScript)
+	// ─── Native packages + media (public — used by installers) ─────────────────
 
 	// Screenshot images stored on local disk are served here — public, but
 	// each URL carries a short-lived HMAC over key+expiry. R2-backed images
