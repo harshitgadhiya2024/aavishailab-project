@@ -15,16 +15,6 @@ export function Architecture() {
   const reduce = useReducedMotion();
   return (
     <div className="relative grid gap-4 md:grid-cols-4 md:gap-6">
-      <svg className="pointer-events-none absolute left-0 right-0 top-[44px] hidden h-2 w-full md:block" preserveAspectRatio="none" viewBox="0 0 100 2" aria-hidden>
-        <motion.line
-          x1="12" y1="1" x2="88" y2="1"
-          stroke="var(--brand)" strokeWidth="0.3" strokeDasharray="0.8 0.8"
-          initial={reduce ? false : { pathLength: 0 }}
-          whileInView={{ pathLength: 1 }}
-          viewport={{ once: true, amount: 0.6 }}
-          transition={{ duration: 1.6, ease: [0.65, 0, 0.35, 1] }}
-        />
-      </svg>
       {nodes.map(({ I, title, body }, i) => (
         <motion.div
           key={title}
@@ -34,6 +24,26 @@ export function Architecture() {
           transition={{ duration: 0.8, delay: 0.2 + i * 0.18, ease: [0.16, 1, 0.3, 1] }}
           className="relative"
         >
+          {i < nodes.length - 1 && (
+            // Connector from this icon's right edge to the next icon's left edge (across the 1.5rem gap).
+            <span aria-hidden className="pointer-events-none absolute left-[88px] top-[44px] hidden h-px w-[calc(100%-88px+1.5rem)] md:block">
+              <motion.span
+                className="absolute inset-0 origin-left bg-brand/50"
+                initial={reduce ? false : { scaleX: 0 }}
+                whileInView={{ scaleX: 1 }}
+                viewport={{ once: true, amount: 0.6 }}
+                transition={{ duration: 0.7, delay: 0.5 + i * 0.35, ease: [0.65, 0, 0.35, 1] }}
+              />
+              {!reduce && (
+                <motion.span
+                  className="absolute top-1/2 size-1.5 -translate-y-1/2 rounded-full bg-brand"
+                  initial={{ left: "0%", opacity: 0 }}
+                  animate={{ left: ["0%", "100%"], opacity: [0, 1, 1, 0] }}
+                  transition={{ duration: 2.2, delay: 1.6 + i * 0.5, repeat: Infinity, repeatDelay: 1.2, ease: "easeInOut" }}
+                />
+              )}
+            </span>
+          )}
           <div className={`relative z-[1] grid size-[88px] place-items-center rounded-[6px] border ${i === 0 ? "border-transparent bg-brand text-on-brand" : "border-line bg-surface text-fg"}`}>
             <I size={30} weight="light" />
           </div>

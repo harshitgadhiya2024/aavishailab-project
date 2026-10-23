@@ -2,9 +2,17 @@
 // running build against a demo organisation ("Northwind Labs"). Every name,
 // device and event in them is fictional demo data.
 
-export type Shot = { src: string; alt: string; w: number; h: number; url: string };
+// `sidebar`: the screen has the console's left sidebar, which still carries
+// the old logo and is cropped off when shown (see SIDEBAR_PX).
+export type Shot = { src: string; alt: string; w: number; h: number; url: string; sidebar: boolean };
 
-const s = (file: string, alt: string, url: string, w = 2880, h = 1800): Shot => ({ src: `/images/product/${file}`, alt, w, h, url });
+/** Source pixels from the left edge to just past the sidebar and its collapse button. */
+export const SIDEBAR_PX = 540;
+
+/** Share of the screenshot's width to crop off the left. */
+export const sidebarShare = (shot: Shot) => (shot.sidebar ? SIDEBAR_PX / shot.w : 0);
+
+const s = (file: string, alt: string, url: string, w = 2880, h = 1800, sidebar = true): Shot => ({ src: `/images/product/${file}`, alt, w, h, url, sidebar });
 
 export const shots = {
   overview: s("overview.jpg", "Aavishield security overview: devices online, employee coverage, incidents by control and items needing attention", "aavishield-app.aavishailab.com / dashboard"),
@@ -34,8 +42,8 @@ export const shots = {
   settings: s("settings.jpg", "Organisation settings: password, two-factor, notifications, working hours and monitoring", "aavishield-app.aavishailab.com / settings"),
   ai: s("ai-assistant.jpg", "The Aavishield assistant answering questions about devices, alerts and reports from live data", "aavishield-app.aavishailab.com / dashboard"),
   devices: s("devices.jpg", "Device inventory with operating system, agent version, status, enforcement and posture score", "aavishield-app.aavishailab.com / devices", 3440, 2000),
-  login: s("login.jpg", "Aavishield company admin sign-in page", "aavishield-app.aavishailab.com / login"),
-  portalLogin: s("portal-login.jpg", "Aavishield employee portal sign-in page", "aavishield-employee.aavishailab.com / login"),
+  login: s("login.jpg", "Aavishield company admin sign-in page", "aavishield-app.aavishailab.com / login", 2880, 1800, false),
+  portalLogin: s("portal-login.jpg", "Aavishield employee portal sign-in page", "aavishield-employee.aavishailab.com / login", 2880, 1800, false),
   portalDownload: s("portal-download.jpg", "Employee portal download page with one-click installers for macOS, Windows and Linux", "aavishield-employee.aavishailab.com / download"),
 } satisfies Record<string, Shot>;
 

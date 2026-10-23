@@ -12,6 +12,7 @@ import {
 import Link from "next/link";
 import { CTA } from "@/lib/content";
 import { Reveal } from "../motion/reveal";
+import { EarlyArt } from "./early-art";
 import { GridButton } from "./grid-button";
 import { GridHeading, Label } from "./grid";
 
@@ -101,10 +102,10 @@ export function EarlyAccess() {
     "A direct line to the engineers who build Aavishield",
     "Your feedback shapes what we build next",
     "Start with a small pilot group before rolling out",
-    "Every screen on this page is the real product",
+    "Everything shown is something the product does today",
   ];
   return (
-    <div className="grid gap-10 bg-ink px-5 py-16 text-ink-fg sm:px-8 md:grid-cols-[1.1fr_1fr] md:gap-16 md:px-12 md:py-20">
+    <div className="grid items-center gap-10 bg-ink px-5 py-16 text-ink-fg sm:px-8 md:grid-cols-[1fr_1.1fr] md:gap-16 md:px-12 md:py-20">
       <Reveal>
         <Label invert>Early access</Label>
         <h2 className="mt-6 max-w-[16ch] text-[2rem] font-normal leading-[1.08] tracking-[-0.03em] md:text-[2.6rem]">
@@ -119,11 +120,15 @@ export function EarlyAccess() {
         </div>
       </Reveal>
       <Reveal delay={0.1}>
-        <ul className="grid gap-px overflow-hidden rounded-[4px] border border-white/10 bg-white/10">
+        {/* Same hairline grid and line art as "Under the hood" on the feature pages. */}
+        <ul className="grid grid-cols-1 gap-px overflow-hidden rounded-[6px] border border-white/10 bg-white/10 sm:grid-cols-2">
           {points.map((p, i) => (
-            <li key={p} className="flex items-center gap-4 bg-ink px-5 py-4 text-[15px]">
-              <span className="font-mono text-[11px] text-brand">{String(i + 1).padStart(2, "0")}</span>
-              {p}
+            <li key={p} className="flex flex-col bg-ink p-6 md:p-7">
+              <span className="size-16">
+                <EarlyArt kind={i} />
+              </span>
+              <span className="mt-6 font-mono text-[11px] text-brand">{String(i + 1).padStart(2, "0")}</span>
+              <span className="mt-2 text-[16px] leading-snug text-ink-fg">{p}</span>
             </li>
           ))}
         </ul>

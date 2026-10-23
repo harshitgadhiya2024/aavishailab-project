@@ -1,6 +1,7 @@
+import { panelForShot } from "@/components/panels";
+import { PanelThumb } from "@/components/panels/thumb";
 import type { Metadata } from "next";
 import { DataTypesHero } from "@/components/landing/hero-widgets";
-import Image from "next/image";
 import Link from "next/link";
 import { ArrowUpRight } from "@phosphor-icons/react/dist/ssr";
 import { CardGrid, FaqSection, FeatureSplit, LinkCards } from "@/components/blocks";
@@ -8,7 +9,6 @@ import { Button } from "@/components/button";
 import { CtaBand } from "@/components/cta-band";
 import { Reveal, Stagger, StaggerItem } from "@/components/motion/reveal";
 import { PageHero } from "@/components/page-hero";
-import { ParallaxImage } from "@/components/parallax-image";
 import { Section, SectionHead } from "@/components/section";
 import { SolutionIcon } from "@/components/solution-icon";
 import { CTA } from "@/lib/content";
@@ -51,9 +51,9 @@ export default function IndustriesPage() {
         <Stagger className="grid gap-4 md:grid-cols-2">
           {industries.map((ind, i) => (
             <StaggerItem key={ind.slug} className={i === 0 ? "md:col-span-2" : ""}>
-              <Link href={`/industries/${ind.slug}`} className={`group grid h-full overflow-hidden rounded-[6px] border border-line bg-surface transition-colors duration-300 hover:border-brand/50 ${i === 0 ? "md:grid-cols-2" : ""}`}>
-                <div className={`relative m-2 overflow-hidden rounded-[6px] bg-bg-2 ${i === 0 ? "aspect-[16/10] md:aspect-auto md:min-h-[300px]" : "aspect-[16/9]"}`}>
-                  <Image src={shots[ind.hero].src} alt={shots[ind.hero].alt} fill sizes="(max-width: 768px) 100vw, 560px" className="object-cover object-left-top transition-transform duration-[1.1s] ease-out-expo group-hover:scale-[1.05]" />
+              <Link href={`/industries/${ind.slug}`} className={`group grid h-full overflow-hidden rounded-[6px] border border-line bg-surface transition-colors duration-300 hover:border-brand/40 ${i === 0 ? "md:grid-cols-2" : ""}`}>
+                <div className="relative m-2 aspect-[16/10] overflow-hidden rounded-[6px] bg-bg-2">
+                  <PanelThumb panel={panelForShot(shots[ind.hero])} className="absolute inset-0" />
                 </div>
                 <div className="flex flex-col justify-between gap-6 p-6 md:p-8">
                   <div className="flex items-start justify-between">
@@ -84,11 +84,6 @@ export default function IndustriesPage() {
         <div className="mt-12"><CardGrid items={common} cols={4} /></div>
       </Section>
 
-      {/* 4. Image */}
-      <Section wide>
-        <ParallaxImage src="/images/home-anywhere.webp" alt="An employee working on a laptop in an airport lounge at dusk" sizes="(max-width: 1400px) 100vw, 1400px" aspect="aspect-[4/3] sm:aspect-[21/9]" />
-      </Section>
-
       {/* 5. Data */}
       <Section>
         <FeatureSplit
@@ -116,7 +111,7 @@ export default function IndustriesPage() {
       <Section>
         <SectionHead eyebrow="By problem" title="Or start from the problem instead." />
         <div className="mt-12">
-          <LinkCards items={solutionsList.slice(0, 6).map((s) => ({ href: `/solutions/${s.slug}`, title: s.name, body: s.menu, icon: <SolutionIcon icon={s.icon} size={22} /> }))} />
+          <LinkCards items={solutionsList.slice(0, 6).map((s) => ({ href: `/solutions/${s.slug}`, title: s.name, body: s.menu, icon: <SolutionIcon icon={s.icon} size={22} /> }))} more={{ href: "/solutions", label: "All solutions" }} />
         </div>
         <Reveal className="mt-8"><Button href="/solutions" variant="ghost">All nine problems</Button></Reveal>
       </Section>

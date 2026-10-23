@@ -43,7 +43,7 @@ export function Meta({ post }: { post: PostSummary }) {
 /** A blog post card for the index grid. */
 export function PostCard({ post }: { post: PostSummary }) {
   return (
-    <Link href={`${BASE[post.kind]}/${post.slug}`} className="group flex h-full flex-col gap-5 rounded-[6px] border border-line bg-bg p-4 transition-colors duration-300 hover:border-brand/40 hover:bg-surface md:p-5">
+    <Link href={`${BASE[post.kind]}/${post.slug}`} className="group flex h-full flex-col gap-5 rounded-[6px] border border-line bg-bg p-4 transition-colors duration-300 hover:border-brand/40 md:p-5">
       <Cover post={post} />
       <div className="flex flex-1 flex-col">
         <Meta post={post} />

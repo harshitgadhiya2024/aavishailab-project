@@ -406,3 +406,46 @@ h3 {
     transition-duration: 0.01ms !important;
   }
 }
+
+/*
+ * Micro-interactions for product panels and widget cards (.ui-panel): a
+ * gentle lift on hover (no darker shadow), soft row highlights and a small pop on status pills.
+ * Reduced motion is handled by the rule above, which zeroes transitions.
+ */
+.ui-panel {
+  transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@media (hover: hover) {
+  .ui-panel:hover {
+    transform: translateY(-3px);
+  }
+}
+.ui-panel li {
+  transition:
+    background-color 0.3s ease,
+    transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.ui-panel li.border-b {
+  margin-inline: -10px;
+  padding-inline: 10px;
+  border-radius: 6px;
+}
+@media (hover: hover) {
+  .ui-panel li:hover {
+    background-color: color-mix(in srgb, var(--brand) 6%, transparent);
+  }
+  .ui-panel li.border-b:hover {
+    transform: translateX(2px);
+  }
+  .ui-panel li:hover [data-bar] {
+    filter: saturate(1.25) brightness(0.92);
+  }
+}
+.ui-pill {
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@media (hover: hover) {
+  .ui-pill:hover {
+    transform: scale(1.08);
+  }
+}

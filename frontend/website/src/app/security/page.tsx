@@ -1,9 +1,9 @@
+import { ArtBand } from "@/components/flow-steps";
 import type { Metadata } from "next";
 import { TrustHero } from "@/components/landing/hero-widgets";
 import { Eye, Fingerprint, Key, LockKey, Signature, UsersThree } from "@phosphor-icons/react/dist/ssr";
 import { CardGrid, FaqSection, FeatureSplit, LinkCards } from "@/components/blocks";
 import { CtaBand } from "@/components/cta-band";
-import { ParallaxImage } from "@/components/parallax-image";
 import { Reveal } from "@/components/motion/reveal";
 import { PageHero } from "@/components/page-hero";
 import { Section, SectionHead } from "@/components/section";
@@ -53,11 +53,6 @@ export default function SecurityPage() {
       {/* 1. Hero */}
       <PageHero visual={<TrustHero />} eyebrow="Trust and data security" accent={["trust"]} title="A security product has to earn trust first." body="Aavishield sees sensitive traffic on your devices. Here is how we protect the policy we enforce and the data we see." />
 
-      {/* 2. Image */}
-      <section className="grid-band p-3 sm:p-4 md:p-6">
-        <ParallaxImage src="/images/security-vault.webp" alt="A heavy circular vault door slightly ajar with a thin ring of orange light around its edge" sizes="(max-width: 1400px) 100vw, 1400px" aspect="aspect-[4/3] sm:aspect-[21/9]" eager />
-      </section>
-
       {/* 3. Principles */}
       <Section className="grid gap-12 md:grid-cols-[0.8fr_1.2fr]">
         <div className="md:sticky md:top-32 md:self-start">
@@ -97,30 +92,26 @@ export default function SecurityPage() {
       </Section>
 
       {/* 7. Data flow */}
-      <Section>
-        <div className="ink-edge relative overflow-hidden rounded-[6px] bg-ink p-8 text-ink-fg md:p-14">
-          <div className="dot-field-ink absolute inset-0 opacity-70" aria-hidden />
-          <SectionHead invert eyebrow="Data flow" title="What leaves the device, and what does not." className="relative" />
-          <div className="relative mt-10 grid gap-8 md:grid-cols-2">
-            <div>
-              <h3 className="font-normal text-brand">Sent to Aavishield</h3>
-              <ul className="mt-4 grid gap-2.5 opacity-80">
-                {["Policy decisions: blocked and alerted events", "DLP findings with a masked preview", "Device posture and installed applications", "Screenshots, only on monitored devices"].map((x) => (
-                  <li key={x} className="flex gap-3"><span className="mt-2.5 size-1.5 shrink-0 bg-brand" />{x}</li>
-                ))}
-              </ul>
-            </div>
-            <div>
-              <h3 className="font-normal text-brand">Not stored</h3>
-              <ul className="mt-4 grid gap-2.5 opacity-80">
-                {["Routine allowed browsing", "Full copies of uploaded files", "Query strings that may carry session tokens", "Anything from devices outside your organisation"].map((x) => (
-                  <li key={x} className="flex gap-3"><span className="mt-2.5 size-1.5 shrink-0 bg-ink-fg/40" />{x}</li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </div>
-      </Section>
+      <section className="grid-band">
+        <ArtBand
+          label="Data flow"
+          title="What leaves the device, and"
+          accent="what does not."
+          items={[
+            {
+              title: "Sent to Aavishield",
+              list: ["Policy decisions: blocked and alerted events", "DLP findings with a masked preview", "Device posture and installed applications", "Screenshots, only on monitored devices"],
+              art: { slug: "data-loss-prevention", kind: 0 },
+            },
+            {
+              title: "Not stored",
+              list: ["Routine allowed browsing", "Full copies of uploaded files", "Query strings that may carry session tokens", "Anything from devices outside your organisation"],
+              muted: true,
+              art: { slug: "vpn-control", kind: 1 },
+            },
+          ]}
+        />
+      </section>
 
       {/* 8. Responsible disclosure */}
       <Section>

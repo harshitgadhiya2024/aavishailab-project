@@ -232,10 +232,8 @@ export const resources = [
 // One label per intent across the whole site.
 export const CTA = { demo: "Book a demo", explore: "Explore platform" };
 
-// Per-feature page extras: imagery, search copy, use cases and FAQs.
+// Per-feature page extras: search copy, use cases and FAQs.
 export type ModuleExtra = {
-  image: string;
-  alt: string;
   seoTitle: string;
   description: string;
   keywords: string[];
@@ -245,8 +243,6 @@ export type ModuleExtra = {
 
 export const moduleExtras: Record<ModuleSlug, ModuleExtra> = {
   "web-gateway": {
-    image: "/images/web-gateway.webp",
-    alt: "Streams of light passing through a dark archway, with a few stopped by an orange barrier",
     seoTitle: "Secure Web Gateway and Web Filtering Software",
     description:
       "Block and log websites by category or domain on every employee device, on any network. Aavishield's endpoint web gateway needs no appliance or VPN.",
@@ -263,8 +259,6 @@ export const moduleExtras: Record<ModuleSlug, ModuleExtra> = {
     ],
   },
   "data-loss-prevention": {
-    image: "/images/data-loss-prevention.webp",
-    alt: "Blank documents floating in the dark, scanned by a plane of light, with one flagged in orange",
     seoTitle: "Endpoint Data Loss Prevention (DLP) with AI",
     description:
       "Detect card numbers, IDs, API keys and source code leaving via Gmail, Teams, OneDrive or ChatGPT. Monitor-only endpoint DLP with OCR and AI.",
@@ -281,8 +275,6 @@ export const moduleExtras: Record<ModuleSlug, ModuleExtra> = {
     ],
   },
   "application-control": {
-    image: "/images/application-control.webp",
-    alt: "A grid of frosted glass tiles with one sealed by an orange lock of light",
     seoTitle: "Application Control and App Blocking Software",
     description:
       "Block desktop applications by name or from your device inventory, for everyone or a single employee. Cross-platform application control from one console.",
@@ -299,8 +291,6 @@ export const moduleExtras: Record<ModuleSlug, ModuleExtra> = {
     ],
   },
   "vpn-control": {
-    image: "/images/vpn-control.webp",
-    alt: "A long dark tunnel of light blocked near the end by a wall of orange light",
     seoTitle: "Block Personal VPNs on Company Devices",
     description:
       "Aavishield blocks VPN clients, VPN installers and proxy browser extensions on every device by default, so employees cannot tunnel around your web policy.",
@@ -317,8 +307,6 @@ export const moduleExtras: Record<ModuleSlug, ModuleExtra> = {
     ],
   },
   "malware-scanning": {
-    image: "/images/malware-scanning.webp",
-    alt: "A black cube split open by an orange laser plane revealing a corrupted core",
     seoTitle: "Real-Time Malware Scanning for Downloads",
     description:
       "Scan every download while it transfers and stop malicious files before they reach disk. Risk scoring with signatures, reputation and threat intelligence.",
@@ -335,8 +323,6 @@ export const moduleExtras: Record<ModuleSlug, ModuleExtra> = {
     ],
   },
   "device-posture": {
-    image: "/images/device-posture.webp",
-    alt: "An open laptop on a pedestal encircled by rings of light, the inner ring orange",
     seoTitle: "Device Posture Checks for Every Laptop",
     description:
       "Continuously check disk encryption, firewall, OS patch level and antivirus on every Mac, Windows and Linux device, and see which ones fall short.",
@@ -353,8 +339,6 @@ export const moduleExtras: Record<ModuleSlug, ModuleExtra> = {
     ],
   },
   "activity-monitoring": {
-    image: "/images/activity-monitoring.webp",
-    alt: "A dark desk from above with a laptop and light trails showing time spent in apps",
     seoTitle: "Employee Activity Monitoring and Screenshots",
     description:
       "Periodic screenshots and application usage for the devices you choose to monitor, stored securely and visible only to your admins.",

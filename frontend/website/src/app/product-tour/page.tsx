@@ -122,7 +122,7 @@ export default function ProductTourPage() {
       </PageHero>
 
       <section className="grid-band px-5 py-16 sm:px-8 md:px-12 md:py-24">
-        <ScreenShowcase shot={shots.overview} priority />
+        <ScreenShowcase shot={shots.overview} priority real />
       </section>
 
       {/* Chapter index */}
@@ -144,7 +144,7 @@ export default function ProductTourPage() {
           <SectionHead eyebrow={`Chapter 0${ci + 1} · ${c.label}`} title={c.title} body={c.body} />
           <div className="mt-16 grid gap-24">
             {c.stops.map((s, i) => (
-              <FeatureSplit key={s.title} title={s.title} body={s.body} points={s.points} shot={shots[s.shot]} crop={s.crop} reverse={i % 2 === 1} />
+              <FeatureSplit key={s.title} title={s.title} body={s.body} points={s.points} shot={shots[s.shot]} crop={s.crop} reverse={i % 2 === 1} real />
             ))}
           </div>
         </Section>

@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { ArrowUpRight, CaretRight, Check, X } from "@phosphor-icons/react/dist/ssr";
+import { ArrowRight, ArrowUpRight, CaretRight, Check, X } from "@phosphor-icons/react/dist/ssr";
 import type { Shot } from "@/lib/shots";
 import { BrowserFrame } from "./browser-frame";
+import { panelForShot } from "./panels";
 import { Faq } from "./faq";
 import { Label } from "./landing/grid";
 import { PixelPanel } from "./landing/visuals";
@@ -27,13 +28,15 @@ export function Breadcrumbs({ trail }: { trail: { name: string; href?: string }[
   );
 }
 
-/** Text on one side, a real console screenshot on a pixel-grid stage on the other; flips with `reverse`. */
+/** Text on one side, a real console screenshot (or a product panel) on a pixel-grid stage on the other; flips with `reverse`. */
 export function FeatureSplit({
   eyebrow,
   title,
   body,
   points,
   shot,
+  visual,
+  real = false,
   reverse = false,
   crop,
   children,
@@ -42,11 +45,16 @@ export function FeatureSplit({
   title: string;
   body: string;
   points?: string[];
-  shot: Shot;
+  shot?: Shot;
+  /** A product panel to show instead of the screenshot. */
+  visual?: React.ReactNode;
+  /** Keep the real screenshot (Product tour) instead of its product panel. */
+  real?: boolean;
   reverse?: boolean;
   crop?: { x: number; y: number; scale: number };
   children?: React.ReactNode;
 }) {
+  const panel = visual ?? (!real && shot ? panelForShot(shot) : undefined);
   return (
     <div className={`grid items-center gap-10 lg:gap-14 ${reverse ? "lg:grid-cols-[1.15fr_0.85fr]" : "lg:grid-cols-[0.85fr_1.15fr]"}`}>
       <div className={reverse ? "lg:order-2" : ""}>
@@ -76,8 +84,9 @@ export function FeatureSplit({
         {children && <Reveal delay={0.2} className="mt-8">{children}</Reveal>}
       </div>
       <Reveal y={40} delay={0.1} className={`min-w-0 ${reverse ? "lg:order-1" : ""}`}>
-        <PixelPanel className="p-3 sm:p-6">
-          <BrowserFrame shot={shot} crop={crop} aspect={crop ? "aspect-[16/10]" : undefined} sizes="(max-width: 1024px) 100vw, 640px" />
+        {/* Panels sit on a stage of one fixed height and width, so every split on the site matches. */}
+        <PixelPanel className={panel ? "grid place-items-center p-4 sm:p-8 lg:h-[600px] lg:p-10" : "p-3 sm:p-6"}>
+          {panel ? <div className="w-full max-w-[560px]">{panel}</div> : (shot && <BrowserFrame shot={shot} crop={crop} aspect={crop ? "aspect-[16/10]" : undefined} sizes="(max-width: 1024px) 100vw, 640px" />)}
         </PixelPanel>
       </Reveal>
     </div>
@@ -150,12 +159,31 @@ export function CardGrid({ items, cols = 3 }: { items: { title: string; body: st
   );
 }
 
-/** Linked cards to other pages, as hairline-separated grid cells. */
-export function LinkCards({ items }: { items: { href: string; title: string; body: string; icon?: React.ReactNode }[] }) {
+// Column spans that close the last row of a 2-column (md) / 3-column (lg)
+// grid, so it never ends in an empty cell. Index by cells left to fill.
+const MD_SPAN = ["", "md:col-span-1", "md:col-span-2"];
+const LG_SPAN = ["", "lg:col-span-1", "lg:col-span-2", "lg:col-span-3"];
+
+/**
+ * Linked cards to other pages, as hairline-separated grid cells. The last row
+ * is always full: with `more`, a "see all" card takes the leftover space (a
+ * full-width strip when the row is already full); without it, the last card
+ * stretches across the empty cells.
+ */
+export function LinkCards({
+  items,
+  more,
+}: {
+  items: { href: string; title: string; body: string; icon?: React.ReactNode }[];
+  more?: { href: string; label: string };
+}) {
+  const n = items.length;
+  const stretch = more ? "" : `${MD_SPAN[n % 2 ? 2 : 0]} ${LG_SPAN[[1, 3, 2][n % 3]]}`;
+  const moreSpan = `${MD_SPAN[n % 2 ? 1 : 2]} ${LG_SPAN[n % 3 ? 3 - (n % 3) : 3]}`;
   return (
     <div className="grid grid-cols-1 gap-px overflow-hidden rounded-[4px] border border-line bg-line md:grid-cols-2 lg:grid-cols-3 [&>*]:min-w-0">
-      {items.map((r) => (
-        <Link key={r.href} href={r.href} className="group flex items-start gap-4 bg-bg p-6 transition-colors duration-300 hover:bg-brand-soft">
+      {items.map((r, i) => (
+        <Link key={r.href} href={r.href} className={`group flex items-start gap-4 bg-bg p-6 transition-shadow duration-300 hover:shadow-[inset_0_0_0_1px_rgb(255_112_0/0.45)] ${i === n - 1 ? stretch : ""}`}>
           {r.icon && (
             <span className="grid size-10 shrink-0 place-items-center rounded-[4px] border border-brand/30 bg-brand-soft text-brand-ink transition-colors duration-300 group-hover:border-brand group-hover:bg-brand group-hover:text-on-brand">{r.icon}</span>
           )}
@@ -166,6 +194,14 @@ export function LinkCards({ items }: { items: { href: string; title: string; bod
           <ArrowUpRight size={16} className="shrink-0 text-muted transition-transform duration-300 ease-out-expo group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-brand-ink" />
         </Link>
       ))}
+      {more && (
+        <Link href={more.href} className={`pixel-grid group flex items-center justify-between gap-4 bg-brand-soft p-6 transition-colors duration-300 hover:bg-brand-tint ${moreSpan}`}>
+          <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-brand-ink">{more.label}</span>
+          <span className="grid size-10 shrink-0 place-items-center rounded-[4px] bg-brand text-on-brand transition-transform duration-300 ease-out-expo group-hover:translate-x-1">
+            <ArrowRight size={16} />
+          </span>
+        </Link>
+      )}
     </div>
   );
 }

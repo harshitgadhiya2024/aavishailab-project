@@ -1,10 +1,5 @@
 import Image from "next/image";
-import type { Shot } from "@/lib/shots";
-
-// Share of the screenshot's width taken by the console's own sidebar (which
-// still carries the old logo). Without an explicit crop, the frame trims just
-// that strip and shows the rest of the screen whole: full height, true scale.
-const SIDEBAR = 0.17;
+import { sidebarShare, type Shot } from "@/lib/shots";
 
 /**
  * A real console screenshot inside a minimal browser window, styled like the
@@ -33,6 +28,18 @@ export function BrowserFrame({
   chrome?: boolean;
 }) {
   const fit = !crop && !aspect;
+  // Without an explicit crop, the frame trims the console sidebar (which still
+  // carries the old logo) and shows the rest of the screen whole, at true scale.
+  const side = sidebarShare(shot);
+  // The image is drawn wider than the frame by the cropped strip, so each size
+  // in `sizes` is scaled up to match; otherwise the browser fetches too small
+  // a file and stretches it.
+  const drawnSizes = side
+    ? sizes
+        .split(",")
+        .map((part) => part.trim().replace(/(d+(?:.d+)?)(px|vw)$/, (_, n, u) => `${Math.ceil(Number(n) / (1 - side))}${u}`))
+        .join(", ")
+    : sizes;
   return (
     <figure className={`overflow-hidden rounded-[8px] border border-line-strong/70 bg-surface shadow-[0_30px_70px_-35px_rgb(120_50_0/0.45)] ${className}`}>
       {chrome && (
@@ -49,16 +56,17 @@ export function BrowserFrame({
       {fit ? (
         // The frame is the screen minus the sidebar strip; the image is drawn
         // wider than the frame by exactly that strip and pinned right.
-        <div className="skeleton relative overflow-hidden" style={{ aspectRatio: `${shot.w * (1 - SIDEBAR)} / ${shot.h}` }}>
+        <div className="skeleton relative overflow-hidden" style={{ aspectRatio: `${shot.w * (1 - side)} / ${shot.h}` }}>
           <Image
             src={shot.src}
             alt={shot.alt}
             width={shot.w}
             height={shot.h}
-            sizes={sizes}
+            sizes={drawnSizes}
             {...(priority ? { preload: true } : { loading: "lazy" as const })}
             className="absolute right-0 top-0 h-full max-w-none"
-            style={{ width: `${100 / (1 - SIDEBAR)}%` }}
+            quality={90}
+            style={{ width: `${100 / (1 - side)}%` }}
           />
         </div>
       ) : (
@@ -70,6 +78,7 @@ export function BrowserFrame({
             sizes={sizes}
             {...(priority ? { preload: true } : { loading: "lazy" as const })}
             className="object-cover object-left-top"
+            quality={90}
             style={crop ? { transform: `scale(${crop.scale})`, transformOrigin: `${crop.x}% ${crop.y}%` } : undefined}
           />
         </div>

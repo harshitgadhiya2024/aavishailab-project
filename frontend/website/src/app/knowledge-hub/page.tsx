@@ -58,7 +58,7 @@ export default async function KnowledgeHubPage() {
           <div className="mt-10 grid grid-cols-1 gap-px overflow-hidden rounded-[6px] border border-line bg-line md:grid-cols-3">
             {starters.map((p, i) => (
               <Reveal key={p.slug} delay={i * 0.06} className="bg-bg">
-                <Link href={`/knowledge-hub/${p.slug}`} className="group flex h-full flex-col p-6 transition-colors duration-300 hover:bg-brand-soft md:p-8">
+                <Link href={`/knowledge-hub/${p.slug}`} className="group flex h-full flex-col p-6 transition-shadow duration-300 hover:shadow-[inset_0_0_0_1px_rgb(255_112_0/0.45)] md:p-8">
                   <span className="font-mono text-[11px] text-brand-ink">{String(i + 1).padStart(2, "0")} · {p.category}</span>
                   <span className="mt-4 text-[1.3rem] leading-snug tracking-[-0.02em] text-fg">{p.title}</span>
                   <span className="mt-2 text-sm leading-relaxed text-muted">{p.excerpt}</span>

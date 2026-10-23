@@ -1,14 +1,15 @@
+import { moduleCard } from "@/components/panels";
+import { PanelThumb } from "@/components/panels/thumb";
+import { DownloadPanel } from "@/components/panels/screens";
 import type { Metadata } from "next";
 import { ScreenShowcase } from "@/components/screen-showcase";
 import { LiveFeed } from "@/components/landing/live-feed";
 import { PixelPanel } from "@/components/landing/visuals";
 import { ControlsHero } from "@/components/landing/hero-widgets";
-import Image from "next/image";
 import Link from "next/link";
 import { AppleLogo, ArrowUpRight, LinuxLogo, WindowsLogo } from "@phosphor-icons/react/dist/ssr";
 import { Architecture } from "@/components/architecture";
 import { CardGrid, FaqSection, FeatureSplit } from "@/components/blocks";
-import { BrowserFrame } from "@/components/browser-frame";
 import { Button } from "@/components/button";
 import { CtaBand } from "@/components/cta-band";
 import { ModuleIcon } from "@/components/icons";
@@ -17,7 +18,6 @@ import { Spotlight } from "@/components/motion/spotlight";
 import { Reveal, Stagger, StaggerItem } from "@/components/motion/reveal";
 import { Section, SectionHead } from "@/components/section";
 import { CTA, modules } from "@/lib/content";
-import { moduleShots } from "@/lib/module-shots";
 import { JsonLd, SITE_URL, breadcrumbLd, faqLd } from "@/lib/seo";
 import { shots } from "@/lib/shots";
 
@@ -83,14 +83,8 @@ export default function PlatformPage() {
             <StaggerItem key={m.slug} className={i === modules.length - 1 ? "md:col-span-2" : ""}>
               <Spotlight className="h-full">
                 <Link href={`/platform/${m.slug}`} className={`grid h-full ${i === modules.length - 1 ? "md:grid-cols-2" : ""}`}>
-                  <div className={`relative m-2 overflow-hidden rounded-[6px] bg-bg-2 ${i === modules.length - 1 ? "aspect-[16/9] md:aspect-auto md:min-h-[260px]" : "aspect-[16/9]"}`}>
-                    <Image
-                      src={shots[moduleShots[m.slug].hero].src}
-                      alt={shots[moduleShots[m.slug].hero].alt}
-                      fill
-                      sizes="(max-width: 768px) 100vw, 560px"
-                      className="object-cover object-left-top transition-transform duration-[1.1s] ease-out-expo group-hover:scale-[1.05]"
-                    />
+                  <div className="relative m-2 aspect-[16/10] overflow-hidden rounded-[6px] bg-bg-2">
+                    <PanelThumb panel={moduleCard(m.slug)} className="absolute inset-0" />
                   </div>
                   <div className="flex flex-col justify-between gap-8 p-6 md:p-8">
                     <div className="flex items-start justify-between">
@@ -129,7 +123,8 @@ export default function PlatformPage() {
 
       {/* 6. Operating systems */}
       <Section>
-        <div className="grid items-center gap-12 lg:grid-cols-[1fr_1.1fr]">
+        {/* Stage stretches to the text column's height so both sides end together. */}
+        <div className="grid gap-12 lg:grid-cols-[1fr_1.1fr] lg:items-stretch">
           <div>
             <SectionHead eyebrow="Cross-platform" title="One agent for macOS, Windows and Linux." accent={["One", "agent"]} body="Employees download a native installer from their portal. The same policy works on every operating system." />
             <div className="mt-10 grid gap-3">
@@ -144,7 +139,7 @@ export default function PlatformPage() {
               ))}
             </div>
           </div>
-          <Reveal y={40} className="min-w-0"><PixelPanel className="p-4 sm:p-6"><BrowserFrame shot={shots.portalDownload} crop={{ x: 0, y: 0, scale: 1.7 }} aspect="aspect-[16/11]" sizes="(max-width: 1024px) 100vw, 600px" /></PixelPanel></Reveal>
+          <Reveal y={40} className="min-w-0 lg:h-full"><PixelPanel className="grid h-full place-items-center p-4 sm:p-8 lg:p-10"><div className="w-full max-w-[560px]"><DownloadPanel /></div></PixelPanel></Reveal>
         </div>
       </Section>
 
