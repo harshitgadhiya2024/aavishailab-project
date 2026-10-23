@@ -93,6 +93,10 @@ jobs:
         with:
           name: agent-packages
           path: dist/
+          # Production keeps its own copy of every published package
+          # (admin-api's agent-packages dir), so this is only a CI-side
+          # convenience — the 90-day default filled the storage quota.
+          retention-days: 30
 
       # Pushes each built package to the running admin-api over its own
       # upload token (not portal/agent auth — this runner has neither
@@ -159,6 +163,7 @@ jobs:
         with:
           name: macos-rust-pkg
           path: dist/aavishield-agent-rust-*.pkg
+          retention-days: 7 # only `manifest` reads it, in this same run
 
   windows-rust:
     needs: resolve-version
@@ -209,6 +214,7 @@ jobs:
         with:
           name: windows-rust-msi
           path: dist/aavishield-agent-rust-*.msi
+          retention-days: 7 # only `manifest` reads it, in this same run
 
   linux-rust:
     needs: resolve-version
@@ -263,3 +269,4 @@ jobs:
           path: |
             dist/aavishield-agent-rust-*.deb
             dist/aavishield-agent-rust-*.tar.gz
+          retention-days: 7 # only `manifest` reads it, in this same run
