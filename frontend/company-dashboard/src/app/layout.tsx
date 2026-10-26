@@ -32,7 +32,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="preconnect" href="https://cdn.fontshare.com" crossOrigin="" />
         <link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&display=swap" />
       </head>
-      <body className={`${inter.variable} ${sora.variable} ${dmMono.variable}`}>
+      {/* Browser extensions add attributes to <body> before React loads; ignore them on this tag only. */}
+      <body className={`${inter.variable} ${sora.variable} ${dmMono.variable}`} suppressHydrationWarning>
         <Providers>
           {children}
           <ThemedToaster />

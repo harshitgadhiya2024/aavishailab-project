@@ -71,7 +71,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <link rel="preconnect" href="https://cdn.fontshare.com" crossOrigin="" />
         <link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&display=swap" />
       </head>
-      <body className="min-h-[100dvh] overflow-x-clip">
+      {/* Browser extensions (e.g. ColorZilla) add attributes to <body> before React
+          loads; this tells React to ignore them on this one tag only. */}
+      <body className="min-h-[100dvh] overflow-x-clip" suppressHydrationWarning>
         <JsonLd
           data={{
             "@context": "https://schema.org",
