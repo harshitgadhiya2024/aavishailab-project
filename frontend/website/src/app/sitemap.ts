@@ -38,6 +38,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...blog.map((b) => post(`/blog/${b.slug}`, b, 0.6)),
     entry("/company", 0.6),
     entry("/contact", 0.7),
+    entry("/waitlist", 0.8),
     ...modules.map((m) => entry(`/platform/${m.slug}`, 0.85, [shots[moduleShots[m.slug].hero].src])),
     ...solutionsList.map((s) => entry(`/solutions/${s.slug}`, 0.85, [shots[s.hero].src])),
     ...industries.map((i) => entry(`/industries/${i.slug}`, 0.75, [shots[i.hero].src])),

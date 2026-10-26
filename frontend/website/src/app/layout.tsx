@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { DM_Mono, Inter, Sora } from "next/font/google";
 import { Footer } from "@/components/footer";
 import { Nav } from "@/components/nav";
+import { SiteChrome } from "@/components/site-chrome";
 import { SiteLoader, loaderGateScript } from "@/components/site-loader";
 import { ThemeProvider } from "@/components/theme-provider";
 import { JsonLd, SITE_NAME, SITE_URL } from "@/lib/seo";
@@ -70,7 +71,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <link rel="preconnect" href="https://cdn.fontshare.com" crossOrigin="" />
         <link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&display=swap" />
       </head>
-      <body className="min-h-[100dvh] overflow-x-clip">
+      {/* Browser extensions (e.g. ColorZilla) add attributes to <body> before React
+          loads; this tells React to ignore them on this one tag only. */}
+      <body className="min-h-[100dvh] overflow-x-clip" suppressHydrationWarning>
         <JsonLd
           data={{
             "@context": "https://schema.org",
@@ -93,12 +96,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-[6px] focus:bg-invert-bg focus:px-4 focus:py-2 focus:text-invert-fg">
             Skip to content
           </a>
-          <Nav />
-          {/* Every page sits in the same responsive frame (.site-frame), flush under the fixed 64px header. */}
-          <main id="main" className="pt-16">
-            <div className="site-frame">{children}</div>
-          </main>
-          <Footer />
+          <SiteChrome nav={<Nav />} footer={<Footer />}>
+            {children}
+          </SiteChrome>
           <div aria-hidden className="grain pointer-events-none fixed inset-0 z-50" />
         </ThemeProvider>
       </body>

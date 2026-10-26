@@ -635,6 +635,71 @@ func DemoRequestConfirmation(to, name string) {
 	})
 }
 
+// ─── Prelaunch waitlist ──────────────────────────────────────────────────────
+
+// WaitlistJoined tells the team about a new sign-up (only when
+// WAITLIST_NOTIFY_EMAIL is set; see handlers.WaitlistHandler.Submit).
+func WaitlistJoined(to []string, name, email, company, teamSize, role, source string) {
+	if teamSize == "" {
+		teamSize = "Not given"
+	}
+	if role == "" {
+		role = "Not given"
+	}
+	body := statTable(
+		statRow("Name", name, ""),
+		statRow("Work email", email, ""),
+		statRow("Company", company, ""),
+		statRow("Team size", teamSize, ""),
+		statRow("Role", role, ""),
+		statRow("Signed up from", source, ""),
+	)
+	Send(Message{
+		To:      to,
+		Subject: "New waitlist sign-up: " + company + " (" + name + ")",
+		HTML: layout(
+			"New waitlist sign-up",
+			html.EscapeString(name)+" from "+html.EscapeString(company)+" joined the Aavishield waitlist.",
+			body, "Open the waitlist", cfg.SuperadminURL+"/dashboard/waitlist",
+			"Sent to the Aavishield team for every waitlist sign-up."),
+	})
+}
+
+// WaitlistConfirmation acknowledges a sign-up to the person who joined.
+func WaitlistConfirmation(to, name string) {
+	body := `<p style="margin:0;">We're opening Aavishield to teams in small groups, so we can set
+	each one up properly. We'll email you as soon as your spot opens.</p>
+	<p style="margin:16px 0 0 0;">Have a question or a deadline we should know about? Just reply to this email.</p>`
+
+	Send(Message{
+		To:      []string{to},
+		Subject: "You're on the Aavishield waitlist",
+		HTML: layout(
+			"You're on the list, "+html.EscapeString(name),
+			"Thanks for joining the Aavishield early access waitlist.",
+			body, "", "",
+			"You're receiving this because you joined the waitlist on aavishield.aavishailab.com."),
+	})
+}
+
+// WaitlistInvite is sent the first time a superadmin moves a sign-up to
+// "invited": their spot is open, so they can create their organization.
+func WaitlistInvite(to, name string) {
+	body := `<p style="margin:0;">Your early access spot is open. Create your organization to get
+	started: it takes a few minutes, then you can add your team and install the agent on the first laptop.</p>
+	<p style="margin:16px 0 0 0;">Reply to this email any time if you'd like a hand with setup.</p>`
+
+	Send(Message{
+		To:      []string{to},
+		Subject: "Your Aavishield early access is ready",
+		HTML: layout(
+			"You're in, "+html.EscapeString(name),
+			"Your spot on the Aavishield early access program is ready.",
+			body, "Create your organization", cfg.AppURL+"/register",
+			"You're receiving this because you joined the Aavishield waitlist."),
+	})
+}
+
 // ─── Data residency ───────────────────────────────────────────────────────────
 
 // DataStoreUnreachable tells admins their own database or bucket stopped
