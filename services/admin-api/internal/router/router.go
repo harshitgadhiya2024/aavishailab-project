@@ -79,6 +79,7 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	blocklistH := handlers.NewGlobalBlocklistHandler(db)
 	announceH := handlers.NewAnnouncementHandler(db)
 	demoH := handlers.NewDemoRequestHandler(db)
+	waitlistH := handlers.NewWaitlistHandler(db)
 	contentH := handlers.NewContentHandler(db)
 	flagH := handlers.NewFeatureFlagHandler(db)
 	complianceH := handlers.NewComplianceHandler(db)
@@ -108,6 +109,9 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	// "Book a demo" submissions from the marketing website's server
 	// (frontend/website). Gated on X-Internal-Secret inside the handler.
 	r.POST("/internal/website/demo-requests", demoH.Submit)
+	// Prelaunch waitlist sign-ups from the website's /waitlist page, gated
+	// the same way.
+	r.POST("/internal/website/waitlist", waitlistH.Submit)
 
 	// Published blog posts and knowledge hub articles for the marketing
 	// website. Public on purpose: only published rows are ever returned.
@@ -315,6 +319,14 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 		{
 			demos.GET("", demoH.List)
 			demos.PATCH("/:id", demoH.Update)
+		}
+
+		waitlist := superadmin.Group("/waitlist")
+		{
+			waitlist.GET("", waitlistH.List)
+			waitlist.GET("/export", waitlistH.Export)
+			waitlist.PATCH("/:id", waitlistH.Update)
+			waitlist.DELETE("/:id", middleware.SuperAdminFullOnly(), waitlistH.Delete)
 		}
 
 		saTeam := superadmin.Group("/team")

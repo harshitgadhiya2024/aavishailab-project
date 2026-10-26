@@ -65,10 +65,11 @@ func (h *SuperadminOverviewHandler) Get(c *gin.Context) {
 	out["attention"] = h.attention(now)
 	out["recent_orgs"] = h.recentOrgs()
 	out["recent_audit"] = h.recentAudit()
-	var openTickets, newDemos int64
+	var openTickets, newDemos, waiting int64
 	h.db.Model(&models.SupportTicket{}).Where("status IN ?", []string{"open", "in_progress"}).Count(&openTickets)
 	h.db.Model(&models.DemoRequest{}).Where("status = ?", models.DemoRequestNew).Count(&newDemos)
-	out["badges"] = gin.H{"tickets_open": openTickets, "demo_requests_new": newDemos}
+	h.db.Model(&models.WaitlistEntry{}).Where("status = ?", models.WaitlistWaiting).Count(&waiting)
+	out["badges"] = gin.H{"tickets_open": openTickets, "demo_requests_new": newDemos, "waitlist_waiting": waiting}
 
 	h.mu.Lock()
 	h.cached, h.cachedAt = out, now

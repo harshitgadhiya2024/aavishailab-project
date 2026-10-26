@@ -127,6 +127,14 @@ export const demoRequestApi = {
   update: (id: string, data: { status?: string; notes?: string }) => api.patch(`/superadmin/demo-requests/${id}`, data),
 };
 
+export const waitlistApi = {
+  list: (params?: Record<string, any>) => api.get("/superadmin/waitlist", { params }),
+  update: (id: string, data: { status?: string; notes?: string }) => api.patch(`/superadmin/waitlist/${id}`, data),
+  remove: (id: string) => api.delete(`/superadmin/waitlist/${id}`),
+  // CSV of the filtered list, fetched with the session token and saved by the page.
+  exportCsv: (params?: Record<string, any>) => api.get("/superadmin/waitlist/export", { params, responseType: "blob" }),
+};
+
 export const featureFlagApi = {
   list: () => api.get("/superadmin/feature-flags"),
   create: (data: any) => api.post("/superadmin/feature-flags", data),

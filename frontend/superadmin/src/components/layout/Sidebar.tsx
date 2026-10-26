@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Building2, Activity, Settings, PanelLeftClose, PanelLeftOpen, Download, AppWindow,
-  HeartPulse, ClipboardList, Users2, CreditCard, ShieldAlert, Megaphone, Flag, LifeBuoy, Inbox, Newspaper, BookOpen,
+  HeartPulse, ClipboardList, Users2, CreditCard, ShieldAlert, Megaphone, Flag, LifeBuoy, Inbox, Newspaper, BookOpen, Hourglass,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { overviewApi } from "@/lib/api";
@@ -12,7 +12,7 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { BrandLogo, BrandMark } from "@/components/brand/BrandLogo";
 
-type Item = { href: string; icon: React.ElementType; label: string; badge?: "tickets" | "demos" };
+type Item = { href: string; icon: React.ElementType; label: string; badge?: "tickets" | "demos" | "waitlist" };
 
 // Grouped by the job being done, in the order a day usually goes: look at the
 // state of things, talk to customers, check money, ship product, keep the
@@ -24,6 +24,7 @@ export const NAV: { section: string; items: Item[] }[] = [
     items: [
       { href: "/dashboard/organizations", icon: Building2, label: "Organizations" },
       { href: "/dashboard/demo-requests", icon: Inbox, label: "Leads", badge: "demos" },
+      { href: "/dashboard/waitlist", icon: Hourglass, label: "Waitlist", badge: "waitlist" },
       { href: "/dashboard/tickets", icon: LifeBuoy, label: "Support", badge: "tickets" },
     ],
   },
@@ -73,6 +74,7 @@ export function Sidebar() {
   const badges: Record<string, number> = {
     tickets: data?.badges?.tickets_open ?? 0,
     demos: data?.badges?.demo_requests_new ?? 0,
+    waitlist: data?.badges?.waitlist_waiting ?? 0,
   };
 
   return (
