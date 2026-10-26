@@ -183,7 +183,8 @@ export default function UsersPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Team &amp; Access</h2>
+          <p className="page-eyebrow">Organization</p>
+          <h2 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">Team &amp; Access</h2>
           <p className="text-sm text-muted-foreground mt-1">
             Who can sign in to this dashboard, what they can do, and whose people they can see
           </p>
@@ -191,7 +192,7 @@ export default function UsersPage() {
         {canWrite && (
           <button
             onClick={openInvite}
-            className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-on-brand px-4 py-2 rounded-lg text-sm font-medium"
+            className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-on-brand px-4 py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em]"
           >
             <UserPlus className="w-4 h-4" /> Add User
           </button>
@@ -304,7 +305,7 @@ export default function UsersPage() {
                   <tr key={user.id} className="hover:bg-elevated transition-colors">
                     <td className="px-5 py-3">
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-brand-500/10 flex items-center justify-center text-brand-500 text-xs font-bold flex-shrink-0">
+                        <div className="w-8 h-8 rounded-md bg-brand-500/10 flex items-center justify-center text-brand-500 text-xs font-bold flex-shrink-0">
                           {getInitials(`${user.first_name} ${user.last_name}`) || user.email[0]?.toUpperCase()}
                         </div>
                         <div className="min-w-0">
@@ -317,7 +318,7 @@ export default function UsersPage() {
                       </div>
                     </td>
                     <td className="px-5 py-3">
-                      <span className={cn("px-2.5 py-1 rounded-full text-xs font-medium", ROLE_STYLES[user.role] ?? "bg-elevated text-body")}>
+                      <span className={cn("px-2.5 py-1 rounded-[4px] text-xs font-medium", ROLE_STYLES[user.role] ?? "bg-elevated text-body")}>
                         {ROLE_LABELS[user.role] ?? user.role}
                       </span>
                     </td>
@@ -331,7 +332,7 @@ export default function UsersPage() {
                       )}
                     </td>
                     <td className="px-5 py-3">
-                      <span className={cn("px-2.5 py-1 rounded-full text-xs font-medium capitalize", STATUS_STYLES[user.status] ?? "bg-elevated text-body")}>
+                      <span className={cn("px-2.5 py-1 rounded-[4px] text-xs font-medium capitalize", STATUS_STYLES[user.status] ?? "bg-elevated text-body")}>
                         {user.status}
                       </span>
                     </td>
@@ -392,7 +393,7 @@ export default function UsersPage() {
       {/* Add / edit */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <div className="bg-card rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+          <div className="bg-card rounded-lg border border-border shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b border-border">
               <h3 className="font-semibold text-foreground">{editUser ? "Edit access" : "Add dashboard user"}</h3>
               <button onClick={closeForm} className="text-subtle hover:text-body"><X className="w-5 h-5" /></button>
@@ -505,7 +506,7 @@ export default function UsersPage() {
                 <button type="button" onClick={closeForm}
                   className="flex-1 border border-border text-body py-2 rounded-lg text-sm hover:bg-elevated">Cancel</button>
                 <button type="submit" disabled={saveMut.isPending}
-                  className="flex-1 bg-brand-500 text-on-brand py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-60">
+                  className="flex-1 bg-brand-500 text-on-brand py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em] flex items-center justify-center gap-2 disabled:opacity-60">
                   {saveMut.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
                   {editUser ? "Save changes" : "Add user"}
                 </button>
@@ -518,7 +519,7 @@ export default function UsersPage() {
       {/* Generated password — shown once */}
       {issuedPassword && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <div className="bg-card rounded-2xl shadow-2xl w-full max-w-md p-6">
+          <div className="bg-card rounded-lg border border-border shadow-2xl w-full max-w-md p-6">
             <div className="w-12 h-12 bg-brand-500/10 rounded-xl flex items-center justify-center mx-auto mb-4">
               <KeyRound className="w-5 h-5 text-brand-500" />
             </div>
@@ -542,7 +543,7 @@ export default function UsersPage() {
             </div>
             <button
               onClick={() => { setIssuedPassword(null); setCopied(false); }}
-              className="w-full bg-brand-500 text-on-brand py-2 rounded-lg text-sm font-medium"
+              className="w-full bg-brand-500 text-on-brand py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em]"
             >
               Done
             </button>
@@ -553,7 +554,7 @@ export default function UsersPage() {
       {/* Remove confirm */}
       {deleteUser && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <div className="bg-card rounded-2xl shadow-2xl w-full max-w-sm p-6">
+          <div className="bg-card rounded-lg border border-border shadow-2xl w-full max-w-sm p-6">
             <div className="w-12 h-12 bg-red-500/10 rounded-xl flex items-center justify-center mx-auto mb-4">
               <Trash2 className="w-5 h-5 text-danger" />
             </div>

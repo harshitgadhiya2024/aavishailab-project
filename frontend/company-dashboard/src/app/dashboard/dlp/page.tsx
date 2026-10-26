@@ -116,7 +116,8 @@ export default function DLPPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-foreground">Data Loss Prevention</h1>
+        <p className="page-eyebrow">Policy management</p>
+        <h1 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">Data Loss Prevention</h1>
         <p className="text-sm text-muted-foreground mt-1">
           Everything sensitive that left the company — from a browser tab or a desktop app.
         </p>

@@ -2,10 +2,13 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Loader2, ArrowLeft, MailCheck } from "lucide-react";
+import { ArrowLeft, ArrowRight, Loader2, MailCheck } from "lucide-react";
 import { authApi } from "@/lib/api";
 import { toast } from "sonner";
-import { BrandLogo } from "@/components/brand/BrandLogo";
+import {
+  AUTH_ARROW, AUTH_BUTTON, AUTH_LABEL, AUTH_LINK,
+  AuthDoneIcon, AuthError, AuthHeading, AuthShell, authInput,
+} from "@/components/brand/AuthShell";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -35,88 +38,69 @@ export default function ForgotPasswordPage() {
   };
 
   return (
-    <div className="min-h-screen relative flex items-center justify-center p-6 bg-gradient-to-br from-brand-tint via-brand-tint-soft to-background overflow-hidden">
-      <div className="absolute inset-0 opacity-20 pointer-events-none [background-image:radial-gradient(circle_at_20%_20%,#FF7000,transparent_35%),radial-gradient(circle_at_80%_70%,#FF7000,transparent_35%)]" />
-
-      <div className="relative w-full max-w-md">
-        <div className="text-center mb-8">
-          <BrandLogo className="h-24" priority />
-            <h1 className="sr-only">Aavishield</h1>
-          <p className="text-muted-foreground mt-1">Company Security Console</p>
-        </div>
-
-        <div className="bg-card border border-border rounded-2xl p-8 shadow-2xl">
-          {sent ? (
-            <div className="text-center">
-              <div className="inline-flex items-center justify-center w-12 h-12 bg-brand-500/10 rounded-full mb-4">
-                <MailCheck className="w-6 h-6 text-brand-500" />
-              </div>
-              <h2 className="text-lg font-semibold text-foreground mb-2">Check your email</h2>
-              <p className="text-sm text-muted-foreground mb-6">
-                If an account exists for <span className="text-foreground">{email}</span>, we've sent reset
-                instructions.
-              </p>
-              {devResetUrl && (
-                <div className="bg-brand-500/10 border border-brand-500/30 rounded-lg p-3 mb-6 text-left">
-                  <p className="text-xs text-brand-500 font-medium mb-1">Dev mode — email isn't wired up yet:</p>
-                  <Link href={devResetUrl} className="text-xs text-brand-500 underline break-all">
-                    {devResetUrl}
-                  </Link>
-                </div>
-              )}
-              <Link href="/login" className="text-sm text-brand-500 hover:text-brand-400 font-medium">
-                Back to sign in
+    <AuthShell
+      headline="Locked out? Back in a minute."
+      lead="We'll email a secure link to reset your password. Your devices stay protected while you do."
+      topRight={<>Remembered it?{" "}<Link href="/login" className={`font-medium ${AUTH_LINK}`}>Sign in</Link></>}
+    >
+      {sent ? (
+        <>
+          <AuthDoneIcon><MailCheck className="h-5 w-5" /></AuthDoneIcon>
+          <AuthHeading eyebrow="Email sent" title="Check your email">
+            If an account exists for <span className="font-medium text-[#3f3f46]">{email}</span>, we&apos;ve sent reset
+            instructions. The link expires in an hour.
+          </AuthHeading>
+          {devResetUrl && (
+            <div className="mt-6 rounded-[4px] border border-brand-500/30 bg-[#fff1e5] p-3">
+              <p className="mb-1 font-mono text-[10.5px] uppercase tracking-[0.1em] text-[#c2410c]">Dev mode · email isn&apos;t wired up yet</p>
+              <Link href={devResetUrl} className={`break-all text-[13px] underline underline-offset-2 ${AUTH_LINK}`}>
+                {devResetUrl}
               </Link>
             </div>
-          ) : (
-            <>
-              <h2 className="text-xl font-semibold text-foreground mb-1">Reset your password</h2>
-              <p className="text-sm text-muted-foreground mb-6">
-                Enter your email and we'll send you reset instructions.
-              </p>
-
-              {error && (
-                <div className="bg-red-500/10 border border-red-500/30 text-danger rounded-lg px-4 py-3 mb-4 text-sm">
-                  {error}
-                </div>
-              )}
-
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-muted-foreground mb-1">Email address</label>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={e => { setEmail(e.target.value); setError(""); }}
-                    className={
-                      "w-full rounded-lg bg-background px-3 py-2.5 text-sm outline-none transition-colors border " +
-                      (error ? "border-red-500 focus:border-red-500" : "border-border/60 focus:border-brand-500")
-                    }
-                    placeholder="you@company.com"
-                    required
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full bg-primary hover:bg-brand-600 text-primary-foreground font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
-                >
-                  {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-                  {loading ? "Sending..." : "Send reset instructions"}
-                </button>
-              </form>
-
-              <Link
-                href="/login"
-                className="flex items-center justify-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mt-6"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" /> Back to sign in
-              </Link>
-            </>
           )}
-        </div>
-      </div>
-    </div>
+          <Link href="/login" className={`${AUTH_BUTTON} mt-7`}>
+            Back to sign in
+            <ArrowRight className={AUTH_ARROW} />
+          </Link>
+        </>
+      ) : (
+        <>
+          <AuthHeading eyebrow="Account recovery" title="Reset your password">
+            Enter your work email and we&apos;ll send you reset instructions.
+          </AuthHeading>
+
+          {error && <AuthError>{error}</AuthError>}
+
+          <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+            <div>
+              <label htmlFor="email" className={AUTH_LABEL}>Work email</label>
+              <input
+                id="email"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={e => { setEmail(e.target.value); setError(""); }}
+                className={authInput(!!error)}
+                placeholder="you@company.com"
+                required
+              />
+            </div>
+
+            <button type="submit" disabled={loading} className={AUTH_BUTTON}>
+              {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+              {loading ? "Sending..." : "Send reset link"}
+              {!loading && <ArrowRight className={AUTH_ARROW} />}
+            </button>
+          </form>
+
+          <Link
+            href="/login"
+            className="mt-6 flex items-center justify-center gap-1.5 text-[13px] text-[#5d5d66] transition-colors hover:text-[#0b0b0d]"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" /> Back to sign in
+          </Link>
+        </>
+      )}
+    </AuthShell>
   );
 }

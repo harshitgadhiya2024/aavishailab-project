@@ -103,7 +103,7 @@ function AIBriefing({ period, report }: { period: Period; report: any }) {
           </p>
         </div>
         <button onClick={generate} disabled={loading}
-          className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-white px-3 py-2 rounded-lg text-sm font-medium disabled:opacity-60">
+          className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-white px-3 py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em] disabled:opacity-60">
           {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
           {summary ? "Regenerate" : "Write briefing"}
         </button>
@@ -130,7 +130,7 @@ function ExportMenu({ disabled, onExport, busy }: { disabled: boolean; onExport:
   return (
     <div ref={ref} className="relative">
       <button onClick={() => setOpen((o) => !o)} disabled={disabled || !!busy}
-        className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-white px-3 py-2 rounded-lg text-sm font-medium disabled:opacity-50">
+        className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-white px-3 py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em] disabled:opacity-50">
         {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
         Export <ChevronDown className="w-4 h-4" />
       </button>
@@ -233,7 +233,8 @@ function ReportsInner() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-foreground">Reports</h2>
+        <p className="page-eyebrow">Monitoring</p>
+        <h2 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">Reports</h2>
         <p className="text-sm text-muted-foreground mt-1">Choose a report and a period, review it here, then export it as PDF, Excel or CSV.</p>
       </div>
 
@@ -281,7 +282,7 @@ function ReportsInner() {
               <div className="mt-4 flex flex-wrap gap-1.5">
                 {[{ id: "" as const, label: "All controls" }, ...CONTROLS].map((c) => (
                   <button key={c.id || "all"} onClick={() => setControl(c.id as ControlId | "")}
-                    className={cn("rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                    className={cn("rounded-[4px] border px-3 py-1 text-xs font-medium transition-colors",
                       control === c.id ? "border-brand-500 bg-brand-500/10 text-brand-500" : "border-border text-muted-foreground hover:text-foreground")}>
                     {c.label}
                   </button>
@@ -294,7 +295,7 @@ function ReportsInner() {
                 {(report.summary as any[]).map((s) => (
                   <div key={s.label} className="rounded-lg bg-elevated px-4 py-3">
                     <p className="text-xs text-muted-foreground">{s.label}</p>
-                    <p className="mt-1 text-xl font-bold text-foreground tabular-nums">{typeof s.value === "number" ? formatNumber(s.value) : s.value}</p>
+                    <p className="mt-1 [font-family:Satoshi,var(--font-inter),sans-serif] text-[1.5rem] font-medium leading-tight tracking-[-0.02em] text-foreground tabular-nums">{typeof s.value === "number" ? formatNumber(s.value) : s.value}</p>
                     {s.hint && <p className="mt-0.5 text-[11px] text-subtle">{s.hint}</p>}
                   </div>
                 ))}

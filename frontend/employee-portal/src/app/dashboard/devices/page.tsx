@@ -43,7 +43,8 @@ export default function DevicesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-foreground">My Devices</h2>
+        <p className="page-eyebrow">My protection</p>
+        <h2 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">My Devices</h2>
         <p className="text-sm text-muted-foreground mt-1">
           Devices enrolled with the Aavishield security agent
         </p>
@@ -62,7 +63,7 @@ export default function DevicesPage() {
           </p>
           <Link
             href="/dashboard/download"
-            className="inline-block bg-brand-500 text-on-brand px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-600 hover:text-white"
+            className="inline-block bg-brand-500 text-on-brand px-4 py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em] hover:bg-brand-600 hover:text-white"
           >
             Download Agent
           </Link>
@@ -82,7 +83,7 @@ export default function DevicesPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className={cn("px-2.5 py-1 rounded-full text-xs font-medium capitalize", STATUS_STYLES[device.status] ?? "bg-elevated text-muted-foreground")}>
+                  <span className={cn("px-2.5 py-1 rounded-[4px] text-xs font-medium capitalize", STATUS_STYLES[device.status] ?? "bg-elevated text-muted-foreground")}>
                     {device.status === "online"
                       ? <span className="flex items-center gap-1"><Wifi className="w-3 h-3" /> online</span>
                       : device.status === "offline"

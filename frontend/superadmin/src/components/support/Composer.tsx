@@ -45,7 +45,7 @@ export function Composer({
         ].map((o) => (
           <button key={o.label} type="button" onClick={() => setInternal(o.v)}
             className={cn("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium",
-              internal === o.v ? (o.v ? "bg-yellow-500/15 text-yellow-600 dark:text-yellow-400" : "bg-brand-500/10 text-brand-500") : "text-muted-foreground hover:text-foreground")}>
+              internal === o.v ? (o.v ? "bg-yellow-500/15 text-yellow-600 dark:text-yellow-700" : "bg-brand-500/10 text-brand-500") : "text-muted-foreground hover:text-foreground")}>
             <o.icon className="h-3.5 w-3.5" /> {o.label}
           </button>
         ))}
@@ -75,7 +75,7 @@ export function Composer({
         <div className="flex items-center gap-2">
           {!internal && (
             <button type="button" onClick={() => send(true)} disabled={!body.trim() || sending}
-              className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50">
+              className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 font-mono text-[12px] font-medium uppercase tracking-[0.06em] hover:bg-muted disabled:opacity-50">
               <CheckCircle2 className="h-4 w-4 text-green-500" /> Send and resolve
             </button>
           )}

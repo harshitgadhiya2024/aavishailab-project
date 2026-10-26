@@ -125,7 +125,7 @@ export function MFACard() {
             <button
               onClick={() => setupMut.mutate()}
               disabled={setupMut.isPending}
-              className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-on-brand px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-60"
+              className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-on-brand px-4 py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em] disabled:opacity-60"
             >
               {setupMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Smartphone className="w-4 h-4" />}
               Set up
@@ -180,7 +180,7 @@ export function MFACard() {
                   <button
                     onClick={() => enableMut.mutate(code)}
                     disabled={!code.trim() || enableMut.isPending}
-                    className="bg-brand-500 hover:bg-brand-600 text-on-brand px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 disabled:opacity-60"
+                    className="bg-brand-500 hover:bg-brand-600 text-on-brand px-4 py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em] flex items-center gap-2 disabled:opacity-60"
                   >
                     {enableMut.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
                     Verify
@@ -238,7 +238,7 @@ export function MFACard() {
             </button>
             <button
               onClick={() => { setStep("idle"); setRecoveryCodes([]); setSetupData(null); }}
-              className="ml-auto bg-brand-500 text-on-brand px-4 py-2 rounded-lg text-sm font-medium"
+              className="ml-auto bg-brand-500 text-on-brand px-4 py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em]"
             >
               I've saved them
             </button>
@@ -249,7 +249,7 @@ export function MFACard() {
       {/* Password prompts — both destructive-ish actions require it */}
       {(confirmDisable || regenerating) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <div className="bg-card rounded-2xl shadow-2xl w-full max-w-sm p-6">
+          <div className="bg-card rounded-lg border border-border shadow-2xl w-full max-w-sm p-6">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold text-foreground">
                 {confirmDisable ? "Turn off two-factor authentication" : "Generate new recovery codes"}

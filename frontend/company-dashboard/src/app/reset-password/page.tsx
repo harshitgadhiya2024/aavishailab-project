@@ -3,10 +3,13 @@
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Eye, EyeOff, Loader2, CheckCircle2 } from "lucide-react";
+import { ArrowRight, CheckCircle2, Loader2 } from "lucide-react";
 import { authApi } from "@/lib/api";
 import { toast } from "sonner";
-import { BrandLogo } from "@/components/brand/BrandLogo";
+import {
+  AUTH_ARROW, AUTH_BUTTON, AUTH_LABEL, AUTH_LINK,
+  AuthDoneIcon, AuthError, AuthHeading, AuthShell, PasswordInput, authInput,
+} from "@/components/brand/AuthShell";
 
 export default function ResetPasswordPage() {
   return (
@@ -26,10 +29,6 @@ function ResetPasswordForm() {
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState("");
-
-  const inputClass =
-    "w-full rounded-lg bg-background px-3 py-2.5 text-sm outline-none transition-colors border " +
-    (error ? "border-red-500 focus:border-red-500" : "border-border/60 focus:border-brand-500");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,88 +68,66 @@ function ResetPasswordForm() {
   };
 
   return (
-    <div className="min-h-screen relative flex items-center justify-center p-6 bg-gradient-to-br from-brand-tint via-brand-tint-soft to-background overflow-hidden">
-      <div className="absolute inset-0 opacity-20 pointer-events-none [background-image:radial-gradient(circle_at_20%_20%,#FF7000,transparent_35%),radial-gradient(circle_at_80%_70%,#FF7000,transparent_35%)]" />
+    <AuthShell
+      headline="A fresh password, the same protection."
+      lead="Choose a strong password you don't use anywhere else, then sign in to pick up where you left off."
+      topRight={<>Remembered it?{" "}<Link href="/login" className={`font-medium ${AUTH_LINK}`}>Sign in</Link></>}
+    >
+      {done ? (
+        <>
+          <AuthDoneIcon><CheckCircle2 className="h-5 w-5" /></AuthDoneIcon>
+          <AuthHeading eyebrow="All set" title="Password reset">
+            You can now sign in with your new password.
+          </AuthHeading>
+          <Link href="/login" className={`${AUTH_BUTTON} mt-7`}>
+            Go to sign in
+            <ArrowRight className={AUTH_ARROW} />
+          </Link>
+        </>
+      ) : (
+        <>
+          <AuthHeading eyebrow="Account recovery" title="Set a new password">
+            Choose a new password for your account.
+          </AuthHeading>
 
-      <div className="relative w-full max-w-md">
-        <div className="text-center mb-8">
-          <BrandLogo className="h-24" priority />
-            <h1 className="sr-only">Aavishield</h1>
-          <p className="text-muted-foreground mt-1">Company Security Console</p>
-        </div>
+          {error && <AuthError>{error}</AuthError>}
 
-        <div className="bg-card border border-border rounded-2xl p-8 shadow-2xl">
-          {done ? (
-            <div className="text-center">
-              <div className="inline-flex items-center justify-center w-12 h-12 bg-brand-500/10 rounded-full mb-4">
-                <CheckCircle2 className="w-6 h-6 text-brand-500" />
-              </div>
-              <h2 className="text-lg font-semibold text-foreground mb-2">Password reset</h2>
-              <p className="text-sm text-muted-foreground mb-6">You can now sign in with your new password.</p>
-              <Link
-                href="/login"
-                className="inline-block w-full bg-primary hover:bg-brand-600 text-primary-foreground font-medium py-2.5 rounded-lg transition-colors"
-              >
-                Go to sign in
-              </Link>
+          <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+            <div>
+              <label htmlFor="password" className={AUTH_LABEL}>New password</label>
+              <PasswordInput
+                id="password"
+                autoComplete="new-password"
+                value={password}
+                onChange={v => { setPassword(v); setError(""); }}
+                show={showPass}
+                onToggle={() => setShowPass(!showPass)}
+                error={!!error}
+                placeholder="At least 8 characters"
+              />
             </div>
-          ) : (
-            <>
-              <h2 className="text-xl font-semibold text-foreground mb-1">Set a new password</h2>
-              <p className="text-sm text-muted-foreground mb-6">Choose a new password for your account.</p>
 
-              {error && (
-                <div className="bg-red-500/10 border border-red-500/30 text-danger rounded-lg px-4 py-3 mb-4 text-sm">
-                  {error}
-                </div>
-              )}
+            <div>
+              <label htmlFor="confirm" className={AUTH_LABEL}>Confirm password</label>
+              <input
+                id="confirm"
+                type={showPass ? "text" : "password"}
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={e => { setConfirmPassword(e.target.value); setError(""); }}
+                className={authInput(!!error)}
+                required
+              />
+            </div>
 
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-muted-foreground mb-1">New password</label>
-                  <div className="relative">
-                    <input
-                      type={showPass ? "text" : "password"}
-                      value={password}
-                      onChange={e => { setPassword(e.target.value); setError(""); }}
-                      className={`${inputClass} pr-10`}
-                      placeholder="At least 8 characters"
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPass(!showPass)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    >
-                      {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-muted-foreground mb-1">Confirm password</label>
-                  <input
-                    type={showPass ? "text" : "password"}
-                    value={confirmPassword}
-                    onChange={e => { setConfirmPassword(e.target.value); setError(""); }}
-                    className={inputClass}
-                    required
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full bg-primary hover:bg-brand-600 text-primary-foreground font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
-                >
-                  {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-                  {loading ? "Resetting..." : "Reset password"}
-                </button>
-              </form>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
+            <button type="submit" disabled={loading} className={AUTH_BUTTON}>
+              {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+              {loading ? "Resetting..." : "Reset password"}
+              {!loading && <ArrowRight className={AUTH_ARROW} />}
+            </button>
+          </form>
+        </>
+      )}
+    </AuthShell>
   );
 }

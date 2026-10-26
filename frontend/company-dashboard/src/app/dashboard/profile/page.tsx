@@ -165,7 +165,8 @@ export default function CompanyProfilePage() {
     <div className="space-y-6">
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Company Profile</h2>
+          <p className="page-eyebrow">Account</p>
+          <h2 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">Company Profile</h2>
           <p className="text-sm text-muted-foreground mt-1">
             Your organization's details, registration numbers and contacts — used across reports,
             exports and email
@@ -192,7 +193,7 @@ export default function CompanyProfilePage() {
               <s.icon className="w-3.5 h-3.5" />
               <span className="text-xs">{s.label}</span>
             </div>
-            <p className="text-xl font-bold text-foreground tabular-nums">{s.value}</p>
+            <p className="[font-family:Satoshi,var(--font-inter),sans-serif] text-[1.5rem] font-medium leading-tight tracking-[-0.02em] text-foreground tabular-nums">{s.value}</p>
           </div>
         ))}
       </div>
@@ -311,7 +312,7 @@ export default function CompanyProfilePage() {
             <button
               type="submit"
               disabled={!dirty || saveMut.isPending}
-              className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-on-brand px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
+              className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-on-brand px-4 py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em] disabled:opacity-50"
             >
               {saveMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               Save changes

@@ -70,7 +70,7 @@ function PasswordPanel() {
         <button
           type="submit"
           disabled={mut.isPending}
-          className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-on-brand px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-60"
+          className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-on-brand px-4 py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em] disabled:opacity-60"
         >
           {mut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
           Change password
@@ -90,13 +90,14 @@ export default function ProfilePage() {
   return (
     <div className="space-y-6 max-w-2xl">
       <div>
-        <h2 className="text-2xl font-bold text-foreground">Profile</h2>
+        <p className="page-eyebrow">Account</p>
+        <h2 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">Profile</h2>
         <p className="text-sm text-muted-foreground mt-1">Your account details for this portal</p>
       </div>
 
       <Panel title="Account" description="How you're identified to your organization">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-brand-500/10 text-brand-500 flex items-center justify-center flex-shrink-0">
+          <div className="w-10 h-10 rounded-md bg-brand-500/10 text-brand-500 flex items-center justify-center flex-shrink-0">
             <UserRound className="w-5 h-5" />
           </div>
           <div>

@@ -256,7 +256,8 @@ function ActivityContent() {
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">My Activity</h2>
+          <p className="page-eyebrow">My protection</p>
+          <h2 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">My Activity</h2>
           <p className="text-sm text-muted-foreground mt-1">
             What your company&apos;s security policy blocked or flagged on your devices, and the access you asked for
           </p>
@@ -371,7 +372,7 @@ function ActivityContent() {
                         </div>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
-                        <span className={cn("px-2 py-0.5 rounded-full text-xs font-medium capitalize", RESULT_BADGE[ev.action] ?? RESULT_BADGE.logged)}>
+                        <span className={cn("px-2 py-0.5 rounded-[4px] text-xs font-medium capitalize", RESULT_BADGE[ev.action] ?? RESULT_BADGE.logged)}>
                           {ev.action}
                         </span>
                         {repeats > 1 && (
@@ -446,7 +447,7 @@ function AccessCell({ ev, onRequest }: { ev: ActivityEvent; onRequest: () => voi
   if (a.status === "pending" || a.status === "approved") {
     const b = STATUS_BADGE[a.status];
     return (
-      <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium", b.cls)}>
+      <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] text-xs font-medium", b.cls)}>
         <b.icon className="w-3 h-3" /> {a.kind === "dlp" && a.status === "approved" ? "Approved" : b.label}
       </span>
     );
@@ -454,7 +455,7 @@ function AccessCell({ ev, onRequest }: { ev: ActivityEvent; onRequest: () => voi
   return (
     <div className="flex items-center gap-2">
       {a.status && (
-        <span className={cn("px-2 py-0.5 rounded-full text-xs font-medium", STATUS_BADGE[a.status].cls)} title={a.note || undefined}>
+        <span className={cn("px-2 py-0.5 rounded-[4px] text-xs font-medium", STATUS_BADGE[a.status].cls)} title={a.note || undefined}>
           {STATUS_BADGE[a.status].label}
         </span>
       )}
@@ -490,7 +491,7 @@ function RequestDialog({ ev, onClose, onSent }: { ev: ActivityEvent; onClose: ()
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={onClose}>
       <div role="dialog" aria-modal="true" aria-labelledby="request-title"
-        className="bg-card rounded-2xl shadow-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+        className="bg-card rounded-lg border border-border shadow-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
             <span className="w-10 h-10 rounded-xl bg-brand-500/10 grid place-items-center">
@@ -530,7 +531,7 @@ function RequestDialog({ ev, onClose, onSent }: { ev: ActivityEvent; onClose: ()
         <div className="flex gap-3 mt-5">
           <button onClick={onClose} className="flex-1 border border-border text-body py-2 rounded-lg text-sm hover:bg-elevated">Cancel</button>
           <button onClick={() => send.mutate()} disabled={tooShort || send.isPending}
-            className="flex-1 bg-brand-500 text-on-brand py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-50">
+            className="flex-1 bg-brand-500 text-on-brand py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em] flex items-center justify-center gap-2 disabled:opacity-50">
             {send.isPending && <Loader2 className="w-4 h-4 animate-spin" />} Send request
           </button>
         </div>
@@ -580,7 +581,7 @@ function RequestsList({ requests, loading, onWithdraw, withdrawing }: {
               </p>
             </div>
             <div className="flex sm:flex-col items-center sm:items-end gap-2 shrink-0">
-              <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium", b.cls)}>
+              <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] text-xs font-medium", b.cls)}>
                 <b.icon className="w-3 h-3" /> {b.label}
               </span>
               {r.status === "pending" && (

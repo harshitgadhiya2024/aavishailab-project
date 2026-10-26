@@ -123,7 +123,8 @@ export default function DashboardPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Welcome, {firstName}</h2>
+          <p className="page-eyebrow">Overview</p>
+          <h2 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">Welcome, {firstName}</h2>
           <p className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
             Your protection and activity · {periodText(period)}
             {isFetching && !isLoading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
@@ -171,15 +172,16 @@ function Card({ title, subtitle, action, children, className }: {
   title: string; subtitle?: string; action?: React.ReactNode; children: React.ReactNode; className?: string;
 }) {
   return (
-    <section className={cn("flex flex-col rounded-xl border border-border bg-card p-5 shadow-sm", className)}>
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div>
-          <h3 className="font-semibold text-foreground">{title}</h3>
-          {subtitle && <p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p>}
-        </div>
+    // The website’s UI card: a mono title bar over a hairline, then the content.
+    <section className={cn("flex flex-col rounded-lg border border-border bg-card", className)}>
+      <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-3">
+        <h3 className="font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-foreground">{title}</h3>
         {action}
       </div>
-      {children}
+      <div className="flex flex-1 flex-col p-5">
+        {subtitle && <p className="-mt-1 mb-4 text-[13px] text-muted-foreground">{subtitle}</p>}
+        {children}
+      </div>
     </section>
   );
 }
@@ -202,12 +204,12 @@ function ProtectionHero({ o }: { o: Overview }) {
   }[p.status];
   const primary = o.devices[0];
   return (
-    <section className={cn("flex flex-wrap items-center gap-4 rounded-xl border p-5", tone.ring)}>
-      <span className={cn("grid h-12 w-12 flex-shrink-0 place-items-center rounded-xl bg-card", tone.text)}>
+    <section className={cn("flex flex-wrap items-center gap-4 rounded-lg border p-5", tone.ring)}>
+      <span className={cn("grid h-12 w-12 flex-shrink-0 place-items-center rounded-md border border-border bg-card", tone.text)}>
         <tone.icon className="h-6 w-6" />
       </span>
       <div className="min-w-0 flex-1 basis-56">
-        <p className={cn("font-semibold", tone.text)}>{p.headline}</p>
+        <p className={cn("[font-family:Satoshi,var(--font-inter),sans-serif] text-[1.35rem] font-medium tracking-[-0.02em]", tone.text)}>{p.headline}</p>
         <p className="mt-0.5 text-sm text-muted-foreground">
           {p.devices_total === 0
             ? "Install the agent so your company's protection can keep you safe online."
@@ -218,11 +220,11 @@ function ProtectionHero({ o }: { o: Overview }) {
         </p>
       </div>
       {p.devices_total === 0 ? (
-        <Link href="/dashboard/download" className="inline-flex items-center gap-1.5 rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600">
+        <Link href="/dashboard/download" className="inline-flex items-center gap-1.5 rounded-lg bg-brand-500 px-4 py-2 font-mono text-[12px] font-medium uppercase tracking-[0.06em] text-white hover:bg-brand-600">
           <Download className="h-4 w-4" /> Install agent
         </Link>
       ) : (
-        <Link href="/dashboard/devices" className="inline-flex items-center gap-1 text-sm font-medium text-brand-500 hover:underline">
+        <Link href="/dashboard/devices" className="inline-flex items-center gap-1 font-mono text-[11px] uppercase tracking-[0.08em] text-brand-600 hover:text-brand-700 dark:text-brand-400">
           View devices <ArrowRight className="h-4 w-4" />
         </Link>
       )}
@@ -289,10 +291,10 @@ function Kpis({ o }: { o: Overview }) {
   return (
     <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
       {items.map((k) => (
-        <div key={k.label} className="rounded-xl border border-border bg-card p-4 shadow-sm">
+        <div key={k.label} className="rounded-lg border border-border bg-card p-4">
           <span className={cn("mb-3 grid h-9 w-9 place-items-center rounded-lg", k.tone)}><k.icon className="h-4 w-4" /></span>
-          <p className="text-2xl font-bold text-foreground">{k.value}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">{k.label}</p>
+          <p className="mt-1 [font-family:Satoshi,var(--font-inter),sans-serif] text-[1.75rem] font-medium leading-tight tracking-[-0.03em] tabular-nums text-foreground">{k.value}</p>
+          <p className="mt-1 font-mono text-[10.5px] uppercase tracking-[0.08em] text-muted-foreground">{k.label}</p>
           {k.foot && <div className="mt-1.5">{k.foot}</div>}
         </div>
       ))}
@@ -390,7 +392,7 @@ function RequestBadge({ status }: { status: string }) {
     denied: "bg-red-500/10 text-danger", revoked: "bg-elevated text-muted-foreground",
   };
   const label: Record<string, string> = { pending: "Requested", approved: "Access granted", denied: "Declined", revoked: "Revoked" };
-  return <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-medium", tone[status] ?? tone.revoked)}>{label[status] ?? status}</span>;
+  return <span className={cn("rounded-[4px] px-2 py-0.5 text-[11px] font-medium", tone[status] ?? tone.revoked)}>{label[status] ?? status}</span>;
 }
 
 function TopSites({ o }: { o: Overview }) {
@@ -406,7 +408,7 @@ function TopSites({ o }: { o: Overview }) {
                 <p className="truncate text-xs text-subtle">{s.category || "Company policy"} · last {ago(s.last)}</p>
               </div>
               <RequestBadge status={s.request_status} />
-              <span className="rounded-full bg-red-500/10 px-2 py-0.5 text-xs font-medium text-danger">{s.count}×</span>
+              <span className="rounded-[4px] bg-red-500/10 px-2 py-0.5 text-xs font-medium text-danger">{s.count}×</span>
             </li>
           ))}
         </ul>
@@ -432,7 +434,7 @@ function TopApps({ o }: { o: Overview }) {
                 <p className="truncate text-sm text-body">{a.name}</p>
                 <p className="text-xs text-subtle">{a.control === "vpn" ? "VPN / bypass tool" : "Application control"} · last {ago(a.last)}</p>
               </div>
-              <span className="rounded-full bg-red-500/10 px-2 py-0.5 text-xs font-medium text-danger">{a.count}×</span>
+              <span className="rounded-[4px] bg-red-500/10 px-2 py-0.5 text-xs font-medium text-danger">{a.count}×</span>
             </li>
           ))}
         </ul>
@@ -460,7 +462,7 @@ function SensitiveData({ o }: { o: Overview }) {
         <>
           <p className="mb-2 mt-4 text-xs font-medium text-muted-foreground">What kind of data</p>
           <div className="flex flex-wrap gap-1.5">
-            {s.types.map((t) => <span key={t.label} className="rounded-full border border-border px-2.5 py-0.5 text-xs text-body">{t.label} · {t.count}</span>)}
+            {s.types.map((t) => <span key={t.label} className="rounded-[4px] border border-border px-2.5 py-0.5 text-xs text-body">{t.label} · {t.count}</span>)}
           </div>
         </>
       )}
@@ -551,7 +553,7 @@ function Devices({ o }: { o: Overview }) {
                     {d.os || "Unknown OS"} · {d.status === "online" ? "online" : `last seen ${ago(d.last_seen_at)}`} · {d.ownership === "personal" ? "Personal" : "Company"} device
                   </p>
                 </div>
-                <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-medium",
+                <span className={cn("rounded-[4px] px-2 py-0.5 text-[11px] font-medium",
                   d.security_score >= 80 ? "bg-green-500/10 text-green-600 dark:text-green-400" : d.security_score >= 50 ? "bg-amber-500/10 text-warning" : "bg-red-500/10 text-danger")}>
                   Score {d.security_score}
                 </span>
@@ -622,7 +624,7 @@ function Recent({ o }: { o: Overview }) {
                     {e.data_types?.length ? e.data_types.join(", ") : e.policy || Meta.label} · {when(e.at)}
                   </p>
                 </div>
-                <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-medium",
+                <span className={cn("rounded-[4px] px-2 py-0.5 text-[11px] font-medium",
                   e.action === "blocked" ? "bg-red-500/10 text-danger" : "bg-amber-500/10 text-warning")}>
                   {e.action === "blocked" ? "Blocked" : "Flagged"}
                 </span>

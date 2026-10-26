@@ -78,7 +78,7 @@ export function Composer({
         <div className="flex items-center gap-3">
           <span className="hidden text-[11px] text-subtle md:inline">Ctrl + Enter to send</span>
           <button type="button" onClick={send} disabled={!body.trim() || sending}
-            className="flex items-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50">
+            className="flex items-center gap-2 rounded-lg bg-brand-500 px-4 py-2 font-mono text-[12px] font-medium uppercase tracking-[0.06em] text-white hover:bg-brand-600 disabled:opacity-50">
             {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             {submitLabel}
           </button>

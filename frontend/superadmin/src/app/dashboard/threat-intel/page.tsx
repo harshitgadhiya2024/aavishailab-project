@@ -46,12 +46,13 @@ export default function ThreatIntelPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Threat Intel & Global Blocklist</h2>
+          <p className="page-eyebrow">Product</p>
+          <h2 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">Threat Intel & Global Blocklist</h2>
           <p className="text-sm text-muted-foreground mt-1">Rules and feeds that apply to every organization</p>
         </div>
         <button
           onClick={() => setShowAdd(true)}
-          className="flex items-center gap-2 bg-primary hover:bg-brand-600 text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+          className="flex items-center gap-2 bg-primary hover:bg-brand-600 text-primary-foreground px-4 py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em] transition-colors"
         >
           <Plus className="w-4 h-4" /> Add Global Rule
         </button>
@@ -66,11 +67,11 @@ export default function ThreatIntelPage() {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-border">
           {feedRows.length === 0 ? (
-            <p className="text-center text-sm text-[#6B6B6B] py-8 col-span-3">No feed data synced yet — first sync runs within 6h of startup</p>
+            <p className="text-center text-sm text-subtle py-8 col-span-3">No feed data synced yet — first sync runs within 6h of startup</p>
           ) : feedRows.map((f: any) => (
             <div key={f.source} className="px-5 py-4">
               <p className="text-sm font-medium text-foreground capitalize">{f.source}</p>
-              <p className="text-2xl font-bold text-foreground mt-1">{f.count}</p>
+              <p className="mt-1.5 [font-family:Satoshi,var(--font-inter),sans-serif] text-[1.6rem] font-medium leading-tight tracking-[-0.02em] tabular-nums text-foreground">{f.count}</p>
               <p className="text-xs text-muted-foreground mt-1">last seen {f.last_seen_at ? formatDate(f.last_seen_at) : "—"}</p>
             </div>
           ))}
@@ -80,7 +81,7 @@ export default function ThreatIntelPage() {
       {/* Global rules */}
       <div className="bg-card rounded-xl border border-border shadow-sm">
         <div className="px-5 py-4 border-b border-border flex items-center gap-2">
-          <ShieldAlert className="w-4 h-4 text-red-400" />
+          <ShieldAlert className="w-4 h-4 text-red-600" />
           <h3 className="font-semibold text-foreground">Global Domain Rules</h3>
           <span className="text-xs text-muted-foreground">({rules.length})</span>
         </div>
@@ -99,13 +100,13 @@ export default function ThreatIntelPage() {
               {isLoading ? (
                 [...Array(3)].map((_, i) => <tr key={i} className="animate-pulse"><td colSpan={5} className="px-5 py-4"><div className="h-4 bg-muted rounded w-3/4" /></td></tr>)
               ) : rules.length === 0 ? (
-                <tr><td colSpan={5} className="text-center py-12 text-[#6B6B6B]">No global rules yet</td></tr>
+                <tr><td colSpan={5} className="text-center py-12 text-subtle">No global rules yet</td></tr>
               ) : rules.map((r: any) => (
                 <tr key={r.id} className="hover:bg-muted transition-colors">
                   <td className="px-5 py-3 text-foreground font-mono">{r.domain}</td>
                   <td className="px-5 py-3">
-                    <span className={cn("px-2 py-0.5 rounded-full text-xs font-medium capitalize",
-                      r.action === "block" ? "bg-red-500/10 text-red-400" : r.action === "alert" ? "bg-yellow-500/10 text-yellow-400" : "bg-green-500/10 text-green-400")}>
+                    <span className={cn("px-2 py-0.5 rounded-[4px] text-xs font-medium capitalize",
+                      r.action === "block" ? "bg-red-500/10 text-red-600" : r.action === "alert" ? "bg-yellow-500/10 text-yellow-700" : "bg-green-500/10 text-green-700")}>
                       {r.action}
                     </span>
                   </td>
@@ -116,7 +117,7 @@ export default function ThreatIntelPage() {
                     </button>
                   </td>
                   <td className="px-5 py-3 text-right">
-                    <button onClick={() => deleteMut.mutate(r.id)} className="p-1.5 hover:bg-red-500/10 rounded text-muted-foreground hover:text-red-400">
+                    <button onClick={() => deleteMut.mutate(r.id)} className="p-1.5 hover:bg-red-500/10 rounded text-muted-foreground hover:text-red-600">
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </td>
@@ -129,7 +130,7 @@ export default function ThreatIntelPage() {
 
       {showAdd && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={() => setShowAdd(false)}>
-          <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-card border border-border rounded-lg border border-border shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-border">
               <h3 className="font-semibold text-foreground">Add Global Rule</h3>
               <button onClick={() => setShowAdd(false)} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
@@ -161,9 +162,9 @@ export default function ThreatIntelPage() {
                 <input value={form.reason} onChange={(e) => setForm((f) => ({ ...f, reason: e.target.value }))}
                   className="w-full border border-border bg-background rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
               </div>
-              <p className="text-xs text-[#6B6B6B]">Applies to every organization on the platform immediately.</p>
+              <p className="text-xs text-subtle">Applies to every organization on the platform immediately.</p>
               <button type="submit" disabled={createMut.isPending}
-                className="w-full bg-primary text-primary-foreground py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-60">
+                className="w-full bg-primary text-primary-foreground py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em] flex items-center justify-center gap-2 disabled:opacity-60">
                 {createMut.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
                 Add Rule
               </button>

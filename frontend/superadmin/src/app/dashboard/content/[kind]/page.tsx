@@ -36,7 +36,8 @@ export default function ContentListPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">{cfg.label}</h2>
+          <p className="page-eyebrow">Website</p>
+          <h2 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">{cfg.label}</h2>
           <p className="mt-1 text-sm text-muted-foreground">{cfg.blurb}</p>
         </div>
         <div className="flex items-center gap-2">
@@ -50,7 +51,7 @@ export default function ContentListPage() {
           </a>
           <Link
             href={`/dashboard/content/${kind}/new`}
-            className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-brand-600"
+            className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 font-mono text-[12px] font-medium uppercase tracking-[0.06em] text-primary-foreground transition-colors hover:bg-brand-600"
           >
             <Plus className="h-4 w-4" /> New {cfg.singular}
           </Link>
@@ -108,8 +109,8 @@ export default function ContentListPage() {
               </div>
               <span
                 className={cn(
-                  "flex-shrink-0 rounded-full px-2.5 py-1 text-xs font-medium",
-                  p.status === "published" ? "bg-green-500/10 text-green-400" : "bg-muted text-muted-foreground",
+                  "flex-shrink-0 rounded-[4px] px-2.5 py-1 text-xs font-medium",
+                  p.status === "published" ? "bg-green-500/10 text-green-700" : "bg-muted text-muted-foreground",
                 )}
               >
                 {p.status === "published" ? "Published" : "Draft"}

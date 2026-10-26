@@ -290,7 +290,7 @@ export function EnforcementBadge({ state, className }: { state: any; className?:
   return (
     <span
       title={state.reason || ""}
-      className={cn("inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium",
+      className={cn("inline-flex items-center gap-1.5 rounded-[4px] px-2 py-0.5 text-xs font-medium",
         styles[mode] ?? styles.full, className)}
     >
       <Clock className="w-3 h-3" />

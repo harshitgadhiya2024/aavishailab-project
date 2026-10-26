@@ -42,7 +42,8 @@ export default function ProfilePage() {
   return (
     <div className="space-y-6 max-w-2xl">
       <div>
-        <h2 className="text-2xl font-bold text-foreground">Profile</h2>
+        <p className="page-eyebrow">Account</p>
+        <h2 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">Profile</h2>
         <p className="text-sm text-muted-foreground mt-1">Your account information</p>
       </div>
 
@@ -55,7 +56,7 @@ export default function ProfilePage() {
           <div>
             <p className="text-xl font-semibold text-foreground">{user?.full_name || user?.name || "Super Admin"}</p>
             <p className="text-sm text-muted-foreground">{user?.email || session?.user?.email}</p>
-            <span className="inline-block mt-1 px-2.5 py-0.5 bg-brand-500/10 text-brand-500 text-xs font-medium rounded-full">
+            <span className="inline-block mt-1 px-2.5 py-0.5 bg-brand-500/10 text-brand-500 text-xs font-medium rounded-[4px]">
               Superadmin
             </span>
           </div>
@@ -86,7 +87,7 @@ export default function ProfilePage() {
 
         <form onSubmit={handleChangePw} className="space-y-4">
           {pwError && (
-            <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-lg px-4 py-3">
+            <div className="bg-red-500/10 border border-red-500/30 text-red-600 text-sm rounded-lg px-4 py-3">
               {pwError}
             </div>
           )}
@@ -124,7 +125,7 @@ export default function ProfilePage() {
           <button
             type="submit"
             disabled={changePwMut.isPending}
-            className="flex items-center gap-2 bg-primary hover:bg-brand-600 text-primary-foreground px-5 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
+            className="flex items-center gap-2 bg-primary hover:bg-brand-600 text-primary-foreground px-5 py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em] transition-colors disabled:opacity-60"
           >
             {changePwMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
             Update Password

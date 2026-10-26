@@ -24,9 +24,9 @@ function titleFor(pathname: string): string {
 }
 
 const SEVERITY = {
-  critical: { icon: AlertOctagon, tone: "text-red-400 bg-red-500/10" },
-  warning: { icon: AlertTriangle, tone: "text-yellow-400 bg-yellow-500/10" },
-  info: { icon: Info, tone: "text-sky-400 bg-sky-500/10" },
+  critical: { icon: AlertOctagon, tone: "text-red-600 bg-red-500/10" },
+  warning: { icon: AlertTriangle, tone: "text-yellow-700 bg-yellow-500/10" },
+  info: { icon: Info, tone: "text-sky-700 bg-sky-500/10" },
 } as const;
 
 function AttentionBell() {
@@ -56,8 +56,8 @@ function AttentionBell() {
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 z-50 mt-2 flex max-h-[70vh] w-[380px] flex-col rounded-xl border border-border bg-card shadow-lg">
-            <div className="border-b border-border px-4 py-3 text-sm font-semibold text-foreground">Needs attention</div>
+          <div className="absolute right-0 z-50 mt-2 flex max-h-[70vh] w-[380px] flex-col rounded-lg border border-border bg-card shadow-xl">
+            <div className="border-b border-border px-4 py-3 font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-foreground">Needs attention</div>
             <div className="flex-1 divide-y divide-border overflow-y-auto">
               {items.length === 0 ? (
                 <div className="py-10 text-center text-sm text-muted-foreground">
@@ -81,7 +81,7 @@ function AttentionBell() {
                 })
               )}
             </div>
-            <Link href="/dashboard" onClick={() => setOpen(false)} className="border-t border-border px-4 py-2.5 text-xs text-brand-500 hover:text-brand-400">
+            <Link href="/dashboard" onClick={() => setOpen(false)} className="border-t border-border px-4 py-2.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-brand-600 hover:text-brand-700">
               Open Command Center
             </Link>
           </div>
@@ -103,30 +103,34 @@ export function Header({ title }: { title?: string }) {
   const user = (session as any)?.user;
 
   return (
-    <header className="h-16 bg-card border-b border-border flex items-center justify-between px-6 sticky top-0 z-30">
+    <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center justify-between border-b border-border bg-card px-6">
       {/* Title */}
-      <div>
-        <h1 className="text-lg font-semibold text-foreground">{title || titleFor(pathname)}</h1>
+      <div className="min-w-0">
+        <h1 className="truncate text-[19px] font-medium tracking-[-0.02em] text-foreground">{title || titleFor(pathname)}</h1>
       </div>
 
       {/* Right */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
+        {/* Platform badge, in the website's mono style. */}
+        <span className="mr-1 hidden rounded-md border border-brand-500/20 bg-brand-tint px-2.5 py-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-brand-700 sm:inline-flex">
+          Platform admin
+        </span>
         <AttentionBell />
 
         {/* Profile dropdown */}
         <div className="relative">
           <button
             onClick={() => setDropdownOpen(!dropdownOpen)}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-muted transition-colors"
+            className="ml-1 flex items-center gap-2.5 rounded-md border border-transparent py-1.5 pl-1.5 pr-2.5 transition-colors hover:border-border hover:bg-elevated"
           >
-            <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-sm font-medium">
+            <div className="grid h-8 w-8 place-items-center rounded-md bg-brand-500 font-mono text-[12px] font-medium text-white">
               {user?.first_name?.[0] || user?.name?.[0] || "S"}
             </div>
             <div className="text-left hidden sm:block">
               <p className="text-sm font-medium text-foreground leading-none">
                 {user?.full_name || user?.name || "Super Admin"}
               </p>
-              <p className="text-xs text-[#6B6B6B] mt-0.5">Superadmin</p>
+              <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.08em] text-subtle">Superadmin</p>
             </div>
             <ChevronDown className="w-4 h-4 text-muted-foreground" />
           </button>
@@ -137,7 +141,7 @@ export function Header({ title }: { title?: string }) {
                 className="fixed inset-0 z-40"
                 onClick={() => setDropdownOpen(false)}
               />
-              <div className="absolute right-0 mt-2 w-56 bg-card rounded-xl shadow-lg border border-border py-1 z-50">
+              <div className="absolute right-0 z-50 mt-2 w-60 rounded-lg border border-border bg-card py-1 shadow-xl">
                 <div className="px-4 py-3 border-b border-border">
                   <p className="text-sm font-medium text-foreground">
                     {user?.full_name || "Super Admin"}
@@ -163,7 +167,7 @@ export function Header({ title }: { title?: string }) {
                 <div className="border-t border-border mt-1 pt-1">
                   <button
                     onClick={handleLogout}
-                    className="flex items-center gap-2 w-full px-4 py-2 text-sm text-red-400 hover:bg-red-500/10"
+                    className="flex items-center gap-2 w-full px-4 py-2 text-sm text-red-600 hover:bg-red-500/10"
                   >
                     <LogOut className="w-4 h-4" /> Sign out
                   </button>

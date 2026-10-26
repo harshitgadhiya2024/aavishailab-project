@@ -71,13 +71,14 @@ export default function TeamPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Team</h2>
+          <p className="page-eyebrow">Admin</p>
+          <h2 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">Team</h2>
           <p className="text-sm text-muted-foreground mt-1">Who has superadmin access to this platform</p>
         </div>
         {canManage && (
           <button
             onClick={() => setShowInvite(true)}
-            className="flex items-center gap-2 bg-primary hover:bg-brand-600 text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+            className="flex items-center gap-2 bg-primary hover:bg-brand-600 text-primary-foreground px-4 py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em] transition-colors"
           >
             <Plus className="w-4 h-4" />
             Invite Superadmin
@@ -113,7 +114,7 @@ export default function TeamPage() {
                   </tr>
                 ))
               ) : team.length === 0 ? (
-                <tr><td colSpan={5} className="text-center py-12 text-[#6B6B6B]">No superadmins found</td></tr>
+                <tr><td colSpan={5} className="text-center py-12 text-subtle">No superadmins found</td></tr>
               ) : team.map((u: any) => {
                 const isSelf = u.email === myEmail;
                 const isFull = u.superadmin_level === "full";
@@ -126,14 +127,14 @@ export default function TeamPage() {
                         </div>
                         <div>
                           <p className="font-medium text-foreground">{u.full_name || "—"} {isSelf && <span className="text-xs text-muted-foreground">(you)</span>}</p>
-                          <p className="text-xs text-[#6B6B6B] flex items-center gap-1"><Mail className="w-3 h-3" />{u.email}</p>
+                          <p className="text-xs text-subtle flex items-center gap-1"><Mail className="w-3 h-3" />{u.email}</p>
                         </div>
                       </div>
                     </td>
                     <td className="px-5 py-4">
                       <span className={cn(
                         "flex items-center gap-1.5 w-fit px-2.5 py-1 rounded-full text-xs font-medium",
-                        isFull ? "bg-purple-500/10 text-purple-400" : "bg-muted text-muted-foreground"
+                        isFull ? "bg-purple-500/10 text-purple-700" : "bg-muted text-muted-foreground"
                       )}>
                         {isFull ? <ShieldCheck className="w-3.5 h-3.5" /> : <ShieldQuestion className="w-3.5 h-3.5" />}
                         {isFull ? "Full access" : "Support (read-only)"}
@@ -142,7 +143,7 @@ export default function TeamPage() {
                     <td className="px-5 py-4">
                       <span className={cn(
                         "flex items-center gap-1.5 text-xs font-medium",
-                        u.status === "active" ? "text-green-400" : "text-red-400"
+                        u.status === "active" ? "text-green-700" : "text-red-600"
                       )}>
                         <span className={cn("w-1.5 h-1.5 rounded-full", u.status === "active" ? "bg-green-500" : "bg-red-400")} />
                         {u.status}
@@ -164,7 +165,7 @@ export default function TeamPage() {
                           {!isSelf && (
                             <button
                               onClick={() => setRemoveId(u.id)}
-                              className="p-1.5 hover:bg-red-500/10 rounded text-muted-foreground hover:text-red-400"
+                              className="p-1.5 hover:bg-red-500/10 rounded text-muted-foreground hover:text-red-600"
                               title="Remove access"
                             >
                               <UserMinus className="w-4 h-4" />
@@ -193,14 +194,14 @@ export default function TeamPage() {
         {createdPassword ? (
           <div className="px-6 py-5 space-y-4">
             <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-4">
-              <p className="text-sm text-green-400 font-medium">Invited successfully</p>
+              <p className="text-sm text-green-700 font-medium">Invited successfully</p>
               <p className="text-xs text-muted-foreground mt-1">An email with these credentials was sent. This password won't be shown again.</p>
             </div>
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Temporary Password</label>
               <p className="font-mono text-sm bg-muted rounded-lg px-3 py-2.5 text-foreground">{createdPassword}</p>
             </div>
-            <button onClick={closeInvite} className="w-full bg-primary text-primary-foreground py-2 rounded-lg text-sm font-medium">
+            <button onClick={closeInvite} className="w-full bg-primary text-primary-foreground py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em]">
               Done
             </button>
           </div>
@@ -255,7 +256,7 @@ export default function TeamPage() {
               <button
                 type="submit"
                 disabled={inviteMut.isPending}
-                className="flex-1 bg-primary text-primary-foreground py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-60"
+                className="flex-1 bg-primary text-primary-foreground py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em] flex items-center justify-center gap-2 disabled:opacity-60"
               >
                 {inviteMut.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
                 Send Invite
@@ -269,7 +270,7 @@ export default function TeamPage() {
       <Modal open={!!removeId} onClose={() => setRemoveId(null)} className="max-w-sm">
         <div className="p-6">
           <div className="w-12 h-12 bg-red-500/10 rounded-xl flex items-center justify-center mx-auto mb-4">
-            <UserMinus className="w-5 h-5 text-red-400" />
+            <UserMinus className="w-5 h-5 text-red-600" />
           </div>
           <h3 className="text-center font-semibold text-foreground mb-2">Remove Superadmin Access?</h3>
           <p className="text-center text-sm text-muted-foreground mb-6">

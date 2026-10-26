@@ -217,7 +217,8 @@ export default function ActivityPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Security Activity</h2>
+          <p className="page-eyebrow">Monitoring</p>
+          <h2 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">Security Activity</h2>
           <p className="text-sm text-muted-foreground mt-1">Blocked and alerted activity from endpoint agents</p>
         </div>
         <div className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium",
@@ -388,13 +389,13 @@ export default function ActivityPage() {
                     <td className="px-5 py-3 text-muted-foreground text-xs max-w-xs truncate">{ev.policy_name || "Organization policy"}</td>
                     <td className="px-5 py-3">
                       {isMalware ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-500/10 text-danger">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] text-xs font-medium bg-red-500/10 text-danger">
                           <Bug className="w-3 h-3" /> Malware Detection
                         </span>
                       ) : isDLP ? (
                         <span
                           title="Data Loss Prevention"
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-500/10 text-warning"
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] text-xs font-medium bg-yellow-500/10 text-warning"
                         >
                           {dlp?.source === "App" ? <AppWindow className="w-3 h-3" />
                             : dlp?.source === "Browser" ? <Globe className="w-3 h-3" />

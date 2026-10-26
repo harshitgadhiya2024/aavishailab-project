@@ -114,7 +114,7 @@ function TicketPane({ id, onChanged }: { id: string; onChanged: () => void }) {
           </label>
           {t.rating != null && (
             <span className={cn("flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium",
-              t.rating === 1 ? "bg-green-500/10 text-green-600 dark:text-green-400" : "bg-red-500/10 text-red-500")}
+              t.rating === 1 ? "bg-green-500/10 text-green-600 dark:text-green-700" : "bg-red-500/10 text-red-500")}
               title={t.rating_comment || undefined}>
               {t.rating === 1 ? <ThumbsUp className="h-3.5 w-3.5" /> : <ThumbsDown className="h-3.5 w-3.5" />}
               {t.rating === 1 ? "Customer says solved" : "Customer says not solved"}
@@ -170,7 +170,8 @@ function Inbox_() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Support Tickets</h2>
+          <p className="page-eyebrow">Customers</p>
+          <h2 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">Support Tickets</h2>
           <p className="mt-1 text-sm text-muted-foreground">Every company's requests. Replies are emailed to the customer; internal notes are not.</p>
         </div>
       </div>

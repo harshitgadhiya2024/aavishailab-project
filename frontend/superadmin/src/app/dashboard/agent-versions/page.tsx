@@ -102,7 +102,8 @@ export default function AgentVersionsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Agent Versions</h2>
+          <p className="page-eyebrow">Product</p>
+          <h2 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">Agent Versions</h2>
           <p className="text-sm text-muted-foreground mt-1">
             Endpoint connector rollout — what&apos;s published per platform, what the fleet is actually running, and rollback
           </p>
@@ -111,7 +112,7 @@ export default function AgentVersionsPage() {
           onClick={() => setTriggerOpen(true)}
           disabled={!configured}
           title={configured ? undefined : "Set GITHUB_REPOSITORY and GITHUB_ACTIONS_PAT to enable this"}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-brand-500 text-white hover:bg-brand-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          className="flex items-center gap-2 px-4 py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em] bg-brand-500 text-white hover:bg-brand-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <Play className="w-4 h-4" /> Trigger new build
         </button>
@@ -122,7 +123,7 @@ export default function AgentVersionsPage() {
         <div className="bg-card rounded-xl border border-border shadow-sm p-5">
           <h3 className="font-semibold text-foreground mb-3">Recent CI builds</h3>
           {runs.length === 0 ? (
-            <p className="text-sm text-[#6B6B6B]">No runs yet — trigger one above.</p>
+            <p className="text-sm text-subtle">No runs yet — trigger one above.</p>
           ) : (
             <div className="space-y-2">
               {runs.map((r) => (
@@ -130,7 +131,7 @@ export default function AgentVersionsPage() {
                   <div className="flex items-center gap-2 min-w-0">
                     <RunStatusIcon status={r.status} conclusion={r.conclusion} />
                     <span className="text-foreground truncate">{r.title || "Agent packages"}</span>
-                    <span className="text-xs text-[#6B6B6B] font-mono flex-shrink-0">{r.ref}</span>
+                    <span className="text-xs text-subtle font-mono flex-shrink-0">{r.ref}</span>
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0">
                     <span className="text-xs text-muted-foreground">{formatWhen(r.updated_at)}</span>
@@ -151,7 +152,7 @@ export default function AgentVersionsPage() {
           <div className="flex items-start justify-between">
             <div>
               <p className="text-sm text-muted-foreground">Devices reporting</p>
-              <p className="text-3xl font-bold text-foreground mt-1">{totalDevices}</p>
+              <p className="mt-1.5 [font-family:Satoshi,var(--font-inter),sans-serif] text-[2rem] font-medium leading-none tracking-[-0.03em] tabular-nums text-foreground">{totalDevices}</p>
             </div>
             <div className="p-2.5 rounded-lg bg-brand-500/10 text-brand-500">
               <Users className="w-5 h-5" />
@@ -162,13 +163,13 @@ export default function AgentVersionsPage() {
           <div className="flex items-start justify-between">
             <div>
               <p className="text-sm text-muted-foreground">On current version</p>
-              <p className="text-3xl font-bold text-foreground mt-1">
+              <p className="mt-1.5 [font-family:Satoshi,var(--font-inter),sans-serif] text-[2rem] font-medium leading-none tracking-[-0.03em] tabular-nums text-foreground">
                 {upToDate}
                 {totalDevices > 0 && <span className="text-sm text-muted-foreground font-normal"> / {totalDevices}</span>}
               </p>
-              <p className="text-xs text-[#6B6B6B] mt-1">v{current?.version ?? "—"}</p>
+              <p className="text-xs text-subtle mt-1">v{current?.version ?? "—"}</p>
             </div>
-            <div className="p-2.5 rounded-lg bg-green-500/10 text-green-400">
+            <div className="p-2.5 rounded-lg bg-green-500/10 text-green-700">
               <CheckCircle2 className="w-5 h-5" />
             </div>
           </div>
@@ -177,10 +178,10 @@ export default function AgentVersionsPage() {
           <p className="text-sm text-muted-foreground mb-2">By platform</p>
           <div className="flex flex-wrap gap-2">
             {byPlatform.length === 0 ? (
-              <span className="text-xs text-[#6B6B6B]">No devices yet</span>
+              <span className="text-xs text-subtle">No devices yet</span>
             ) : (
               byPlatform.map((p) => (
-                <span key={p.os_type} className="px-2.5 py-1 rounded-full text-xs font-medium bg-muted text-muted-foreground capitalize">
+                <span key={p.os_type} className="px-2.5 py-1 rounded-[4px] text-xs font-medium bg-muted text-muted-foreground capitalize">
                   {p.os_type}: {p.count}
                 </span>
               ))
@@ -199,7 +200,7 @@ export default function AgentVersionsPage() {
               const isCurrent = v.agent_version === current?.version;
               return (
                 <div key={v.agent_version} className="flex items-center gap-3 text-sm">
-                  <span className={cn("w-24 flex-shrink-0 font-mono text-xs", isCurrent ? "text-green-400" : "text-muted-foreground")}>
+                  <span className={cn("w-24 flex-shrink-0 font-mono text-xs", isCurrent ? "text-green-700" : "text-muted-foreground")}>
                     {v.agent_version}
                   </span>
                   <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
@@ -242,13 +243,13 @@ export default function AgentVersionsPage() {
                 <div className="h-16 bg-muted rounded-lg animate-pulse" />
               ) : artifact ? (
                 <div className="space-y-1 mb-4">
-                  <p className="text-2xl font-bold text-foreground">v{current.version}</p>
+                  <p className="[font-family:Satoshi,var(--font-inter),sans-serif] text-[1.6rem] font-medium leading-tight tracking-[-0.02em] tabular-nums text-foreground">v{current.version}</p>
                   <p className="text-xs text-muted-foreground font-mono truncate" title={artifact.filename}>{artifact.filename}</p>
-                  <p className="text-xs text-[#6B6B6B]">{formatBytes(artifact.size)} · published {formatWhen(artifact.published_at)}</p>
-                  <p className="text-xs text-[#6B6B6B] font-mono truncate" title={artifact.sha256}>sha256: {artifact.sha256?.slice(0, 16)}…</p>
+                  <p className="text-xs text-subtle">{formatBytes(artifact.size)} · published {formatWhen(artifact.published_at)}</p>
+                  <p className="text-xs text-subtle font-mono truncate" title={artifact.sha256}>sha256: {artifact.sha256?.slice(0, 16)}…</p>
                 </div>
               ) : (
-                <div className="mb-4 py-4 text-center text-xs text-[#6B6B6B] border border-dashed border-border rounded-lg">
+                <div className="mb-4 py-4 text-center text-xs text-subtle border border-dashed border-border rounded-lg">
                   Nothing published yet
                 </div>
               )}
@@ -262,7 +263,7 @@ export default function AgentVersionsPage() {
                         <span className="font-mono text-muted-foreground truncate" title={p.filename}>v{p.version}</span>
                         <button
                           onClick={() => setRollbackTarget({ platform, filename: p.filename, version: p.version })}
-                          className="flex items-center gap-1 text-[#6B6B6B] hover:text-brand-500 transition-colors flex-shrink-0"
+                          className="flex items-center gap-1 text-subtle hover:text-brand-500 transition-colors flex-shrink-0"
                         >
                           <RotateCcw className="w-3 h-3" /> Roll back
                         </button>
@@ -278,7 +279,7 @@ export default function AgentVersionsPage() {
 
       {historyLoading === false && packages.length === 0 && !manifestLoading && (
         <div className="bg-card rounded-xl border border-border shadow-sm p-8 text-center">
-          <Download className="w-8 h-8 mx-auto mb-2 text-[#6B6B6B] opacity-30" />
+          <Download className="w-8 h-8 mx-auto mb-2 text-subtle opacity-30" />
           <p className="text-sm text-muted-foreground">
             No agent packages published yet. Push a tag matching <code className="text-xs bg-muted px-1.5 py-0.5 rounded">agent-v*</code>{" "}
             or run the &quot;Agent packages&quot; GitHub Actions workflow, or upload one directly here.
@@ -317,7 +318,7 @@ export default function AgentVersionsPage() {
               <button
                 onClick={() => rollbackMut.mutate(rollbackTarget)}
                 disabled={rollbackMut.isPending}
-                className="px-4 py-2 rounded-lg text-sm font-medium bg-brand-500 text-white hover:bg-brand-600 transition-colors disabled:opacity-50 flex items-center gap-2"
+                className="px-4 py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em] bg-brand-500 text-white hover:bg-brand-600 transition-colors disabled:opacity-50 flex items-center gap-2"
               >
                 {rollbackMut.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
                 Roll back
@@ -345,10 +346,10 @@ function RunStatusIcon({ status, conclusion }: { status: string; conclusion: str
     return <Loader2 className="w-4 h-4 text-brand-500 animate-spin flex-shrink-0" />;
   }
   if (conclusion === "success") {
-    return <CheckCircle2 className="w-4 h-4 text-green-400 flex-shrink-0" />;
+    return <CheckCircle2 className="w-4 h-4 text-green-700 flex-shrink-0" />;
   }
   if (conclusion === "failure" || conclusion === "cancelled") {
-    return <XCircle className="w-4 h-4 text-red-400 flex-shrink-0" />;
+    return <XCircle className="w-4 h-4 text-red-600 flex-shrink-0" />;
   }
   return <Clock className="w-4 h-4 text-muted-foreground flex-shrink-0" />;
 }
@@ -407,7 +408,7 @@ function UploadModal({ platform, onClose, onDone }: { platform: string; onClose:
           <button
             onClick={() => uploadMut.mutate()}
             disabled={!version || !file || uploadMut.isPending}
-            className="px-4 py-2 rounded-lg text-sm font-medium bg-brand-500 text-white hover:bg-brand-600 transition-colors disabled:opacity-50 flex items-center gap-2"
+            className="px-4 py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em] bg-brand-500 text-white hover:bg-brand-600 transition-colors disabled:opacity-50 flex items-center gap-2"
           >
             {uploadMut.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
             Publish
@@ -472,7 +473,7 @@ function TriggerBuildModal({ onClose, onDone }: { onClose: () => void; onDone: (
           <button
             onClick={() => triggerMut.mutate()}
             disabled={!version || triggerMut.isPending}
-            className="px-4 py-2 rounded-lg text-sm font-medium bg-brand-500 text-white hover:bg-brand-600 transition-colors disabled:opacity-50 flex items-center gap-2"
+            className="px-4 py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em] bg-brand-500 text-white hover:bg-brand-600 transition-colors disabled:opacity-50 flex items-center gap-2"
           >
             {triggerMut.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
             <Play className="w-4 h-4" /> Trigger build

@@ -272,7 +272,8 @@ export default function SWGPage() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Web Gateway</h2>
+          <p className="page-eyebrow">Policy management</p>
+          <h2 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">Web Gateway</h2>
           <p className="text-sm text-muted-foreground mt-1">
             Block or alert on sites by domain, domain pattern or category — and see everything
             the gateway did.
@@ -280,7 +281,7 @@ export default function SWGPage() {
         </div>
         <button
           onClick={openCreate}
-          className="inline-flex items-center gap-2 rounded-lg bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground hover:bg-brand-600"
+          className="inline-flex items-center gap-2 rounded-lg bg-primary px-3.5 py-2 font-mono text-[12px] font-medium uppercase tracking-[0.06em] text-primary-foreground hover:bg-brand-600"
         >
           <Plus className="w-4 h-4" /> New policy
         </button>
@@ -293,7 +294,7 @@ export default function SWGPage() {
             <div className={`p-2 rounded-lg ${s.color}`}><s.icon className="w-4 h-4" /></div>
             <div>
               <p className="text-xs text-muted-foreground">{s.label}</p>
-              <p className="text-xl font-bold text-foreground">{s.value}</p>
+              <p className="[font-family:Satoshi,var(--font-inter),sans-serif] text-[1.5rem] font-medium leading-tight tracking-[-0.02em] text-foreground">{s.value}</p>
             </div>
           </div>
         ))}
@@ -316,7 +317,7 @@ export default function SWGPage() {
           <button
             onClick={handleCheck}
             disabled={checking}
-            className="flex items-center gap-2 bg-brand-500 text-on-brand px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-60"
+            className="flex items-center gap-2 bg-brand-500 text-on-brand px-4 py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em] disabled:opacity-60"
           >
             {checking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
             Check
@@ -534,7 +535,7 @@ export default function SWGPage() {
       {/* Create / edit policy */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <div className="bg-card rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+          <div className="bg-card rounded-lg border border-border shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-5 border-b border-border">
               <h3 className="font-semibold text-foreground">{form.id ? "Edit policy" : "New web gateway policy"}</h3>
               <button onClick={() => setShowForm(false)} className="text-subtle hover:text-foreground"><X className="w-5 h-5" /></button>
@@ -669,7 +670,7 @@ export default function SWGPage() {
               <button
                 onClick={submit}
                 disabled={saveMut.isPending}
-                className="flex-1 bg-primary text-primary-foreground py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-60"
+                className="flex-1 bg-primary text-primary-foreground py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em] flex items-center justify-center gap-2 disabled:opacity-60"
               >
                 {saveMut.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
                 {form.id ? "Save changes" : "Create policy"}
@@ -682,7 +683,7 @@ export default function SWGPage() {
       {/* Delete confirm */}
       {deleteId && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <div className="bg-card rounded-2xl shadow-2xl w-full max-w-sm p-6">
+          <div className="bg-card rounded-lg border border-border shadow-2xl w-full max-w-sm p-6">
             <div className="w-12 h-12 bg-red-500/10 rounded-xl flex items-center justify-center mx-auto mb-4">
               <Trash2 className="w-5 h-5 text-danger" />
             </div>

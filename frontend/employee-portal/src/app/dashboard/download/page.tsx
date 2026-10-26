@@ -161,7 +161,8 @@ export default function DownloadPage() {
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-foreground">Install Aavishield</h1>
+        <p className="page-eyebrow">Get protected</p>
+        <h1 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">Install Aavishield</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Download the installer for your computer and open it. It takes about two minutes, and your device
           connects to your company on its own.
@@ -187,7 +188,7 @@ export default function DownloadPage() {
               <p.icon className="h-5 w-5" />
               <span>{p.label}</span>
               {detected === id && (
-                <span className={cn("rounded-full px-1.5 py-0.5 text-[10px] font-semibold", active ? "bg-brand-500 text-white" : "bg-muted text-muted-foreground")}>
+                <span className={cn("rounded-[4px] px-1.5 py-0.5 text-[10px] font-semibold", active ? "bg-brand-500 text-white" : "bg-muted text-muted-foreground")}>
                   This device
                 </span>
               )}
@@ -234,7 +235,7 @@ export default function DownloadPage() {
                   href={pkg.url}
                   download={pkg.filename}
                   onClick={() => setStartedAt(Date.now())}
-                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-brand-600"
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-6 py-3 font-mono text-[12px] font-medium uppercase tracking-[0.06em] text-primary-foreground transition-colors hover:bg-brand-600"
                 >
                   <Download className="h-5 w-5" /> Download for {platform.label}
                 </a>

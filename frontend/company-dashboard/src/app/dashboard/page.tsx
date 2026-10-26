@@ -26,15 +26,16 @@ function Card({ title, subtitle, action, children, className }: {
   title: string; subtitle?: string; action?: React.ReactNode; children: React.ReactNode; className?: string;
 }) {
   return (
-    <section className={cn("bg-card rounded-xl border border-border shadow-sm p-5", className)}>
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div>
-          <h3 className="font-semibold text-foreground text-sm">{title}</h3>
-          {subtitle && <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>}
-        </div>
+    // The website's UI card: a mono title bar over a hairline, then the content.
+    <section className={cn("rounded-lg border border-border bg-card", className)}>
+      <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-3">
+        <h3 className="font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-foreground">{title}</h3>
         {action}
       </div>
-      {children}
+      <div className="p-5">
+        {subtitle && <p className="-mt-1 mb-4 text-[13px] text-muted-foreground">{subtitle}</p>}
+        {children}
+      </div>
     </section>
   );
 }
@@ -51,26 +52,30 @@ function Delta({ value }: { value: number | null | undefined }) {
   );
 }
 
+// Card-header links, in the website's mono style.
+const HEAD_LINK = "inline-flex items-center gap-1 font-mono text-[10.5px] uppercase tracking-[0.08em] text-brand-600 transition-colors hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300";
+
 type Tone = "good" | "warn" | "bad";
+// Square markers, the website's pixel language.
 const TONE_DOT: Record<Tone, string> = { good: "bg-green-500", warn: "bg-yellow-500", bad: "bg-red-500" };
 
 function StatusItem({ icon: Icon, label, value, detail, tone, href }: {
   icon: React.ElementType; label: string; value: string; detail: string; tone: Tone; href: string;
 }) {
   return (
-    <Link href={href} className="group flex items-start gap-3 rounded-lg p-3 hover:bg-elevated transition-colors">
-      <div className="p-2 rounded-lg bg-elevated text-muted-foreground flex-shrink-0">
-        <Icon className="w-4 h-4" />
+    <Link href={href} className="group flex items-start gap-3 rounded-md p-3 transition-colors hover:bg-elevated">
+      <div className="grid h-9 w-9 flex-shrink-0 place-items-center rounded-md border border-border bg-background text-subtle transition-colors group-hover:text-brand-500">
+        <Icon className="h-4 w-4" />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-          <span className={cn("w-1.5 h-1.5 rounded-full", TONE_DOT[tone])} />
+        <p className="flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-muted-foreground">
+          <span className={cn("h-1.5 w-1.5", TONE_DOT[tone])} />
           {label}
         </p>
-        <p className="text-lg font-semibold text-foreground tabular-nums">{value}</p>
-        <p className="text-[11px] text-subtle">{detail}</p>
+        <p className="mt-1.5 [font-family:Satoshi,var(--font-inter),sans-serif] text-[1.3rem] font-medium leading-tight tracking-[-0.02em] text-foreground tabular-nums">{value}</p>
+        <p className="mt-0.5 text-[12px] text-subtle">{detail}</p>
       </div>
-      <ArrowRight className="w-3.5 h-3.5 text-faint mt-1 opacity-0 group-hover:opacity-100 transition-opacity" />
+      <ArrowRight className="mt-1 h-3.5 w-3.5 text-brand-500 opacity-0 transition-[opacity,transform] group-hover:translate-x-0.5 group-hover:opacity-100" />
     </Link>
   );
 }
@@ -85,9 +90,9 @@ function Onboarding({ h }: { h: Health }) {
     <Card title="Get protected in three steps" subtitle="Figures appear here as soon as the first device reports in.">
       <ol className="grid gap-3 md:grid-cols-3">
         {steps.map((s, i) => (
-          <li key={s.title} className={cn("rounded-lg border p-4", s.done ? "border-green-500/30 bg-green-500/5" : "border-border")}>
+          <li key={s.title} className={cn("rounded-md border p-4", s.done ? "border-green-500/30 bg-green-500/5" : "border-border")}>
             <div className="flex items-center gap-2">
-              {s.done ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <span className="grid w-5 h-5 place-items-center rounded-full bg-brand-500/15 text-[11px] font-semibold text-brand-500">{i + 1}</span>}
+              {s.done ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <span className="grid h-5 w-5 place-items-center rounded-[3px] bg-brand-tint font-mono text-[10.5px] font-medium text-brand-700 dark:text-brand-300">{i + 1}</span>}
               <p className="text-sm font-medium text-foreground">{s.title}</p>
             </div>
             <p className="mt-2 text-xs text-muted-foreground">{s.body}</p>
@@ -127,15 +132,18 @@ export default function DashboardPage() {
     <div className="space-y-6">
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Security Overview</h2>
-          <p className="text-sm text-muted-foreground mt-1">{isLoading ? "Loading…" : periodText(period)}</p>
+          <p className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.12em] text-brand-600 dark:text-brand-400">
+            <span className="size-1.5 bg-brand-500" />
+            {isLoading ? "Loading…" : periodText(period)}
+          </p>
+          <h2 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">Security overview</h2>
         </div>
         <PeriodPicker value={period} onChange={setPeriod} options={["today", "7d", "30d", "this_month", "3m"]} />
       </div>
 
       {isLoading ? (
         <div className="grid gap-4">
-          {[120, 220, 300].map((hgt, i) => <div key={i} style={{ height: hgt }} className="rounded-xl bg-card border border-border animate-pulse" />)}
+          {[120, 220, 300].map((hgt, i) => <div key={i} style={{ height: hgt }} className="rounded-lg bg-card border border-border animate-pulse" />)}
         </div>
       ) : noDevices ? (
         <Onboarding h={h} />
@@ -177,12 +185,12 @@ export default function DashboardPage() {
                   const empty = !s.count;
                   return (
                     <Link key={c.id} href={reportLink("incidents", c.id)}
-                      className={cn("rounded-lg border border-border p-3 transition-colors hover:bg-elevated", empty && "opacity-60")}>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <c.icon className="w-3.5 h-3.5" /> {c.label}
+                      className={cn("group rounded-md border border-border p-3.5 transition-colors hover:border-border-strong hover:bg-elevated", empty && "opacity-60")}>
+                      <div className="flex items-center gap-2 font-mono text-[10.5px] uppercase tracking-[0.06em] text-muted-foreground">
+                        <c.icon className="h-3.5 w-3.5 text-subtle transition-colors group-hover:text-brand-500" /> {c.label}
                       </div>
-                      <p className="mt-2 text-2xl font-bold tabular-nums text-foreground">{formatNumber(s.count ?? 0)}</p>
-                      <p className="mt-1 text-[11px] text-subtle">
+                      <p className="mt-2.5 [font-family:Satoshi,var(--font-inter),sans-serif] text-[1.9rem] font-medium leading-none tracking-[-0.03em] tabular-nums text-foreground">{formatNumber(s.count ?? 0)}</p>
+                      <p className="mt-2 text-[12px] text-subtle">
                         {empty ? "None in this period" : `${s.blocked} blocked, ${s.alerted} flagged`}
                       </p>
                     </Link>
@@ -220,7 +228,7 @@ export default function DashboardPage() {
           <Card
             title="Incidents over time"
             subtitle={d.period?.bucket === "hour" ? "Per hour, by control" : "Per day, by control"}
-            action={<Link href={reportLink("incidents")} className="text-xs text-brand-500 hover:text-brand-400 flex items-center gap-1">All incidents <ArrowRight className="w-3 h-3" /></Link>}
+            action={<Link href={reportLink("incidents")} className={HEAD_LINK}>All incidents <ArrowRight className="h-3 w-3" /></Link>}
           >
             {(totals.incidents ?? 0) === 0 ? (
               <div className="h-[200px] flex flex-col items-center justify-center text-center">
@@ -235,7 +243,7 @@ export default function DashboardPage() {
 
           <div className="grid gap-4 lg:grid-cols-2">
             <Card title="Blocked applications" subtitle="Apps stopped from running, including VPN clients"
-              action={<Link href={reportLink("apps")} className="text-xs text-brand-500 hover:text-brand-400">Report</Link>}>
+              action={<Link href={reportLink("apps")} className={HEAD_LINK}>Report <ArrowRight className="h-3 w-3" /></Link>}>
               <BarList
                 empty="No application was blocked"
                 items={(d.top_apps ?? []).map((a: any) => ({
@@ -248,7 +256,7 @@ export default function DashboardPage() {
             </Card>
 
             <Card title="Where sensitive data went" subtitle="Data protection findings by destination"
-              action={<Link href={reportLink("dlp")} className="text-xs text-brand-500 hover:text-brand-400">Report</Link>}>
+              action={<Link href={reportLink("dlp")} className={HEAD_LINK}>Report <ArrowRight className="h-3 w-3" /></Link>}>
               <BarList
                 color="bg-yellow-500/15"
                 empty="No sensitive data detected"
@@ -261,7 +269,7 @@ export default function DashboardPage() {
               {(d.dlp_types ?? []).length > 0 && (
                 <div className="mt-4 flex flex-wrap gap-1.5">
                   {(d.dlp_types as any[]).map((t) => (
-                    <span key={t.label} className="rounded-full bg-elevated px-2.5 py-1 text-[11px] text-body">
+                    <span key={t.label} className="rounded-[3px] border border-border bg-background px-2 py-1 font-mono text-[10.5px] uppercase tracking-[0.04em] text-body">
                       {t.label} <span className="text-subtle tabular-nums">{t.count}</span>
                     </span>
                   ))}
@@ -270,7 +278,7 @@ export default function DashboardPage() {
             </Card>
 
             <Card title="Blocked websites" subtitle="Most-attempted sites and the rule that stopped them"
-              action={<Link href={reportLink("web")} className="text-xs text-brand-500 hover:text-brand-400">Report</Link>}>
+              action={<Link href={reportLink("web")} className={HEAD_LINK}>Report <ArrowRight className="h-3 w-3" /></Link>}>
               <BarList
                 color="bg-blue-500/15"
                 empty="No website was blocked"
@@ -279,7 +287,7 @@ export default function DashboardPage() {
             </Card>
 
             <Card title="People with the most incidents" subtitle="Worth a conversation, not necessarily a warning"
-              action={<Link href={reportLink("employee-risk")} className="text-xs text-brand-500 hover:text-brand-400">Report</Link>}>
+              action={<Link href={reportLink("employee-risk")} className={HEAD_LINK}>Report <ArrowRight className="h-3 w-3" /></Link>}>
               {(d.top_users ?? []).length === 0 ? (
                 <p className="py-8 text-center text-sm text-subtle">No employee incidents in this period</p>
               ) : (
@@ -290,16 +298,16 @@ export default function DashboardPage() {
                         <p className="truncate text-sm font-medium text-foreground">{u.name?.trim() || u.email}</p>
                         <div className="mt-1 flex flex-wrap gap-1">
                           {CONTROLS.filter((c) => u[c.id] > 0).map((c) => (
-                            <span key={c.id} className="rounded bg-elevated px-1.5 py-0.5 text-[10px] text-body">
+                            <span key={c.id} className="rounded-[3px] bg-elevated px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.04em] text-body">
                               {c.label} {u[c.id]}
                             </span>
                           ))}
                           {u.high_dlp > 0 && (
-                            <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-danger">{u.high_dlp} high-severity data</span>
+                            <span className="rounded-[3px] bg-red-500/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.04em] text-danger">{u.high_dlp} high-severity data</span>
                           )}
                         </div>
                       </div>
-                      <span className="text-lg font-semibold tabular-nums text-foreground">{u.incidents}</span>
+                      <span className="[font-family:Satoshi,var(--font-inter),sans-serif] text-[1.35rem] font-medium tracking-[-0.02em] tabular-nums text-foreground">{u.incidents}</span>
                     </li>
                   ))}
                 </ul>
@@ -309,8 +317,8 @@ export default function DashboardPage() {
         </>
       )}
 
-      <p className="text-xs text-subtle flex items-center gap-1.5">
-        <Clock className="w-3 h-3" /> Refreshes every minute. Times shown in your time zone.
+      <p className="flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-subtle">
+        <Clock className="h-3 w-3" /> Refreshes every minute · Times in your time zone
       </p>
     </div>
   );

@@ -104,7 +104,7 @@ function PermissionCells({ device }: { device: Device }) {
           <span
             key={it.label}
             title={it.hint}
-            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium w-fit ${cls}`}
+            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] text-[11px] font-medium w-fit whitespace-nowrap ${cls}`}
           >
             {it.label}: {text}
           </span>
@@ -190,7 +190,8 @@ export default function DevicesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-foreground">Devices</h2>
+        <p className="page-eyebrow">Organization</p>
+        <h2 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">Devices</h2>
         <p className="text-sm text-muted-foreground mt-1">Endpoint agent status and management</p>
       </div>
 
@@ -200,7 +201,7 @@ export default function DevicesPage() {
             <div className={`p-2 rounded-lg ${s.color}`}><s.icon className="w-4 h-4" /></div>
             <div>
               <p className="text-xs text-muted-foreground">{s.label}</p>
-              <p className="text-xl font-bold text-foreground">{s.value}</p>
+              <p className="[font-family:Satoshi,var(--font-inter),sans-serif] text-[1.5rem] font-medium leading-tight tracking-[-0.02em] text-foreground">{s.value}</p>
             </div>
           </div>
         ))}
@@ -272,7 +273,7 @@ export default function DevicesPage() {
                     <td className="px-5 py-4 text-muted-foreground text-xs">{[d.os_type, d.os_version].filter(Boolean).join(" ") || "Unknown"}</td>
                     <td className="px-5 py-4 text-muted-foreground text-xs font-mono">{d.agent_version || "unknown"}</td>
                     <td className="px-5 py-4">
-                      <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${STATUS_COLORS[d.status] ?? "bg-elevated text-body"}`}>
+                      <span className={`px-2.5 py-1 rounded-[4px] text-xs font-medium ${STATUS_COLORS[d.status] ?? "bg-elevated text-body"}`}>
                         {d.status}
                       </span>
                     </td>

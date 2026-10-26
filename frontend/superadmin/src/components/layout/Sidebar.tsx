@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  LayoutDashboard, Building2, Activity, Settings, ChevronLeft, ChevronRight, Download, AppWindow,
+  LayoutDashboard, Building2, Activity, Settings, PanelLeftClose, PanelLeftOpen, Download, AppWindow,
   HeartPulse, ClipboardList, Users2, CreditCard, ShieldAlert, Megaphone, Flag, LifeBuoy, Inbox, Newspaper, BookOpen,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
@@ -78,26 +78,26 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        "relative flex h-screen flex-shrink-0 flex-col border-r border-border bg-[#0A0A0A] text-foreground transition-all duration-300",
+        "relative flex h-screen flex-shrink-0 flex-col border-r border-border bg-card text-foreground transition-[width] duration-300",
         collapsed ? "w-16" : "w-64",
       )}
     >
-      <div className="flex items-center gap-3 border-b border-border px-4 py-5">
+      <div className={cn("flex h-16 shrink-0 items-center border-b border-border", collapsed ? "justify-center" : "justify-between px-4")}>
         {collapsed ? (
-          <BrandMark className="h-8 w-8" />
+          <BrandMark className="h-7 w-7" />
         ) : (
-          <div className="min-w-0">
-            <BrandLogo className="h-[72px]" priority />
-            <p className="mt-1 text-xs text-muted-foreground">Superadmin</p>
-          </div>
+          <>
+            <BrandLogo className="text-[20px]" />
+            <span className="font-mono text-[9.5px] uppercase tracking-[0.12em] text-subtle">Superadmin</span>
+          </>
         )}
       </div>
 
-      <nav className="flex-1 overflow-y-auto px-2 py-3">
+      <nav className="sidebar-scroll flex-1 overflow-y-auto px-3 py-4">
         {NAV.map((group) => (
-          <div key={group.section || "home"} className="mb-3">
+          <div key={group.section || "home"} className="mb-4">
             {group.section && !collapsed && (
-              <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-[#6B6B6B]">{group.section}</p>
+              <p className="px-2.5 pb-1.5 pt-1 font-mono text-[10.5px] uppercase tracking-[0.12em] text-subtle">{group.section}</p>
             )}
             {group.section && collapsed && <div className="mx-3 my-2 border-t border-border" />}
             <div className="space-y-0.5">
@@ -110,18 +110,21 @@ export function Sidebar() {
                     href={item.href}
                     title={collapsed ? item.label : undefined}
                     className={cn(
-                      "relative flex items-center gap-3 rounded-lg border-l-2 px-3 py-2 text-sm font-medium transition-colors",
+                      "relative flex h-9 items-center gap-3 rounded-md px-2.5 text-[13.5px] font-medium transition-colors",
+                      collapsed && "justify-center px-0",
                       active
-                        ? "border-brand-500 bg-brand-500/10 text-brand-500"
-                        : "border-transparent text-muted-foreground hover:bg-muted hover:text-foreground",
+                        ? "bg-brand-tint text-brand-700"
+                        : "text-muted-foreground hover:bg-elevated hover:text-foreground",
                     )}
                   >
-                    <item.icon className="h-[18px] w-[18px] flex-shrink-0" />
+                    {/* The website's pixel marker on the active row. */}
+                    {active && !collapsed && <span aria-hidden className="absolute -left-2 top-1/2 h-4 w-[3px] -translate-y-1/2 bg-brand-500" />}
+                    <item.icon className={cn("h-[18px] w-[18px] flex-shrink-0", active ? "text-brand-500" : "text-subtle")} />
                     {!collapsed && <span className="flex-1 truncate">{item.label}</span>}
                     {count > 0 && (
                       <span
                         className={cn(
-                          "rounded-full bg-brand-500 text-center text-[11px] font-semibold text-[#0A0A0A]",
+                          "rounded-[4px] bg-brand-500 text-center font-mono text-[10.5px] font-medium text-white",
                           collapsed ? "absolute right-1 top-1 h-2 w-2 p-0 text-[0px]" : "min-w-5 px-1.5 py-0.5",
                         )}
                       >
@@ -136,13 +139,23 @@ export function Sidebar() {
         ))}
       </nav>
 
-      <button
-        onClick={() => setCollapsed(!collapsed)}
-        aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        className="absolute -right-3 top-20 flex h-6 w-6 items-center justify-center rounded-full border border-border bg-card shadow-md transition-colors hover:bg-muted"
-      >
-        {collapsed ? <ChevronRight className="h-3 w-3 text-muted-foreground" /> : <ChevronLeft className="h-3 w-3 text-muted-foreground" />}
-      </button>
+      {/* Footer: collapse control, in the website's mono label style. */}
+      <div className="border-t border-border p-2">
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={collapsed ? "Expand sidebar" : undefined}
+          className={cn(
+            "group flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 font-mono text-[10.5px] uppercase tracking-[0.1em] text-subtle transition-colors hover:bg-elevated hover:text-foreground",
+            collapsed && "justify-center px-0",
+          )}
+        >
+          {collapsed
+            ? <PanelLeftOpen className="h-[18px] w-[18px]" />
+            : <PanelLeftClose className="h-[18px] w-[18px]" />}
+          {!collapsed && <span>Collapse</span>}
+        </button>
+      </div>
     </aside>
   );
 }

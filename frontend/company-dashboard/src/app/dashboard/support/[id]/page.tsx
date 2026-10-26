@@ -148,7 +148,7 @@ function TicketView() {
       <header className="rounded-xl border border-border bg-card p-5 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
-            <h2 className="text-xl font-bold tracking-tight text-foreground">{t.subject}</h2>
+            <h2 className="text-[1.5rem] font-normal leading-[1.15] tracking-[-0.03em] text-foreground">{t.subject}</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               <span className="font-mono">{t.ref}</span> · {t.category_name}
               {" · "}<span className={cn("capitalize", priorityTone(t.priority))}>{t.priority} priority</span>
@@ -159,7 +159,7 @@ function TicketView() {
             <StatusBadge status={t.status} />
             {!done && (
               <button onClick={() => resolve.mutate()} disabled={resolve.isPending}
-                className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium text-body hover:bg-elevated disabled:opacity-60">
+                className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 font-mono text-[12px] font-medium uppercase tracking-[0.06em] text-body hover:bg-elevated disabled:opacity-60">
                 {resolve.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                 Mark as resolved
               </button>
@@ -180,11 +180,11 @@ function TicketView() {
               {!feedbackOpen ? (
                 <div className="mt-3 flex gap-2">
                   <button onClick={() => feedback.mutate({ rating: 1 })} disabled={feedback.isPending}
-                    className="flex items-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600">
+                    className="flex items-center gap-2 rounded-lg bg-brand-500 px-4 py-2 font-mono text-[12px] font-medium uppercase tracking-[0.06em] text-white hover:bg-brand-600">
                     <ThumbsUp className="h-4 w-4" /> Yes, it's fixed
                   </button>
                   <button onClick={() => setFeedbackOpen(true)}
-                    className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-body hover:bg-elevated">
+                    className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 font-mono text-[12px] font-medium uppercase tracking-[0.06em] text-body hover:bg-elevated">
                     <ThumbsDown className="h-4 w-4" /> Not yet
                   </button>
                 </div>

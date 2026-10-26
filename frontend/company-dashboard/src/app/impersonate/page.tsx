@@ -3,7 +3,8 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
-import { Shield, Loader2, AlertTriangle } from "lucide-react";
+import { Loader2, AlertTriangle } from "lucide-react";
+import { BrandLogo } from "@/components/brand/BrandLogo";
 
 export default function ImpersonatePage() {
   return (
@@ -35,23 +36,25 @@ function ImpersonateInner() {
   }, []);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background px-4">
-      <div className="max-w-sm w-full text-center space-y-4">
-        <div className="w-12 h-12 bg-brand-500/10 rounded-xl flex items-center justify-center mx-auto">
-          <Shield className="w-6 h-6 text-brand-500" />
-        </div>
+    <div className="grid min-h-screen place-items-center bg-[#fafafa] px-6 text-[#0b0b0d] [color-scheme:light]">
+      <div className="w-full max-w-[400px] text-center">
+        <BrandLogo className="text-[24px]" ink="text-[#0b0b0d]" />
         {error ? (
           <>
-            <AlertTriangle className="w-8 h-8 text-red-400 mx-auto" />
-            <h1 className="text-lg font-semibold text-foreground">Couldn't sign you in</h1>
-            <p className="text-sm text-muted-foreground">{error}</p>
-            <p className="text-xs text-[#6B6B6B]">Ask the superadmin to start a new "View as Org" session.</p>
+            <p className="mt-10 flex items-center justify-center gap-2 font-mono text-[11px] uppercase tracking-[0.12em] text-[#b42318]">
+              <AlertTriangle className="h-3.5 w-3.5" /> Session not started
+            </p>
+            <h1 className="mt-3 [font-family:Satoshi,var(--font-inter),sans-serif] text-[1.75rem] font-normal tracking-[-0.03em]">Couldn&apos;t sign you in</h1>
+            <p className="mt-2 text-[15px] text-[#5d5d66]">{error}</p>
+            <p className="mt-4 text-[13px] text-[#71717a]">Ask the superadmin to start a new &quot;View as Org&quot; session.</p>
           </>
         ) : (
           <>
-            <Loader2 className="w-6 h-6 animate-spin text-brand-500 mx-auto" />
-            <h1 className="text-lg font-semibold text-foreground">Signing you in…</h1>
-            <p className="text-sm text-muted-foreground">Starting a temporary support session.</p>
+            <p className="mt-10 flex items-center justify-center gap-2 font-mono text-[11px] uppercase tracking-[0.12em] text-[#c2410c]">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Support session
+            </p>
+            <h1 className="mt-3 [font-family:Satoshi,var(--font-inter),sans-serif] text-[1.75rem] font-normal tracking-[-0.03em]">Signing you in…</h1>
+            <p className="mt-2 text-[15px] text-[#5d5d66]">Starting a temporary support session.</p>
           </>
         )}
       </div>

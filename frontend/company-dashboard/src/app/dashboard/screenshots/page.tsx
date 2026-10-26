@@ -93,7 +93,8 @@ export default function ScreenshotsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-foreground">Screenshots</h1>
+        <p className="page-eyebrow">Monitoring</p>
+        <h1 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">Screenshots</h1>
         <p className="text-sm text-muted-foreground mt-1">
           Screenshots, activity timeline and work sessions for an employee on a chosen day.
         </p>
@@ -156,7 +157,7 @@ export default function ScreenshotsPage() {
           <button
             onClick={() => refetch()}
             disabled={!employeeId || isFetching}
-            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-brand-600 disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 font-mono text-[12px] font-medium uppercase tracking-[0.06em] text-primary-foreground hover:bg-brand-600 disabled:opacity-60"
           >
             <RefreshCw className={cn("w-4 h-4", isFetching && "animate-spin")} />
             Latest screens

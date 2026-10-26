@@ -84,7 +84,7 @@ export function PeriodPicker({
               <button
                 disabled={!!error}
                 onClick={() => { onChange(periodFor("custom", { start, end })); setOpen(false); }}
-                className="mt-3 w-full rounded-lg bg-brand-500 py-2 text-sm font-medium text-white disabled:opacity-50"
+                className="mt-3 w-full rounded-lg bg-brand-500 py-2 font-mono text-[12px] font-medium uppercase tracking-[0.06em] text-white disabled:opacity-50"
               >
                 Apply range
               </button>

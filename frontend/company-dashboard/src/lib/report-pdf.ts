@@ -4,6 +4,8 @@
  * dashboard bundle.
  */
 
+import { MARK } from "@/components/brand/BrandLogo";
+
 export const PDF_ROW_LIMIT = 2000;
 
 type Report = {
@@ -23,18 +25,40 @@ const CONTROL_LABELS: Record<string, string> = {
   vpn: "VPN & bypass", threats: "Malware & threats", devices: "Device health",
 };
 
-/** The Aavishield logo as a data URL for jsPDF, or null if it can't be fetched. */
-async function loadLogo(): Promise<string | null> {
+/**
+ * The Aavishield logo (the website's mark plus "Aavishield" in Sora SemiBold)
+ * drawn onto a canvas, as a PNG data URL for jsPDF with its pixel size, or null
+ * if the browser can't draw it.
+ */
+async function loadLogo(): Promise<{ url: string; w: number; h: number } | null> {
   try {
-    const res = await fetch("/brand/logo-horizontal-tagline-light.png");
-    if (!res.ok) return null;
-    const blob = await res.blob();
-    return await new Promise((resolve) => {
-      const r = new FileReader();
-      r.onload = () => resolve(typeof r.result === "string" ? r.result : null);
-      r.onerror = () => resolve(null);
-      r.readAsDataURL(blob);
-    });
+    const family = getComputedStyle(document.body).getPropertyValue("--font-sora").trim() || "sans-serif";
+    const px = 120; // drawn large, then scaled down in the PDF so it stays sharp
+    const font = `600 ${px}px ${family}`;
+    await document.fonts.load(font);
+    const canvas = document.createElement("canvas");
+    let ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.font = font;
+    // Same proportions as BrandLogo: mark 1.22em tall, 0.28em from the word.
+    const markH = px * 1.22;
+    const markW = markH * (181 / 190);
+    const gap = px * 0.28;
+    canvas.width = Math.ceil(markW + gap + ctx.measureText("Aavishield").width + px * 0.1);
+    canvas.height = Math.ceil(markH);
+    ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.save();
+    ctx.scale(markH / 190, markH / 190);
+    ctx.translate(-446, -445);
+    ctx.fillStyle = "#ff7000";
+    ctx.fill(new Path2D(MARK));
+    ctx.restore();
+    ctx.font = font;
+    ctx.fillStyle = "#0b0b0d";
+    ctx.textBaseline = "middle";
+    ctx.fillText("Aavishield", markW + gap, markH / 2 + px * 0.04);
+    return { url: canvas.toDataURL("image/png"), w: canvas.width, h: canvas.height };
   } catch {
     return null;
   }
@@ -55,8 +79,8 @@ export async function downloadReportPdf(report: Report, opts: { period: string; 
   doc.setFont("helvetica", "bold");
   doc.setTextColor(...INK);
   if (logo) {
-    // Brand lockup with tagline is 1400x467 (3:1, with its own margin); draw it 44pt tall.
-    doc.addImage(logo, "PNG", margin - 6, 16, 44 * (1400 / 467), 44);
+    // Drawn 24pt tall, keeping the canvas's aspect ratio.
+    doc.addImage(logo.url, "PNG", margin, 24, 24 * (logo.w / logo.h), 24);
   } else {
     doc.setFontSize(12);
     doc.text("Aavishield", margin, 43);

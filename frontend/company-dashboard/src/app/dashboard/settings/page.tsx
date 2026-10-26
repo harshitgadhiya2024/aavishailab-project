@@ -105,7 +105,7 @@ function PasswordPanel() {
         <button
           type="submit"
           disabled={mut.isPending}
-          className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-on-brand px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-60"
+          className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-on-brand px-4 py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em] disabled:opacity-60"
         >
           {mut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
           Change password
@@ -194,7 +194,7 @@ function NotificationsPanel({ canWrite }: { canWrite: boolean }) {
             <button
               onClick={() => mut.mutate(prefs)}
               disabled={!dirty || mut.isPending}
-              className="mt-4 flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-on-brand px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
+              className="mt-4 flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-on-brand px-4 py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em] disabled:opacity-50"
             >
               {mut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               Save preferences
@@ -261,7 +261,7 @@ function OrgSecurityPanel({ canManageUsers }: { canManageUsers: boolean }) {
               are excluded from decryption
             </p>
           </div>
-          <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-success whitespace-nowrap">
+          <span className="rounded-[4px] bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-success whitespace-nowrap">
             Enabled
           </span>
         </div>
@@ -405,7 +405,7 @@ function WorkingHoursPanel({ canWrite }: { canWrite: boolean }) {
         <button
           onClick={() => draft && saveMut.mutate(draft)}
           disabled={!canWrite || !draft || draft.windows.length === 0 || saveMut.isPending}
-          className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-brand-600 disabled:opacity-60"
+          className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 font-mono text-[12px] font-medium uppercase tracking-[0.06em] text-primary-foreground hover:bg-brand-600 disabled:opacity-60"
         >
           {saveMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
           Save working hours
@@ -551,7 +551,7 @@ function MonitoringPanel({ canWrite }: { canWrite: boolean }) {
         <button
           onClick={() => saveMut.mutate(draft)}
           disabled={!canWrite || saveMut.isPending}
-          className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-brand-600 disabled:opacity-60"
+          className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 font-mono text-[12px] font-medium uppercase tracking-[0.06em] text-primary-foreground hover:bg-brand-600 disabled:opacity-60"
         >
           {saveMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
           Save monitoring settings
@@ -624,7 +624,7 @@ function BlockPagePanel({ canWrite }: { canWrite: boolean }) {
         <button
           onClick={() => save.mutate()}
           disabled={save.isPending || isLoading}
-          className="rounded-lg bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground hover:bg-brand-600 disabled:opacity-60"
+          className="rounded-lg bg-primary px-3.5 py-2 font-mono text-[12px] font-medium uppercase tracking-[0.06em] text-primary-foreground hover:bg-brand-600 disabled:opacity-60"
         >
           {save.isPending ? "Saving..." : "Save"}
         </button>
@@ -718,7 +718,8 @@ export default function SettingsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-foreground">Settings</h2>
+        <p className="page-eyebrow">Account</p>
+        <h2 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">Settings</h2>
         <p className="text-sm text-muted-foreground mt-1">
           Your sign-in security, and how this organization is configured
         </p>
