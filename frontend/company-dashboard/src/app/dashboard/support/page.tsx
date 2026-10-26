@@ -40,13 +40,12 @@ export default function SupportCenterPage() {
   return (
     <div className="mx-auto max-w-6xl space-y-8">
       {/* Hero */}
-      <section className="relative overflow-hidden rounded-2xl border border-border bg-card px-6 py-8 shadow-sm md:px-10 md:py-10">
-        <div aria-hidden className="pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full bg-brand-500/15 blur-3xl" />
-        <div aria-hidden className="pointer-events-none absolute -bottom-24 right-40 h-56 w-56 rounded-full border border-brand-500/20" />
+      {/* The website’s pixel-grid panel: soft brand tint, fine orange grid. */}
+      <section className="relative overflow-hidden rounded-lg border border-brand-500/15 bg-brand-tint-soft px-6 py-8 [background-image:linear-gradient(rgb(255_112_0/0.07)_1px,transparent_1px),linear-gradient(90deg,rgb(255_112_0/0.07)_1px,transparent_1px)] [background-size:12px_12px] md:px-10 md:py-10">
         <div className="relative flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
           <div className="max-w-xl">
-            <p className="text-sm font-medium text-brand-500">Aavishield Support</p>
-            <h2 className="mt-2 text-3xl font-bold tracking-tight text-foreground">
+            <p className="page-eyebrow">Aavishield support</p>
+            <h2 className="mt-2 text-[2.2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">
               {first ? `Hi ${first}, how can we help?` : "How can we help?"}
             </h2>
             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
@@ -55,7 +54,7 @@ export default function SupportCenterPage() {
             </p>
           </div>
           <Link href="/dashboard/support/new"
-            className="inline-flex items-center gap-2 self-start rounded-lg bg-brand-500 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-600 md:self-auto">
+            className="inline-flex items-center gap-2 self-start rounded-lg bg-brand-500 px-5 py-2.5 font-mono text-[12px] font-medium uppercase tracking-[0.06em] text-white hover:bg-brand-600 md:self-auto">
             <Plus className="h-4 w-4" /> New request
           </Link>
         </div>
@@ -95,7 +94,7 @@ export default function SupportCenterPage() {
                     view === v.id ? "border-brand-500 font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>
                   {v.label}
                   {(counts[v.id] ?? 0) > 0 && (
-                    <span className={cn("ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
+                    <span className={cn("ml-1.5 rounded-[4px] px-1.5 py-0.5 text-[10px] font-semibold",
                       v.id === "waiting" ? "bg-brand-500 text-white" : "bg-elevated text-muted-foreground")}>{counts[v.id]}</span>
                   )}
                 </button>

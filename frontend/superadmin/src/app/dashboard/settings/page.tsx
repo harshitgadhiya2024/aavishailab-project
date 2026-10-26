@@ -65,7 +65,8 @@ export default function SettingsPage() {
   return (
     <div className="space-y-6 max-w-2xl">
       <div>
-        <h2 className="text-2xl font-bold text-foreground">Settings</h2>
+        <p className="page-eyebrow">Admin</p>
+        <h2 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">Settings</h2>
         <p className="text-sm text-muted-foreground mt-1">Platform-level configuration</p>
       </div>
 
@@ -153,7 +154,7 @@ export default function SettingsPage() {
                     <Field label="Audit Log Retention (days)">
                       <input disabled={!canEdit} type="number" min={1} className={inputCls} value={values.audit_log_days ?? 365} onChange={e => setField("data_retention", "audit_log_days", Number(e.target.value))} />
                     </Field>
-                    <p className="text-xs text-[#6B6B6B]">
+                    <p className="text-xs text-subtle">
                       Enforced by a daily background sweep — rows older than these windows are permanently deleted.
                     </p>
                   </>
@@ -167,7 +168,7 @@ export default function SettingsPage() {
                     <button
                       type="submit"
                       disabled={updateMut.isPending}
-                      className="flex-1 bg-primary text-primary-foreground py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-60"
+                      className="flex-1 bg-primary text-primary-foreground py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em] flex items-center justify-center gap-2 disabled:opacity-60"
                     >
                       {updateMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                       Save

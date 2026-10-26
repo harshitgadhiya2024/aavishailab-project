@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Users, UsersRound,
-  Activity, Globe, Monitor, ChevronLeft, ChevronRight, ChevronDown,
+  Activity, Globe, Monitor, ChevronDown, PanelLeftClose, PanelLeftOpen,
   BarChart3, FileWarning, Inbox, Tags, UserCog, AppWindow, Camera,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -117,13 +117,16 @@ export function Sidebar() {
         href={item.href}
         title={collapsed ? item.label : undefined}
         className={cn(
-          "flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm font-medium border-l-2",
+          "relative flex h-9 items-center gap-3 rounded-md px-2.5 text-[13.5px] font-medium transition-colors",
+          collapsed && "justify-center px-0",
           active
-            ? "bg-brand-500/10 text-brand-500 border-brand-500"
-            : "text-muted-foreground border-transparent hover:bg-muted hover:text-foreground"
+            ? "bg-brand-tint text-brand-700 dark:text-brand-300"
+            : "text-muted-foreground hover:bg-elevated hover:text-foreground"
         )}
       >
-        <item.icon className="w-5 h-5 flex-shrink-0" />
+        {/* The website's pixel marker on the active row. */}
+        {active && !collapsed && <span aria-hidden className="absolute -left-2 top-1/2 h-4 w-[3px] -translate-y-1/2 bg-brand-500" />}
+        <item.icon className={cn("h-[18px] w-[18px] flex-shrink-0", active ? "text-brand-500" : "text-subtle")} />
         {!collapsed && <span className="truncate">{item.label}</span>}
       </Link>
     );
@@ -132,25 +135,25 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        "h-screen bg-background text-foreground flex flex-col transition-all duration-300 relative border-r border-border",
+        "h-screen bg-card text-foreground flex flex-col transition-[width] duration-300 relative border-r border-border",
         collapsed ? "w-16" : "w-64"
       )}
     >
       {/* Logo */}
-      <div className="flex items-center gap-3 px-4 py-5 border-b border-border">
+      <div className={cn("flex h-16 shrink-0 items-center border-b border-border", collapsed ? "justify-center" : "justify-between px-4")}>
         {collapsed ? (
-          <BrandMark className="h-8 w-8" />
+          <BrandMark className="h-7 w-7" />
         ) : (
-          <div className="min-w-0">
-            <BrandLogo className="h-[72px]" priority />
-            <p className="mt-1 text-xs text-muted-foreground">Company Admin</p>
-          </div>
+          <>
+            <BrandLogo className="text-[20px]" />
+            <span className="font-mono text-[9.5px] uppercase tracking-[0.12em] text-subtle">Admin</span>
+          </>
         )}
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 py-3 px-2 overflow-y-auto">
-        <div className="space-y-1">{renderItem(overview)}</div>
+      <nav className="sidebar-scroll flex-1 overflow-y-auto px-3 py-4">
+        <div className="space-y-0.5">{renderItem(overview)}</div>
 
         {navGroups
           .map(group => ({ ...group, items: group.items.filter(i => !i.permission || can(i.permission)) }))
@@ -164,18 +167,18 @@ export function Sidebar() {
           const open = collapsed || !closedGroups.includes(group.id);
 
           return (
-            <div key={group.id} className={cn("mt-3", collapsed && "pt-3 border-t border-border")}>
+            <div key={group.id} className={cn("mt-5", collapsed && "mt-3 pt-3 border-t border-border")}>
               {!collapsed && (
                 <button
                   type="button"
                   onClick={() => toggleGroup(group.id)}
                   aria-expanded={open}
-                  className="w-full flex items-center justify-between px-3 py-1.5 rounded-lg group hover:bg-muted transition-colors"
+                  className="group flex w-full items-center justify-between px-2.5 pb-1.5"
                 >
                   <span
                     className={cn(
-                      "text-[11px] font-semibold uppercase tracking-wider",
-                      hasActive ? "text-brand-500" : "text-subtle group-hover:text-muted-foreground"
+                      "font-mono text-[10.5px] uppercase tracking-[0.12em] transition-colors",
+                      hasActive ? "text-brand-600 dark:text-brand-400" : "text-subtle group-hover:text-foreground"
                     )}
                   >
                     {group.label}
@@ -189,29 +192,30 @@ export function Sidebar() {
                 </button>
               )}
 
-              {open && <div className="space-y-1 mt-1">{group.items.map(renderItem)}</div>}
+              {open && <div className="space-y-0.5">{group.items.map(renderItem)}</div>}
             </div>
           );
         })}
       </nav>
 
-      {/* Collapse toggle */}
-      <button
-        onClick={() => setCollapsed(!collapsed)}
-        aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        className="absolute -right-3 top-20 w-6 h-6 bg-card border border-border rounded-full flex items-center justify-center shadow-md hover:bg-muted transition-colors"
-      >
-        {collapsed
-          ? <ChevronRight className="w-3 h-3 text-muted-foreground" />
-          : <ChevronLeft className="w-3 h-3 text-muted-foreground" />}
-      </button>
-
-      {/* Footer version */}
-      {!collapsed && (
-        <div className="px-4 py-3 border-t border-border">
-          <p className="text-xs text-muted-foreground">Aavishield v1.0 MVP</p>
-        </div>
-      )}
+      {/* Footer: collapse control, in the website's mono label style. */}
+      <div className="border-t border-border p-2">
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={collapsed ? "Expand sidebar" : undefined}
+          className={cn(
+            "group flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 font-mono text-[10.5px] uppercase tracking-[0.1em] text-subtle transition-colors hover:bg-elevated hover:text-foreground",
+            collapsed && "justify-center px-0",
+          )}
+        >
+          {collapsed
+            ? <PanelLeftOpen className="h-[18px] w-[18px]" />
+            : <PanelLeftClose className="h-[18px] w-[18px]" />}
+          {!collapsed && <span>Collapse</span>}
+          {!collapsed && <span className="ml-auto text-faint">v1.0 · MVP</span>}
+        </button>
+      </div>
     </aside>
   );
 }

@@ -1,7 +1,7 @@
 export const STATUS: Record<string, { label: string; tone: string }> = {
   open: { label: "Open", tone: "bg-brand-500/10 text-brand-500 border-brand-500/20" },
   in_progress: { label: "In progress", tone: "bg-blue-500/10 text-blue-500 border-blue-500/20" },
-  resolved: { label: "Resolved", tone: "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20" },
+  resolved: { label: "Resolved", tone: "bg-green-500/10 text-green-600 dark:text-green-700 border-green-500/20" },
   closed: { label: "Closed", tone: "bg-muted text-muted-foreground border-border" },
 };
 

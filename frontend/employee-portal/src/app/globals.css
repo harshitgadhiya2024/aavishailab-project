@@ -21,45 +21,41 @@
 :root.dark {
   --brand: #FF7000;
   --brand-dark: #E56400;
-  --bg: #0A0A0A;
-  --surface: #141414;
-  --surface-hover: #1E1E1E;
-
-  /* Surfaces */
-  --background: 0 0% 4%;           /* #0A0A0A page */
-  --card: 0 0% 8%;                 /* #141414 cards */
-  --sunken: 0 0% 5%;               /* #0D0D0D inset panels */
-  --elevated: 0 0% 12%;            /* #1E1E1E hover / raised rows */
-  --popover: 0 0% 8%;
-  --secondary: 0 0% 15%;
-  --muted: 0 0% 15%;               /* #262626 muted fills */
+  --bg: #09090B;
+  --surface: #121215;
+  --surface-hover: #1A1A1E;
+  --background: 240 10% 4%;          /* #09090B page */
+  --card: 240 8% 8%;                 /* #121215 cards */
+  --sunken: 240 10% 6%;              /* #0E0E11 inset panels */
+  --elevated: 240 7% 11%;            /* #1A1A1E hover / raised rows */
+  --popover: 240 8% 8%;
+  --secondary: 240 7% 12%;
+  --muted: 240 7% 12%;
 
   /* Text ramp, darkest surface -> brightest text */
-  --foreground: 0 0% 96%;          /* #F5F5F5 headings */
-  --body: 0 0% 83%;                /* #D4D4D4 body copy */
-  --muted-foreground: 0 0% 64%;    /* #A3A3A3 secondary */
-  --subtle: 0 0% 42%;              /* #6B6B6B labels, placeholders */
-  --faint: 0 0% 32%;               /* #525252 disabled / hints */
-  --card-foreground: 0 0% 96%;
-  --popover-foreground: 0 0% 96%;
-  --secondary-foreground: 0 0% 96%;
-
-  /* Lines */
-  --border: 0 0% 15%;              /* #262626 */
-  --border-strong: 0 0% 25%;       /* #404040 */
-  --input: 0 0% 16%;
+  --foreground: 240 5% 96%;          /* #F4F4F5 headings */
+  --body: 240 5% 84%;                /* #D4D4D8 body copy */
+  --muted-foreground: 240 5% 65%;  /* #A1A1AA secondary */
+  --subtle: 240 4% 46%;              /* #71717A labels, placeholders */
+  --faint: 240 5% 34%;               /* #52525B disabled / hints */
+  --card-foreground: 240 5% 96%;
+  --popover-foreground: 240 5% 96%;
+  --secondary-foreground: 240 5% 96%;
+  --border: 240 4% 15%;              /* #262629 hairline */
+  --border-strong: 240 4% 22%;     /* #37373C */
+  --input: 240 4% 18%;
   --ring: 24 100% 50%;
 
   /* Brand — identical in both themes */
   --primary: 24 100% 50%;
-  --primary-foreground: 0 0% 4%;
+  --primary-foreground: 0 0% 100%;
   --accent: 24 100% 50%;
-  --accent-foreground: 0 0% 4%;
-  --on-brand: 0 0% 4%;             /* text sitting on a brand-filled surface */
+  --accent-foreground: 0 0% 100%;
+  --on-brand: 0 0% 100%;
 
   /* Brand-tinted hero gradients */
-  --brand-tint: 24 100% 8%;        /* #2B1000 */
-  --brand-tint-soft: 24 100% 4%;   /* #140800 */
+  --brand-tint: 25 53% 15%;        /* #3A2312 */
+  --brand-tint-soft: 26 41% 9%;    /* #1F150D */
 
   /* Status — tuned for dark surfaces */
   --success: 142 69% 58%;          /* green-400  */
@@ -71,14 +67,14 @@
   --destructive-foreground: 0 0% 98%;
 
   /* Native form controls + scrollbar */
-  --control-bg: #0A0A0A;
-  --control-fg: #F5F5F5;
-  --control-placeholder: #6B6B6B;
-  --option-bg: #141414;
-  --scrollbar-thumb: #333333;
-  --scrollbar-thumb-hover: #444444;
+  --control-bg: #09090B;
+  --control-fg: #F4F4F5;
+  --control-placeholder: #71717A;
+  --option-bg: #121215;
+  --scrollbar-thumb: #2E2E33;
+  --scrollbar-thumb-hover: #46464D;
 
-  --radius: 0.5rem;
+  --radius: 0.375rem;
   color-scheme: dark;
 }
 
@@ -86,44 +82,36 @@
 .light {
   --brand: #FF7000;
   --brand-dark: #E56400;
-  --bg: #F9FAFB;
+  --bg: #FAFAFA;
   --surface: #FFFFFF;
-  --surface-hover: #F3F4F6;
-
-  /* Surfaces — page sits slightly grey so white cards read as raised */
-  --background: 210 20% 98%;       /* #F9FAFB page */
-  --card: 0 0% 100%;               /* #FFFFFF cards */
-  --sunken: 220 14% 96%;           /* #F3F4F6 inset panels */
-  --elevated: 220 14% 96%;         /* #F3F4F6 hover / raised rows */
+  --surface-hover: #F4F4F5;
+  --background: 0 0% 98%;            /* #FAFAFA page */
+  --card: 0 0% 100%;                 /* #FFFFFF cards */
+  --sunken: 240 5% 96%;              /* #F4F4F5 inset panels */
+  --elevated: 240 5% 96%;            /* #F4F4F5 hover / raised rows */
   --popover: 0 0% 100%;
-  --secondary: 220 14% 96%;
-  --muted: 220 14% 96%;
-
-  /* Text ramp inverted — all steps meet WCAG AA on white */
-  --foreground: 222 47% 11%;       /* #111827 headings */
-  --body: 217 19% 27%;             /* #374151 body copy */
-  --muted-foreground: 215 14% 34%; /* #4B5563 secondary */
-  --subtle: 220 9% 46%;            /* #6B7280 labels, placeholders */
-  --faint: 220 9% 65%;             /* #9CA3AF disabled / hints */
-  --card-foreground: 222 47% 11%;
-  --popover-foreground: 222 47% 11%;
-  --secondary-foreground: 222 47% 11%;
-
-  /* Lines */
-  --border: 220 13% 88%;           /* #DBDEE3 — keeps cards separated from the page */
-  --border-strong: 216 12% 80%;    /* #C5CAD1 */
-  --input: 220 13% 88%;
+  --secondary: 240 5% 96%;
+  --muted: 240 5% 96%;
+  --foreground: 240 8% 5%;           /* #0B0B0D headings */
+  --body: 240 5% 26%;                /* #3F3F46 body copy */
+  --muted-foreground: 240 5% 38%;  /* #5D5D66 secondary */
+  --subtle: 240 4% 46%;              /* #71717A labels, placeholders */
+  --faint: 240 5% 65%;               /* #A1A1AA disabled / hints */
+  --card-foreground: 240 8% 5%;
+  --popover-foreground: 240 8% 5%;
+  --secondary-foreground: 240 8% 5%;
+  --border: 240 3% 91%;              /* #E7E7E8 hairline */
+  --border-strong: 240 2% 82%;     /* #D1D1D3 */
+  --input: 240 2% 82%;
   --ring: 24 100% 50%;
 
   /* Brand — unchanged, dark text still rides on orange */
   --primary: 24 100% 50%;
-  --primary-foreground: 0 0% 4%;
+  --primary-foreground: 0 0% 100%;
   --accent: 24 100% 50%;
-  --accent-foreground: 0 0% 4%;
-  --on-brand: 0 0% 4%;
-
-  /* Brand-tinted hero gradients */
-  --brand-tint: 30 100% 96%;       /* #FFF3E9 */
+  --accent-foreground: 0 0% 100%;
+  --on-brand: 0 0% 100%;           /* white on orange, as on the website */
+  --brand-tint: 28 100% 95%;       /* #FFF1E5 */
   --brand-tint-soft: 30 100% 98%;  /* #FFF8F2 */
 
   /* Status — darkened to clear 4.5:1 as body text on white */
@@ -137,13 +125,13 @@
 
   /* Native form controls + scrollbar */
   --control-bg: #FFFFFF;
-  --control-fg: #111827;
-  --control-placeholder: #9CA3AF;
+  --control-fg: #0B0B0D;
+  --control-placeholder: #8A8A93;
   --option-bg: #FFFFFF;
-  --scrollbar-thumb: #D1D5DB;
-  --scrollbar-thumb-hover: #9CA3AF;
+  --scrollbar-thumb: #D4D4D8;
+  --scrollbar-thumb-hover: #A1A1AA;
 
-  --radius: 0.5rem;
+  --radius: 0.375rem;
   color-scheme: light;
 }
 
@@ -153,6 +141,12 @@
 body {
   @apply bg-background text-foreground antialiased;
   font-family: var(--font-inter), system-ui, sans-serif;
+  font-feature-settings: "ss01", "cv11";
+}
+
+/* Headings use the website's display face (Satoshi, loaded in app/layout.tsx). */
+h1, h2, h3 {
+  font-family: Satoshi, var(--font-inter), system-ui, sans-serif;
 }
 
 /* Browsers paint native controls from the OS palette otherwise */
@@ -188,3 +182,101 @@ input:-webkit-autofill:focus {
   -webkit-text-fill-color: var(--control-fg);
   transition: background-color 5000s ease-in-out 0s;
 }
+
+/* Sign-in screen: the newest console row slides in from above. */
+@keyframes auth-row-in {
+  from { opacity: 0; transform: translateY(-6px); background-color: rgb(255 112 0 / 0.07); }
+  to { opacity: 1; transform: none; background-color: transparent; }
+}
+.auth-row-in { animation: auth-row-in 0.6s cubic-bezier(0.16, 1, 0.3, 1); }
+@media (prefers-reduced-motion: reduce) {
+  .auth-row-in { animation: none; }
+}
+
+/* Sign-in screen: the website's pixel terrain wipes in from the left. */
+@keyframes dither-reveal {
+  from { clip-path: inset(0 100% 0 0); }
+  to { clip-path: inset(0 0 0 0); }
+}
+.dither-reveal { clip-path: inset(0 100% 0 0); }
+.dither-reveal[data-ready] { animation: dither-reveal 1.4s cubic-bezier(0.65, 0, 0.35, 1) both; }
+@media (prefers-reduced-motion: reduce) {
+  .dither-reveal, .dither-reveal[data-ready] { animation: none; clip-path: none; }
+}
+
+/* Sign-in screen: the website's floating cursor tag drifts gently. */
+@keyframes auth-tag-float {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(3px, -5px); }
+}
+.auth-tag-float { animation: auth-tag-float 4.5s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .auth-tag-float { animation: none; }
+}
+
+/* ---------------------------------------------------------------------------
+   Dashboard pages in the website's style. Scoped to the dashboard's main area
+   (.dash, app/dashboard/layout.tsx); each rule is one class more specific than
+   a Tailwind utility, so it wins over the per-page classes it replaces.
+   --------------------------------------------------------------------------- */
+
+/* Section eyebrow above each page title: mono, orange, with a pixel. */
+.page-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-dm-mono), ui-monospace, monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #e56400;
+}
+.page-eyebrow::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  background: #ff7000;
+}
+.dark .page-eyebrow { color: #ff8b33; }
+
+/* Table headers: the website's mono labels. */
+.dash thead th {
+  font-family: var(--font-dm-mono), ui-monospace, monospace;
+  font-size: 10.5px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: hsl(var(--subtle));
+}
+
+/* Section titles: Satoshi medium rather than a heavy bold. */
+.dash h3 {
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+/* Inputs: hairline border, orange focus with a soft ring, as on the website. */
+.dash input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus,
+.dash select:focus,
+.dash textarea:focus {
+  outline: none;
+  border-color: #ff7000;
+  box-shadow: 0 0 0 4px rgb(255 112 0 / 0.18);
+}
+
+/* Card title bars on pages (not dialogs, which carry the big shadow): the
+   website's mono label, matching the home page's cards. */
+.dash .bg-card:not(.shadow-2xl) > .border-b h2,
+.dash .bg-card:not(.shadow-2xl) > .border-b h3 {
+  font-family: var(--font-dm-mono), ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+/* Sidebar menu: no scrollbar track at rest; a thin one appears on hover. */
+.sidebar-scroll { scrollbar-width: none; }
+.sidebar-scroll:hover { scrollbar-width: thin; }
+.sidebar-scroll::-webkit-scrollbar { width: 0; }
+.sidebar-scroll:hover::-webkit-scrollbar { width: 4px; }

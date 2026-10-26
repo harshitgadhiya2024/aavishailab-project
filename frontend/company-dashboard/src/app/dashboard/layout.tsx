@@ -18,7 +18,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         <Header />
         <AnnouncementBanner />
         <DataStoreBanner />
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className="dash flex-1 overflow-y-auto p-6">
           {children}
         </main>
       </div>

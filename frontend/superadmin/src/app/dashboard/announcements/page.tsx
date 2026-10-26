@@ -10,8 +10,8 @@ import { toast } from "sonner";
 const SEVERITY_ICON: Record<string, any> = { info: Info, warning: AlertTriangle, critical: Siren };
 const SEVERITY_COLOR: Record<string, string> = {
   info: "bg-brand-500/10 text-brand-500",
-  warning: "bg-yellow-500/10 text-yellow-400",
-  critical: "bg-red-500/10 text-red-400",
+  warning: "bg-yellow-500/10 text-yellow-700",
+  critical: "bg-red-500/10 text-red-600",
 };
 
 export default function AnnouncementsPage() {
@@ -51,10 +51,11 @@ export default function AnnouncementsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Announcements</h2>
+          <p className="page-eyebrow">Product</p>
+          <h2 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">Announcements</h2>
           <p className="text-sm text-muted-foreground mt-1">Broadcast a banner to every org's dashboard</p>
         </div>
-        <button onClick={() => setShowNew(true)} className="flex items-center gap-2 bg-primary hover:bg-brand-600 text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+        <button onClick={() => setShowNew(true)} className="flex items-center gap-2 bg-primary hover:bg-brand-600 text-primary-foreground px-4 py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em] transition-colors">
           <Plus className="w-4 h-4" /> New Announcement
         </button>
       </div>
@@ -77,16 +78,16 @@ export default function AnnouncementsPage() {
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-foreground">{a.title}</p>
                 {a.body && <p className="text-sm text-muted-foreground mt-0.5">{a.body}</p>}
-                <p className="text-xs text-[#6B6B6B] mt-1">Created {formatDateTime(a.created_at)}</p>
+                <p className="text-xs text-subtle mt-1">Created {formatDateTime(a.created_at)}</p>
               </div>
               <div className="flex items-center gap-3 flex-shrink-0">
                 <button
                   onClick={() => toggleMut.mutate({ id: a.id, active: !a.active })}
-                  className={cn("text-xs font-medium px-2.5 py-1 rounded-full", a.active ? "bg-green-500/10 text-green-400" : "bg-muted text-muted-foreground")}
+                  className={cn("text-xs font-medium px-2.5 py-1 rounded-[4px]", a.active ? "bg-green-500/10 text-green-700" : "bg-muted text-muted-foreground")}
                 >
                   {a.active ? "Active" : "Inactive"}
                 </button>
-                <button onClick={() => deleteMut.mutate(a.id)} className="p-1.5 hover:bg-red-500/10 rounded text-muted-foreground hover:text-red-400">
+                <button onClick={() => deleteMut.mutate(a.id)} className="p-1.5 hover:bg-red-500/10 rounded text-muted-foreground hover:text-red-600">
                   <Trash2 className="w-4 h-4" />
                 </button>
               </div>
@@ -97,7 +98,7 @@ export default function AnnouncementsPage() {
 
       {showNew && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={() => setShowNew(false)}>
-          <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-card border border-border rounded-lg border border-border shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-border">
               <h3 className="font-semibold text-foreground">New Announcement</h3>
               <button onClick={() => setShowNew(false)} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
@@ -123,7 +124,7 @@ export default function AnnouncementsPage() {
                 </select>
               </div>
               <button type="submit" disabled={createMut.isPending}
-                className="w-full bg-primary text-primary-foreground py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-60">
+                className="w-full bg-primary text-primary-foreground py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em] flex items-center justify-center gap-2 disabled:opacity-60">
                 {createMut.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
                 Publish
               </button>

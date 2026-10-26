@@ -20,10 +20,10 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 function riskBadge(level: number) {
-  if (level >= 85) return { label: "Critical", className: "bg-red-500/10 text-red-400" };
-  if (level >= 65) return { label: "High", className: "bg-orange-500/10 text-orange-400" };
-  if (level >= 40) return { label: "Medium", className: "bg-yellow-500/10 text-yellow-400" };
-  return { label: "Low", className: "bg-green-500/10 text-green-400" };
+  if (level >= 85) return { label: "Critical", className: "bg-red-500/10 text-red-600" };
+  if (level >= 65) return { label: "High", className: "bg-orange-500/10 text-orange-700" };
+  if (level >= 40) return { label: "Medium", className: "bg-yellow-500/10 text-yellow-700" };
+  return { label: "Low", className: "bg-green-500/10 text-green-700" };
 }
 
 type CatalogApp = {
@@ -43,7 +43,7 @@ type CatalogApp = {
 function AppIcon({ app, size = 40 }: { app: Pick<CatalogApp, "name" | "icon_url">; size?: number }) {
   if (app.icon_url) {
     // eslint-disable-next-line @next/next/no-img-element
-    return <img src={app.icon_url} alt="" width={size} height={size} className="rounded-lg object-contain bg-white/5" style={{ width: size, height: size }} />;
+    return <img src={app.icon_url} alt="" width={size} height={size} className="rounded-lg object-contain bg-elevated" style={{ width: size, height: size }} />;
   }
   const initials = app.name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
   return (
@@ -90,14 +90,15 @@ export default function ApplicationCatalogPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Application Catalog</h2>
+          <p className="page-eyebrow">Product</p>
+          <h2 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">Application Catalog</h2>
           <p className="text-sm text-muted-foreground mt-1">
             The built-in application list every organization sees for Application Control — name, logo, and detection rules
           </p>
         </div>
         <button
           onClick={() => setShowCreate(true)}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-brand-500 text-white hover:bg-brand-600 transition-colors"
+          className="flex items-center gap-2 px-4 py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em] bg-brand-500 text-white hover:bg-brand-600 transition-colors"
         >
           <Plus className="w-4 h-4" /> Add application
         </button>
@@ -145,7 +146,7 @@ export default function ApplicationCatalogPage() {
                 ))
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="text-center py-12 text-[#6B6B6B]">
+                  <td colSpan={5} className="text-center py-12 text-subtle">
                     <AppWindow className="w-8 h-8 mx-auto mb-2 opacity-30" />
                     No applications match
                   </td>
@@ -170,7 +171,7 @@ export default function ApplicationCatalogPage() {
                       </td>
                       <td className="px-5 py-4 text-muted-foreground">{CATEGORY_LABELS[app.category] ?? app.category}</td>
                       <td className="px-5 py-4">
-                        <span className={cn("px-2.5 py-1 rounded-full text-xs font-medium", risk.className)}>{risk.label}</span>
+                        <span className={cn("px-2.5 py-1 rounded-[4px] text-xs font-medium", risk.className)}>{risk.label}</span>
                       </td>
                       <td className="px-5 py-4 text-xs text-muted-foreground">{detection}</td>
                       <td className="px-5 py-4">
@@ -178,7 +179,7 @@ export default function ApplicationCatalogPage() {
                           <button onClick={() => setEditApp(app)} className="p-1.5 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors" title="Edit">
                             <Pencil className="w-4 h-4" />
                           </button>
-                          <button onClick={() => setDeleteTarget(app)} className="p-1.5 rounded-lg text-muted-foreground hover:bg-red-500/10 hover:text-red-400 transition-colors" title="Delete">
+                          <button onClick={() => setDeleteTarget(app)} className="p-1.5 rounded-lg text-muted-foreground hover:bg-red-500/10 hover:text-red-600 transition-colors" title="Delete">
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
@@ -303,7 +304,7 @@ function AppFormModal({ app, onClose, onDone }: { app: CatalogApp | null; onClos
               className="hidden"
               onChange={(e) => onPickIcon(e.target.files?.[0] ?? null)}
             />
-            <p className="text-xs text-[#6B6B6B] mt-1">PNG, JPEG, SVG, or WebP · under 512KB{!isEdit && " · saved after the application is created"}</p>
+            <p className="text-xs text-subtle mt-1">PNG, JPEG, SVG, or WebP · under 512KB{!isEdit && " · saved after the application is created"}</p>
           </div>
         </div>
 
@@ -336,16 +337,16 @@ function AppFormModal({ app, onClose, onDone }: { app: CatalogApp | null; onClos
           <input value={description} onChange={(e) => setDescription(e.target.value)} className={inputClass} placeholder="AI chat assistant" />
         </div>
         <div className="mb-3">
-          <label className="text-xs font-medium text-muted-foreground mb-1 block">Backend domains <span className="text-[#6B6B6B] font-normal">(one per line — subdomains covered automatically)</span></label>
+          <label className="text-xs font-medium text-muted-foreground mb-1 block">Backend domains <span className="text-subtle font-normal">(one per line — subdomains covered automatically)</span></label>
           <textarea value={domains} onChange={(e) => setDomains(e.target.value)} rows={3} className={cn(inputClass, "font-mono")} placeholder={"chatgpt.com\napi.openai.com"} />
         </div>
         <div className="grid grid-cols-2 gap-3 mb-5">
           <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">Process names <span className="text-[#6B6B6B] font-normal">(optional)</span></label>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">Process names <span className="text-subtle font-normal">(optional)</span></label>
             <textarea value={processes} onChange={(e) => setProcesses(e.target.value)} rows={2} className={cn(inputClass, "font-mono")} placeholder="chatgpt.exe" />
           </div>
           <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">macOS bundle IDs <span className="text-[#6B6B6B] font-normal">(optional)</span></label>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">macOS bundle IDs <span className="text-subtle font-normal">(optional)</span></label>
             <textarea value={bundles} onChange={(e) => setBundles(e.target.value)} rows={2} className={cn(inputClass, "font-mono")} placeholder="com.openai.chat" />
           </div>
         </div>
@@ -357,7 +358,7 @@ function AppFormModal({ app, onClose, onDone }: { app: CatalogApp | null; onClos
           <button
             onClick={() => saveMut.mutate()}
             disabled={!name.trim() || saveMut.isPending}
-            className="px-4 py-2 rounded-lg text-sm font-medium bg-brand-500 text-white hover:bg-brand-600 transition-colors disabled:opacity-50 flex items-center gap-2"
+            className="px-4 py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em] bg-brand-500 text-white hover:bg-brand-600 transition-colors disabled:opacity-50 flex items-center gap-2"
           >
             {saveMut.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
             {isEdit ? "Save changes" : "Add application"}

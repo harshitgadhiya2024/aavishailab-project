@@ -41,7 +41,7 @@ const PROSE = cn(
   "text-sm leading-relaxed text-foreground/90",
   "[&>*+*]:mt-4 [&_h2]:mt-8 [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:text-foreground [&_h3]:mt-6 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:text-foreground",
   "[&_ul]:list-disc [&_ol]:list-decimal [&_ul]:pl-5 [&_ol]:pl-5 [&_li+li]:mt-1",
-  "[&_a]:text-brand-400 [&_a]:underline [&_strong]:font-semibold [&_strong]:text-foreground",
+  "[&_a]:text-brand-600 [&_a]:underline [&_strong]:font-semibold [&_strong]:text-foreground",
   "[&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-[12px] [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-4 [&_pre_code]:bg-transparent [&_pre_code]:p-0",
   "[&_blockquote]:border-l-2 [&_blockquote]:border-brand-500 [&_blockquote]:bg-brand-500/5 [&_blockquote]:px-4 [&_blockquote]:py-3",
   "[&_table]:w-full [&_table]:border-collapse [&_th]:border-b [&_th]:border-border [&_th]:py-2 [&_th]:text-left [&_td]:border-b [&_td]:border-border [&_td]:py-2 [&_hr]:border-border",
@@ -60,7 +60,7 @@ function Field({ label, hint, children }: { label: string; hint?: React.ReactNod
 }
 
 function Count({ n, max }: { n: number; max: number }) {
-  return <span className={n > max ? "text-red-400" : undefined}>{n}/{max}</span>;
+  return <span className={n > max ? "text-red-600" : undefined}>{n}/{max}</span>;
 }
 
 export default function ContentEditorPage() {
@@ -183,11 +183,11 @@ export default function ContentEditorPage() {
           <Link href={`/dashboard/content/${kind}`} className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
             <ArrowLeft className="h-3.5 w-3.5" /> {cfg.label}
           </Link>
-          <h2 className="mt-1 truncate text-2xl font-bold text-foreground">{form.title || `New ${cfg.singular}`}</h2>
+          <h2 className="mt-1 truncate text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">{form.title || `New ${cfg.singular}`}</h2>
           <p className="mt-1 text-xs text-muted-foreground">
             {isNew ? "Not saved yet" : published ? "Published" : "Draft"}
             {post?.updated_at && <> · last saved {formatDateTime(post.updated_at)}</>}
-            {dirty && <span className="text-yellow-400"> · unsaved changes</span>}
+            {dirty && <span className="text-yellow-700"> · unsaved changes</span>}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -200,7 +200,7 @@ export default function ContentEditorPage() {
             <button
               disabled={busy}
               onClick={() => confirm(`Delete "${form.title}" permanently? This cannot be undone.`) && remove.mutate()}
-              className="rounded-lg border border-border p-2 text-muted-foreground hover:border-red-500/40 hover:text-red-400 disabled:opacity-50"
+              className="rounded-lg border border-border p-2 text-muted-foreground hover:border-red-500/40 hover:text-red-600 disabled:opacity-50"
               aria-label="Delete"
             >
               <Trash2 className="h-4 w-4" />
@@ -218,7 +218,7 @@ export default function ContentEditorPage() {
           <button
             disabled={busy}
             onClick={() => save.mutate("published")}
-            className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-brand-600 disabled:opacity-60"
+            className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 font-mono text-[12px] font-medium uppercase tracking-[0.06em] text-primary-foreground hover:bg-brand-600 disabled:opacity-60"
           >
             {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
             {published ? "Update" : "Publish"}
@@ -333,7 +333,7 @@ export default function ContentEditorPage() {
             </Field>
             <div className="rounded-lg border border-border bg-background p-3">
               <p className="truncate text-[11px] text-muted-foreground">{liveUrl}</p>
-              <p className="mt-0.5 truncate text-sm text-sky-400">{form.seo_title || form.title || "Page title"} | Aavishield</p>
+              <p className="mt-0.5 truncate text-sm text-sky-700">{form.seo_title || form.title || "Page title"} | Aavishield</p>
               <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{form.seo_description || form.excerpt || "The meta description appears here."}</p>
             </div>
           </div>

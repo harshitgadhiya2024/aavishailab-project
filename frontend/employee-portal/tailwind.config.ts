@@ -89,12 +89,29 @@ export default {
           foreground: token("destructive-foreground"),
         },
       },
+      // The website's squared corners: 6px surfaces and buttons, 4px inputs.
       borderRadius: {
+        "2xl": "calc(var(--radius) + 4px)",
+        xl: "calc(var(--radius) + 2px)",
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
       },
-      fontFamily: { sans: ["var(--font-inter)", "system-ui", "sans-serif"] },
+      // Flat, as on the website: hairlines do the separating, and only floating
+      // layers (menus, dialogs) get a soft, wide shadow — never a dark glow.
+      boxShadow: {
+        sm: "0 1px 0 rgb(11 11 13 / 0.03)",
+        DEFAULT: "0 1px 2px rgb(11 11 13 / 0.04)",
+        md: "0 8px 24px -12px rgb(24 24 27 / 0.16)",
+        lg: "0 16px 40px -20px rgb(24 24 27 / 0.2)",
+        xl: "0 24px 60px -24px rgb(24 24 27 / 0.22)",
+        "2xl": "0 24px 60px -24px rgb(24 24 27 / 0.22)",
+      },
+      fontFamily: {
+        sans: ["var(--font-inter)", "system-ui", "sans-serif"],
+        logo: ["var(--font-sora)", "var(--font-inter)", "system-ui", "sans-serif"],
+        mono: ["var(--font-dm-mono)", "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
+      },
     },
   },
   plugins: [],

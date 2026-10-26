@@ -131,7 +131,8 @@ export default function CategoriesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Policy Categories</h2>
+          <p className="page-eyebrow">Policy management</p>
+          <h2 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">Policy Categories</h2>
           <p className="text-sm text-muted-foreground mt-1">
             {total} {showHidden ? "hidden" : ""} categories · add or remove the domains each category blocks
           </p>
@@ -204,7 +205,7 @@ export default function CategoriesPage() {
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           <div
-                            className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 bg-brand-500/10 text-brand-500"
+                            className="w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0 bg-brand-500/10 text-brand-500"
                             style={cat.color ? { backgroundColor: `${cat.color}1a`, color: cat.color } : undefined}
                           >
                             <Tags className="w-4 h-4" />
@@ -219,12 +220,12 @@ export default function CategoriesPage() {
                         <span className="line-clamp-1">{cat.description || "—"}</span>
                       </td>
                       <td className="px-4 py-3">
-                        <span className={cn("px-2.5 py-1 rounded-full text-xs font-medium", risk.className)}>
+                        <span className={cn("px-2.5 py-1 rounded-[4px] text-xs font-medium", risk.className)}>
                           {risk.label}
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-elevated text-body">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[4px] text-xs font-medium bg-elevated text-body">
                           <Globe className="w-3 h-3" />
                           {cat.domain_count ?? 0}
                         </span>
@@ -281,7 +282,7 @@ export default function CategoriesPage() {
       {/* Domains modal */}
       {domainsCategory && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <div className="bg-card rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col">
+          <div className="bg-card rounded-lg border border-border shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between px-6 py-4 border-b border-border">
               <div className="flex items-center gap-3 min-w-0">
                 <div
@@ -316,7 +317,7 @@ export default function CategoriesPage() {
                 <button
                   type="submit"
                   disabled={!newDomain.trim() || addMut.isPending}
-                  className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-on-brand px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-60"
+                  className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-on-brand px-4 py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em] disabled:opacity-60"
                 >
                   {addMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
                   Add
@@ -364,7 +365,7 @@ export default function CategoriesPage() {
                         <td className="px-6 py-3 font-mono text-foreground">{d.domain}</td>
                         <td className="px-4 py-3">
                           <span className={cn(
-                            "px-2.5 py-1 rounded-full text-xs font-medium",
+                            "px-2.5 py-1 rounded-[4px] text-xs font-medium",
                             d.scope === "custom" ? "bg-brand-500/10 text-brand-500" : "bg-elevated text-body"
                           )}>
                             {d.scope === "custom" ? "Added by you" : "Built-in"}
@@ -409,7 +410,7 @@ export default function CategoriesPage() {
       {/* Remove domain confirm */}
       {removeDomain && domainsCategory && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <div className="bg-card rounded-2xl shadow-2xl w-full max-w-sm p-6">
+          <div className="bg-card rounded-lg border border-border shadow-2xl w-full max-w-sm p-6">
             <div className="w-12 h-12 bg-red-500/10 rounded-xl flex items-center justify-center mx-auto mb-4">
               <ShieldAlert className="w-5 h-5 text-danger" />
             </div>
@@ -435,7 +436,7 @@ export default function CategoriesPage() {
       {/* Delete category confirm */}
       {deleteCategory && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <div className="bg-card rounded-2xl shadow-2xl w-full max-w-sm p-6">
+          <div className="bg-card rounded-lg border border-border shadow-2xl w-full max-w-sm p-6">
             <div className="w-12 h-12 bg-red-500/10 rounded-xl flex items-center justify-center mx-auto mb-4">
               <ShieldAlert className="w-5 h-5 text-danger" />
             </div>

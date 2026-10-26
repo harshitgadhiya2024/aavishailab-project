@@ -17,8 +17,8 @@ const STATUSES = [
 
 const STATUS_STYLE: Record<string, string> = {
   new: "bg-brand-500/10 text-brand-500",
-  contacted: "bg-blue-500/10 text-blue-400",
-  qualified: "bg-green-500/10 text-green-400",
+  contacted: "bg-blue-500/10 text-blue-700",
+  qualified: "bg-green-500/10 text-green-700",
   closed: "bg-muted text-muted-foreground",
 };
 
@@ -63,7 +63,8 @@ export default function DemoRequestsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-foreground">Demo Requests</h2>
+        <p className="page-eyebrow">Customers</p>
+        <h2 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">Demo Requests</h2>
         <p className="text-sm text-muted-foreground mt-1">&quot;Book a demo&quot; submissions from the Aavishield website</p>
       </div>
 
@@ -109,7 +110,7 @@ export default function DemoRequestsPage() {
               onClick={() => setOpenId(d.id)}
               className="flex w-full items-center gap-4 px-5 py-4 text-left transition-colors hover:bg-muted/40"
             >
-              <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-brand-500/10 text-sm font-semibold text-brand-500">
+              <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md bg-brand-500/10 text-sm font-semibold text-brand-500">
                 {d.name.slice(0, 1).toUpperCase()}
               </div>
               <div className="min-w-0 flex-1">
@@ -122,7 +123,7 @@ export default function DemoRequestsPage() {
                 </p>
               </div>
               <span className="hidden text-xs text-muted-foreground sm:block">{formatDateTime(d.created_at)}</span>
-              <span className={cn("rounded-full px-2.5 py-1 text-xs font-medium capitalize", STATUS_STYLE[d.status])}>{d.status}</span>
+              <span className={cn("rounded-[4px] px-2.5 py-1 text-xs font-medium capitalize", STATUS_STYLE[d.status])}>{d.status}</span>
             </button>
           ))
         )}
@@ -187,7 +188,7 @@ function DemoDrawer({ item, onClose }: { item: DemoRequest; onClose: () => void 
                   disabled={mut.isPending}
                   onClick={() => mut.mutate({ status: s.id })}
                   className={cn(
-                    "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                    "rounded-[4px] border px-3 py-1 text-xs font-medium transition-colors",
                     item.status === s.id ? cn("border-transparent", STATUS_STYLE[s.id]) : "border-border text-muted-foreground hover:text-foreground"
                   )}
                 >
@@ -210,7 +211,7 @@ function DemoDrawer({ item, onClose }: { item: DemoRequest; onClose: () => void 
             <button
               disabled={mut.isPending || notes === (item.notes ?? "")}
               onClick={() => mut.mutate({ notes })}
-              className="mt-2 flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
+              className="mt-2 flex items-center gap-2 rounded-lg bg-primary px-4 py-2 font-mono text-[12px] font-medium uppercase tracking-[0.06em] text-primary-foreground disabled:opacity-50"
             >
               {mut.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
               Save notes

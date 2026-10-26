@@ -8,13 +8,13 @@ import { formatDateTime, cn } from "@/lib/utils";
 import { Pagination } from "@/components/ui/Pagination";
 
 const ACTION_COLORS: Record<string, string> = {
-  create: "bg-green-500/10 text-green-400",
+  create: "bg-green-500/10 text-green-700",
   update: "bg-brand-500/10 text-brand-500",
-  delete: "bg-red-500/10 text-red-400",
-  deactivate: "bg-red-500/10 text-red-400",
-  rollback: "bg-yellow-500/10 text-yellow-400",
+  delete: "bg-red-500/10 text-red-600",
+  deactivate: "bg-red-500/10 text-red-600",
+  rollback: "bg-yellow-500/10 text-yellow-700",
   publish: "bg-brand-500/10 text-brand-500",
-  invite: "bg-green-500/10 text-green-400",
+  invite: "bg-green-500/10 text-green-700",
 };
 
 const RESOURCES = [
@@ -40,7 +40,8 @@ export default function AuditLogPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-foreground">Audit Log</h2>
+        <p className="page-eyebrow">Platform</p>
+        <h2 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">Audit Log</h2>
         <p className="text-sm text-muted-foreground mt-1">Every mutating action taken across the platform — who, what, and when</p>
       </div>
 
@@ -89,7 +90,7 @@ export default function AuditLogPage() {
                 ))
               ) : entries.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-12 text-[#6B6B6B]">
+                  <td colSpan={6} className="text-center py-12 text-subtle">
                     <ClipboardList className="w-8 h-8 mx-auto mb-2 opacity-30" />
                     No audit events yet
                   </td>
@@ -98,10 +99,10 @@ export default function AuditLogPage() {
                 <tr key={e.id} className="hover:bg-muted transition-colors">
                   <td className="px-5 py-3">
                     <p className="text-foreground">{e.actor_name || e.actor_email || "Unknown"}</p>
-                    {e.actor_email && e.actor_name && <p className="text-xs text-[#6B6B6B]">{e.actor_email}</p>}
+                    {e.actor_email && e.actor_name && <p className="text-xs text-subtle">{e.actor_email}</p>}
                   </td>
                   <td className="px-5 py-3">
-                    <span className={cn("px-2 py-0.5 rounded-full text-xs font-medium capitalize", ACTION_COLORS[e.action] ?? "bg-muted text-muted-foreground")}>
+                    <span className={cn("px-2 py-0.5 rounded-[4px] text-xs font-medium capitalize", ACTION_COLORS[e.action] ?? "bg-muted text-muted-foreground")}>
                       {e.action}
                     </span>
                   </td>

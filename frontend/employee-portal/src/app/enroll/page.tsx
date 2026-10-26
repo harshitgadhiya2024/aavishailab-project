@@ -2,7 +2,8 @@
 
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
-import { Shield, Loader2, CheckCircle2, AlertTriangle } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, Loader2 } from "lucide-react";
+import { BrandLogo } from "@/components/brand/BrandLogo";
 import { portalApi } from "@/lib/api";
 
 /**
@@ -125,46 +126,53 @@ function EnrollFlow() {
     run();
   }, [status, run]);
 
+  // The website's light status card; colours are fixed so it stays light.
+  const title = `mt-3 [font-family:Satoshi,var(--font-inter),sans-serif] text-[1.75rem] font-normal leading-[1.15] tracking-[-0.03em] text-[#0b0b0d]`;
+  const body = "mt-2 text-[15px] text-[#5d5d66]";
+  const eyebrow = "flex items-center justify-center gap-2 font-mono text-[11px] uppercase tracking-[0.12em]";
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background px-4">
-      <div className="w-full max-w-md bg-card border border-border rounded-2xl shadow-sm p-8 text-center">
-        <div className="w-12 h-12 rounded-xl bg-brand-500/10 flex items-center justify-center mx-auto mb-5">
-          <Shield className="w-6 h-6 text-brand-500" />
+    <div className="grid min-h-screen place-items-center bg-[#fafafa] px-6 text-[#0b0b0d] [color-scheme:light]">
+      <div className="w-full max-w-[440px] text-center">
+        <BrandLogo className="text-[24px]" ink="text-[#0b0b0d]" />
+        <div className="mt-10 rounded-lg border border-[rgb(11_11_13/0.09)] bg-white px-8 py-10">
+          {(phase === "checking" || phase === "enrolling") && (
+            <>
+              <p className={`${eyebrow} text-[#c2410c]`}>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Device setup
+              </p>
+              <h1 className={title}>Setting up this device</h1>
+              <p className={body}>Connecting the Aavishield agent to your account. This only takes a moment.</p>
+            </>
+          )}
+
+          {phase === "done" && (
+            <>
+              <p className={`${eyebrow} text-[#067647]`}>
+                <CheckCircle2 className="h-3.5 w-3.5" /> Setup complete
+              </p>
+              <h1 className={title}>This device is protected</h1>
+              <p className={body}>Nothing else to do. You can close this tab.</p>
+              <a
+                href="/dashboard"
+                className="group mt-7 inline-flex h-11 items-center gap-2.5 rounded-[6px] bg-[#ff7000] px-5 font-mono text-[12px] font-medium uppercase tracking-[0.06em] text-white transition-colors hover:bg-[#e56400]"
+              >
+                Go to my dashboard
+                <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-0.5" />
+              </a>
+            </>
+          )}
+
+          {phase === "error" && (
+            <>
+              <p className={`${eyebrow} text-[#b54708]`}>
+                <AlertTriangle className="h-3.5 w-3.5" /> Setup paused
+              </p>
+              <h1 className={title}>Setup could not finish</h1>
+              <p className={body}>{message}</p>
+            </>
+          )}
         </div>
-
-        {(phase === "checking" || phase === "enrolling") && (
-          <>
-            <h1 className="text-lg font-semibold text-foreground">Setting up this device</h1>
-            <p className="text-sm text-muted-foreground mt-2">
-              Connecting the Aavishield agent to your account. This only takes a moment.
-            </p>
-            <Loader2 className="w-5 h-5 text-brand-500 animate-spin mx-auto mt-6" />
-          </>
-        )}
-
-        {phase === "done" && (
-          <>
-            <CheckCircle2 className="w-8 h-8 text-success mx-auto mb-3" />
-            <h1 className="text-lg font-semibold text-foreground">This device is protected</h1>
-            <p className="text-sm text-muted-foreground mt-2">
-              Setup is complete — nothing else to do. You can close this tab.
-            </p>
-            <a
-              href="/dashboard"
-              className="inline-block mt-6 text-sm text-brand-500 hover:text-brand-400"
-            >
-              Go to my dashboard
-            </a>
-          </>
-        )}
-
-        {phase === "error" && (
-          <>
-            <AlertTriangle className="w-8 h-8 text-amber-500 mx-auto mb-3" />
-            <h1 className="text-lg font-semibold text-foreground">Setup could not finish</h1>
-            <p className="text-sm text-muted-foreground mt-2">{message}</p>
-          </>
-        )}
       </div>
     </div>
   );

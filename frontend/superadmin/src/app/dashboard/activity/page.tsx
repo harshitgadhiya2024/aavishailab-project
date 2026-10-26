@@ -8,9 +8,9 @@ import { formatDateTime, cn } from "@/lib/utils";
 import { Pagination } from "@/components/ui/Pagination";
 
 const ACTION_COLORS: Record<string, string> = {
-  blocked: "bg-red-500/10 text-red-400",
-  alerted: "bg-yellow-500/10 text-yellow-400",
-  allowed: "bg-green-500/10 text-green-400",
+  blocked: "bg-red-500/10 text-red-600",
+  alerted: "bg-yellow-500/10 text-yellow-700",
+  allowed: "bg-green-500/10 text-green-700",
   monitored: "bg-brand-500/10 text-brand-500",
 };
 
@@ -70,7 +70,8 @@ export default function GlobalActivityPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-foreground">Global Activity</h2>
+        <p className="page-eyebrow">Platform</p>
+        <h2 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">Global Activity</h2>
         <p className="text-sm text-muted-foreground mt-1">Security events across all organizations</p>
       </div>
 
@@ -137,7 +138,7 @@ export default function GlobalActivityPage() {
                 ))
               ) : events.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="text-center py-12 text-[#6B6B6B]">
+                  <td colSpan={5} className="text-center py-12 text-subtle">
                     <Activity className="w-8 h-8 mx-auto mb-2 opacity-30" />
                     No events found
                   </td>
@@ -157,7 +158,7 @@ export default function GlobalActivityPage() {
                       </td>
                       <td className="px-5 py-4 text-muted-foreground capitalize">{(ev.event_type ?? "").replace(/_/g, " ")}</td>
                       <td className="px-5 py-4">
-                        <span className={cn("px-2.5 py-1 rounded-full text-xs font-medium", ACTION_COLORS[ev.action] ?? "bg-muted text-muted-foreground")}>
+                        <span className={cn("px-2.5 py-1 rounded-[4px] text-xs font-medium", ACTION_COLORS[ev.action] ?? "bg-muted text-muted-foreground")}>
                           {ev.action}
                         </span>
                       </td>
@@ -172,7 +173,7 @@ export default function GlobalActivityPage() {
                           <span className="text-xs text-muted-foreground">{ev.risk_score ?? 0}</span>
                         </div>
                       </td>
-                      <td className="px-5 py-4 text-[#6B6B6B] text-xs">{formatDateTime(ev.created_at)}</td>
+                      <td className="px-5 py-4 text-subtle text-xs">{formatDateTime(ev.created_at)}</td>
                     </tr>
                   );
                 })

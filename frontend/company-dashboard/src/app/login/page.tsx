@@ -3,22 +3,19 @@
 import { useState, useEffect } from "react";
 import { signIn } from "next-auth/react";
 import Link from "next/link";
-import { Eye, EyeOff, Loader2, CheckCircle2, Mail } from "lucide-react";
+import { ArrowRight, Loader2, Mail } from "lucide-react";
 import { toast } from "sonner";
 import { otpApi } from "@/lib/api";
-import { BrandLogo } from "@/components/brand/BrandLogo";
+import {
+  AUTH_ARROW, AUTH_BUTTON, AUTH_CHECK, AUTH_HINT, AUTH_LABEL, AUTH_LINK, AUTH_SOCIAL,
+  AppleIcon, AuthDivider, AuthError, AuthHeading, AuthShell, GoogleIcon, PasswordInput,
+  authCodeInput, authInput,
+} from "@/components/brand/AuthShell";
 
 const SOCIAL_ERRORS: Record<string, string> = {
   NoAccountFound: "No account found for that email. Please register first.",
   NoEmailFromProvider: "Your Google/Apple account didn't share an email address.",
 };
-
-const FEATURES = [
-  "Real-time policy enforcement across every device",
-  "Full visibility into employee activity & risk",
-  "AI-powered threat detection and alerts",
-  "Audit-ready reporting in a few clicks",
-];
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -175,286 +172,182 @@ export default function LoginPage() {
     signIn(provider, { callbackUrl: "/dashboard" });
   };
 
-  const inputClass =
-    "w-full rounded-lg bg-background px-3 py-2.5 text-sm outline-none transition-colors border " +
-    (error ? "border-red-500 focus:border-red-500" : "border-border/60 focus:border-brand-500");
+  const verifying = !!mfaToken || !!otpToken;
 
   return (
-    <div className="min-h-screen relative flex bg-gradient-to-br from-brand-tint via-brand-tint-soft to-background overflow-hidden">
-      <div className="absolute inset-0 opacity-20 pointer-events-none [background-image:radial-gradient(circle_at_20%_20%,#FF7000,transparent_35%),radial-gradient(circle_at_80%_70%,#FF7000,transparent_35%)]" />
+    <AuthShell
+      topRight={<>New to Aavishield?{" "}<Link href="/register" className={`font-medium ${AUTH_LINK}`}>Register</Link></>}
+    >
+      <AuthHeading
+        eyebrow={verifying ? "Step 2 · Verify" : "Company console"}
+        title={mfaToken ? "Two-factor authentication" : otpToken ? "Check your email" : "Sign in to Aavishield"}
+      >
+        {mfaToken
+          ? mfaSetupNeeded
+            ? "Your organization requires a second factor on every account."
+            : "Enter the 6-digit code from your authenticator app."
+          : otpToken
+            ? <>We sent a 6-digit code to <span className="font-medium text-[#3f3f46]">{otpEmail || "your email address"}</span>. It expires in 10 minutes.</>
+            : "Welcome back. Sign in to manage your devices and policies."}
+      </AuthHeading>
 
-      {/* Left — brand content, sits on the same background as the form */}
-      <div className="hidden lg:flex lg:w-1/2 relative flex-col justify-between p-12">
-        <div className="flex items-center gap-3">
-          <BrandLogo className="h-[72px]" priority />
-        </div>
+      {error && <AuthError>{error}</AuthError>}
 
-        <div className="space-y-8">
-          <div>
-            <h1 className="text-4xl font-bold text-foreground leading-tight">
-              Zero Trust security for your whole organization
-            </h1>
-            <p className="text-muted-foreground mt-4 text-base">
-              Protect every device, enforce policy everywhere, and see exactly
-              what's happening across your company — in one console.
-            </p>
-          </div>
-
-          <ul className="space-y-3">
-            {FEATURES.map((f) => (
-              <li key={f} className="flex items-start gap-3 text-sm text-body">
-                <CheckCircle2 className="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" />
-                <span>{f}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <p className="text-xs text-subtle">© 2026 Aavishield. Zero Trust Security Platform.</p>
-      </div>
-
-      {/* Right — form, no separate background block */}
-      <div className="w-full lg:w-1/2 relative flex items-center justify-center p-6 sm:p-10">
-        <div className="w-full max-w-md">
-          <div className="lg:hidden text-center mb-8">
-            <BrandLogo className="h-24" priority />
-            <h1 className="sr-only">Aavishield</h1>
-            <p className="text-muted-foreground mt-1">Company Security Console</p>
-          </div>
-
-          <div className="bg-card border border-border rounded-2xl p-8 shadow-2xl">
-            <h2 className="text-xl font-semibold text-foreground mb-1">
-              {mfaToken ? "Two-factor authentication" : otpToken ? "Check your email" : "Sign in to your account"}
-            </h2>
-            <p className="text-sm text-muted-foreground mb-6">
-              {mfaToken
-                ? mfaSetupNeeded
-                  ? "Your organization requires a second factor on every account."
-                  : "Enter the 6-digit code from your authenticator app."
-                : otpToken
-                  ? <>We sent a 6-digit code to <span className="text-body font-medium">{otpEmail || "your email address"}</span>. It expires in 10 minutes.</>
-                  : "Welcome back."}
-            </p>
-
-            {error && (
-              <div className="bg-red-500/10 border border-red-500/30 text-danger rounded-lg px-4 py-3 mb-4 text-sm">
-                {error}
-              </div>
-            )}
-
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {otpToken ? (
-                <>
-                  <div>
-                    <label className="block text-sm font-medium text-muted-foreground mb-1">
-                      Verification code
-                    </label>
-                    <input
-                      autoFocus
-                      inputMode="numeric"
-                      autoComplete="one-time-code"
-                      maxLength={6}
-                      value={otpCode}
-                      onChange={e => { setOtpCode(e.target.value.replace(/\D/g, "")); setError(""); }}
-                      className={`${inputClass} tracking-[0.3em] text-center text-lg font-mono`}
-                      placeholder="000000"
-                      required
-                    />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <button type="button" onClick={backToPassword}
-                      className="text-xs text-brand-500 hover:text-brand-400">
-                      ← Use a different account
-                    </button>
-                    <button
-                      type="button"
-                      onClick={resendCode}
-                      disabled={resendIn > 0 || resending}
-                      className="inline-flex items-center gap-1.5 text-xs text-brand-500 hover:text-brand-400 disabled:text-subtle disabled:hover:text-subtle"
-                    >
-                      <Mail className="w-3.5 h-3.5" />
-                      {resendIn > 0 ? `Resend in ${resendIn}s` : resending ? "Sending..." : "Resend code"}
-                    </button>
-                  </div>
-                </>
-              ) : mfaToken ? (
-                mfaSetupNeeded ? (
-                  <div className="bg-brand-500/10 border border-brand-500/30 rounded-lg px-4 py-3 text-sm text-body">
-                    <p className="font-medium text-foreground mb-1">Enrolment needed</p>
-                    <p className="text-muted-foreground">
-                      An administrator must set up two-factor authentication on your account before you can
-                      sign in. Ask them to add it from Team &amp; Access, then try again.
-                    </p>
-                    <button type="button" onClick={backToPassword}
-                      className="mt-3 text-xs text-brand-500 hover:text-brand-400">
-                      ← Back to sign in
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    <div>
-                      <label className="block text-sm font-medium text-muted-foreground mb-1">
-                        Authentication code
-                      </label>
-                      <input
-                        autoFocus
-                        inputMode="text"
-                        autoComplete="one-time-code"
-                        value={mfaCode}
-                        onChange={e => { setMfaCode(e.target.value); setError(""); }}
-                        className={`${inputClass} tracking-[0.3em] text-center text-lg font-mono`}
-                        placeholder="000000"
-                        required
-                      />
-                      <p className="text-xs text-subtle mt-2">
-                        Lost your device? Enter one of your recovery codes instead.
-                      </p>
-                    </div>
-                    <button type="button" onClick={backToPassword}
-                      className="text-xs text-brand-500 hover:text-brand-400">
-                      ← Use a different account
-                    </button>
-                  </>
-                )
-              ) : (
-              <>
-              <div>
-                <label className="block text-sm font-medium text-muted-foreground mb-1">Email address</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={e => { setEmail(e.target.value); setError(""); }}
-                  className={inputClass}
-                  placeholder="you@company.com"
-                  required
-                />
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-sm font-medium text-muted-foreground">Password</label>
-                  <Link href="/forgot-password" className="text-xs text-brand-500 hover:text-brand-400">
-                    Forgot password?
-                  </Link>
-                </div>
-                <div className="relative">
-                  <input
-                    type={showPass ? "text" : "password"}
-                    value={password}
-                    onChange={e => { setPassword(e.target.value); setError(""); }}
-                    className={`${inputClass} pr-10`}
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPass(!showPass)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              <label className="flex items-start gap-2 text-xs text-muted-foreground cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={acceptedPrivacy}
-                  onChange={e => setAcceptedPrivacy(e.target.checked)}
-                  className="mt-0.5 w-3.5 h-3.5 rounded border-border accent-brand-500"
-                  required
-                />
-                <span>
-                  I accept the{" "}
-                  <Link href="/privacy" target="_blank" className="text-brand-500 hover:text-brand-400 underline">
-                    Privacy Policy
-                  </Link>
-                </span>
-              </label>
-              </>
-              )}
-
-              {!mfaSetupNeeded && (
-                <button
-                  type="submit"
-                  disabled={
-                    loading !== "" ||
-                    (!mfaToken && !otpToken && !acceptedPrivacy) ||
-                    (!!mfaToken && !mfaCode.trim()) ||
-                    (!!otpToken && otpCode.trim().length < 6)
-                  }
-                  className="w-full bg-primary hover:bg-brand-600 text-primary-foreground font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
-                >
-                  {loading === "credentials" && <Loader2 className="w-4 h-4 animate-spin" />}
-                  {loading === "credentials"
-                    ? (mfaToken || otpToken ? "Verifying..." : "Signing in...")
-                    : (mfaToken || otpToken ? "Verify and sign in" : "Sign In")}
-                </button>
-              )}
-            </form>
-
-            {!mfaToken && !otpToken && (
+      <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+        {otpToken ? (
+          <>
+            <div>
+              <label htmlFor="otp" className={AUTH_LABEL}>Verification code</label>
+              <input
+                id="otp"
+                autoFocus
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                value={otpCode}
+                onChange={e => { setOtpCode(e.target.value.replace(/\D/g, "")); setError(""); }}
+                className={authCodeInput(!!error)}
+                placeholder="000000"
+                required
+              />
+            </div>
+            <div className="flex items-center justify-between text-[13px]">
+              <button type="button" onClick={backToPassword} className={AUTH_LINK}>
+                ← Use a different account
+              </button>
+              <button
+                type="button"
+                onClick={resendCode}
+                disabled={resendIn > 0 || resending}
+                className={`inline-flex items-center gap-1.5 ${AUTH_LINK} disabled:text-[#71717a] disabled:hover:text-[#71717a]`}
+              >
+                <Mail className="h-3.5 w-3.5" />
+                {resendIn > 0 ? `Resend in ${resendIn}s` : resending ? "Sending..." : "Resend code"}
+              </button>
+            </div>
+          </>
+        ) : mfaToken ? (
+          mfaSetupNeeded ? (
+            <div className="rounded-[4px] border border-brand-500/30 bg-[#fff1e5] px-4 py-3 text-sm text-[#3f3f46]">
+              <p className="mb-1 font-medium text-[#0b0b0d]">Enrolment needed</p>
+              <p className="text-[#5d5d66]">
+                An administrator must set up two-factor authentication on your account before you can
+                sign in. Ask them to add it from Team &amp; Access, then try again.
+              </p>
+              <button type="button" onClick={backToPassword} className={`mt-3 text-[13px] ${AUTH_LINK}`}>
+                ← Back to sign in
+              </button>
+            </div>
+          ) : (
             <>
-            <div className="flex items-center gap-3 my-5">
-              <div className="h-px bg-border flex-1" />
-              <span className="text-xs text-muted-foreground">or continue with</span>
-              <div className="h-px bg-border flex-1" />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => handleSocial("google")}
-                disabled={loading !== ""}
-                className="flex items-center justify-center gap-2 border border-border rounded-lg py-2.5 text-sm font-medium text-foreground bg-background hover:bg-muted transition-colors disabled:opacity-60"
-              >
-                <GoogleIcon className="w-4 h-4" />
-                Google
+              <div>
+                <label htmlFor="mfa" className={AUTH_LABEL}>Authentication code</label>
+                <input
+                  id="mfa"
+                  autoFocus
+                  inputMode="text"
+                  autoComplete="one-time-code"
+                  value={mfaCode}
+                  onChange={e => { setMfaCode(e.target.value); setError(""); }}
+                  className={authCodeInput(!!error)}
+                  placeholder="000000"
+                  required
+                />
+                <p className={AUTH_HINT}>Lost your device? Enter one of your recovery codes instead.</p>
+              </div>
+              <button type="button" onClick={backToPassword} className={`text-[13px] ${AUTH_LINK}`}>
+                ← Use a different account
               </button>
-              <button
-                type="button"
-                onClick={() => handleSocial("apple")}
-                disabled={loading !== ""}
-                className="flex items-center justify-center gap-2 border border-border rounded-lg py-2.5 text-sm font-medium text-foreground bg-background hover:bg-muted transition-colors disabled:opacity-60"
-              >
-                <AppleIcon className="w-4 h-4" />
-                Apple
-              </button>
-            </div>
-
             </>
-            )}
+          )
+        ) : (
+          <>
+            <div>
+              <label htmlFor="email" className={AUTH_LABEL}>Work email</label>
+              <input
+                id="email"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={e => { setEmail(e.target.value); setError(""); }}
+                className={authInput(!!error)}
+                placeholder="you@company.com"
+                required
+              />
+            </div>
 
-            <p className="text-center text-sm text-muted-foreground mt-6">
-              Don't have an account?{" "}
-              <Link href="/register" className="text-brand-500 hover:text-brand-400 font-medium">
-                Register
-              </Link>
-            </p>
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <label htmlFor="password" className="block text-sm font-medium text-[#0b0b0d]">Password</label>
+                <Link href="/forgot-password" className={`text-[13px] ${AUTH_LINK}`}>
+                  Forgot password?
+                </Link>
+              </div>
+              <PasswordInput
+                id="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={v => { setPassword(v); setError(""); }}
+                show={showPass}
+                onToggle={() => setShowPass(!showPass)}
+                error={!!error}
+                placeholder="Your password"
+              />
+            </div>
+
+            <label className="flex cursor-pointer items-start gap-2.5 text-[13px] text-[#5d5d66]">
+              <input
+                type="checkbox"
+                checked={acceptedPrivacy}
+                onChange={e => setAcceptedPrivacy(e.target.checked)}
+                className={AUTH_CHECK}
+                required
+              />
+              <span>
+                I accept the{" "}
+                <Link href="/privacy" target="_blank" className={`underline underline-offset-2 ${AUTH_LINK}`}>
+                  Privacy Policy
+                </Link>
+              </span>
+            </label>
+          </>
+        )}
+
+        {!mfaSetupNeeded && (
+          <button
+            type="submit"
+            disabled={
+              loading !== "" ||
+              (!verifying && !acceptedPrivacy) ||
+              (!!mfaToken && !mfaCode.trim()) ||
+              (!!otpToken && otpCode.trim().length < 6)
+            }
+            className={AUTH_BUTTON}
+          >
+            {loading === "credentials" && <Loader2 className="h-4 w-4 animate-spin" />}
+            {loading === "credentials"
+              ? (verifying ? "Verifying..." : "Signing in...")
+              : (verifying ? "Verify and sign in" : "Sign in")}
+            {loading !== "credentials" && <ArrowRight className={AUTH_ARROW} />}
+          </button>
+        )}
+      </form>
+
+      {!verifying && (
+        <>
+          <AuthDivider />
+          <div className="grid grid-cols-2 gap-3">
+            <button type="button" onClick={() => handleSocial("google")} disabled={loading !== ""} className={AUTH_SOCIAL}>
+              {loading === "google" ? <Loader2 className="h-4 w-4 animate-spin" /> : <GoogleIcon className="h-4 w-4" />}
+              Google
+            </button>
+            <button type="button" onClick={() => handleSocial("apple")} disabled={loading !== ""} className={AUTH_SOCIAL}>
+              {loading === "apple" ? <Loader2 className="h-4 w-4 animate-spin" /> : <AppleIcon className="h-4 w-4" />}
+              Apple
+            </button>
           </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function GoogleIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24">
-      <path fill="#4285F4" d="M23.52 12.27c0-.85-.08-1.67-.22-2.45H12v4.64h6.47a5.54 5.54 0 0 1-2.4 3.63v3h3.88c2.27-2.09 3.57-5.17 3.57-8.82Z" />
-      <path fill="#34A853" d="M12 24c3.24 0 5.96-1.07 7.95-2.91l-3.88-3c-1.08.72-2.46 1.15-4.07 1.15-3.13 0-5.78-2.11-6.73-4.96H1.27v3.11A11.99 11.99 0 0 0 12 24Z" />
-      <path fill="#FBBC05" d="M5.27 14.28a7.2 7.2 0 0 1 0-4.56V6.61H1.27a12 12 0 0 0 0 10.78l4-3.11Z" />
-      <path fill="#EA4335" d="M12 4.75c1.76 0 3.34.6 4.58 1.79l3.44-3.44C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.69 1.27 6.61l4 3.11C6.22 6.86 8.87 4.75 12 4.75Z" />
-    </svg>
-  );
-}
-
-function AppleIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zm3.378-3.066c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.56-1.702z"
-      />
-    </svg>
+        </>
+      )}
+    </AuthShell>
   );
 }

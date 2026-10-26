@@ -56,10 +56,11 @@ export default function FeatureFlagsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Feature Flags</h2>
+          <p className="page-eyebrow">Product</p>
+          <h2 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">Feature Flags</h2>
           <p className="text-sm text-muted-foreground mt-1">Roll out a feature globally, or pilot it on specific orgs first</p>
         </div>
-        <button onClick={() => setShowNew(true)} className="flex items-center gap-2 bg-primary hover:bg-brand-600 text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+        <button onClick={() => setShowNew(true)} className="flex items-center gap-2 bg-primary hover:bg-brand-600 text-primary-foreground px-4 py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em] transition-colors">
           <Plus className="w-4 h-4" /> New Flag
         </button>
       </div>
@@ -86,14 +87,14 @@ export default function FeatureFlagsPage() {
                   <span className="text-xs text-muted-foreground">{orgIds.length} org override{orgIds.length === 1 ? "" : "s"}</span>
                   <button
                     onClick={() => toggleGlobalMut.mutate({ id: f.id, enabled: !f.enabled_globally })}
-                    className={cn("text-xs font-medium px-2.5 py-1 rounded-full", f.enabled_globally ? "bg-green-500/10 text-green-400" : "bg-muted text-muted-foreground")}
+                    className={cn("text-xs font-medium px-2.5 py-1 rounded-[4px]", f.enabled_globally ? "bg-green-500/10 text-green-700" : "bg-muted text-muted-foreground")}
                   >
                     {f.enabled_globally ? "On for everyone" : "Off"}
                   </button>
                   <button onClick={() => setExpanded(isOpen ? null : f.id)} className="text-muted-foreground hover:text-foreground">
                     {isOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                   </button>
-                  <button onClick={() => deleteMut.mutate(f.id)} className="p-1.5 hover:bg-red-500/10 rounded text-muted-foreground hover:text-red-400">
+                  <button onClick={() => deleteMut.mutate(f.id)} className="p-1.5 hover:bg-red-500/10 rounded text-muted-foreground hover:text-red-600">
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
@@ -127,7 +128,7 @@ export default function FeatureFlagsPage() {
 
       {showNew && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={() => setShowNew(false)}>
-          <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-card border border-border rounded-lg border border-border shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-border">
               <h3 className="font-semibold text-foreground">New Feature Flag</h3>
               <button onClick={() => setShowNew(false)} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
@@ -145,7 +146,7 @@ export default function FeatureFlagsPage() {
                   className="w-full border border-border bg-background rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
               </div>
               <button type="submit" disabled={createMut.isPending}
-                className="w-full bg-primary text-primary-foreground py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-60">
+                className="w-full bg-primary text-primary-foreground py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em] flex items-center justify-center gap-2 disabled:opacity-60">
                 {createMut.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
                 Create
               </button>

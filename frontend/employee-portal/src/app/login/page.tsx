@@ -3,16 +3,12 @@
 import { useState, useEffect } from "react";
 import { signIn } from "next-auth/react";
 import Link from "next/link";
-import { Eye, EyeOff, Loader2, CheckCircle2 } from "lucide-react";
+import { ArrowRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { BrandLogo } from "@/components/brand/BrandLogo";
-
-const FEATURES = [
-  "One-click install for Mac, Windows & Linux",
-  "See exactly what was blocked and why",
-  "Track your device's compliance status",
-  "Your personal activity, kept private by design",
-];
+import {
+  AUTH_ARROW, AUTH_BUTTON, AUTH_CHECK, AUTH_LABEL, AUTH_LINK,
+  AuthError, AuthHeading, AuthShell, PasswordInput, authInput,
+} from "@/components/brand/AuthShell";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -65,135 +61,72 @@ export default function LoginPage() {
     toast.error(message);
   };
 
-  const inputClass =
-    "w-full rounded-lg bg-background px-3 py-2.5 text-sm outline-none transition-colors border " +
-    (error ? "border-red-500 focus:border-red-500" : "border-border/60 focus:border-brand-500");
-
   return (
-    <div className="min-h-screen relative flex bg-gradient-to-br from-brand-tint via-brand-tint-soft to-background overflow-hidden">
-      <div className="absolute inset-0 opacity-20 pointer-events-none [background-image:radial-gradient(circle_at_20%_20%,#FF7000,transparent_35%),radial-gradient(circle_at_80%_70%,#FF7000,transparent_35%)]" />
+    <AuthShell
+      topRight={<>First time here?{" "}<Link href="/register" className={`font-medium ${AUTH_LINK}`}>Activate account</Link></>}
+    >
+      <AuthHeading eyebrow="Employee portal" title="Sign in to Aavishield">
+        Use the work email your IT administrator added you with.
+      </AuthHeading>
 
-      {/* Left — brand content */}
-      <div className="hidden lg:flex lg:w-1/2 relative flex-col justify-between p-12">
-        <div className="flex items-center gap-3">
-          <BrandLogo className="h-[72px]" priority />
+      {error && <AuthError>{error}</AuthError>}
+
+      <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+        <div>
+          <label htmlFor="email" className={AUTH_LABEL}>Work email</label>
+          <input
+            id="email"
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={e => { setEmail(e.target.value); setError(""); }}
+            className={authInput(!!error)}
+            placeholder="you@company.com"
+            required
+          />
         </div>
 
-        <div className="space-y-8">
-          <div>
-            <h1 className="text-4xl font-bold text-foreground leading-tight">
-              Stay protected. Stay productive.
-            </h1>
-            <p className="text-muted-foreground mt-4 text-base">
-              Your company's security portal — install the agent, check your
-              device status, and understand what's blocked on your network.
-            </p>
+        <div>
+          <div className="mb-2 flex items-center justify-between">
+            <label htmlFor="password" className="block text-sm font-medium text-[#0b0b0d]">Portal password</label>
+            <Link href="/forgot-password" className={`text-[13px] ${AUTH_LINK}`}>
+              Forgot password?
+            </Link>
           </div>
-
-          <ul className="space-y-3">
-            {FEATURES.map((f) => (
-              <li key={f} className="flex items-start gap-3 text-sm text-body">
-                <CheckCircle2 className="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" />
-                <span>{f}</span>
-              </li>
-            ))}
-          </ul>
+          <PasswordInput
+            id="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={v => { setPassword(v); setError(""); }}
+            show={showPass}
+            onToggle={() => setShowPass(!showPass)}
+            error={!!error}
+            placeholder="Your password"
+          />
         </div>
 
-        <p className="text-xs text-subtle">© 2026 Aavishield. Your device traffic is protected by company policy.</p>
-      </div>
+        <label className="flex cursor-pointer items-start gap-2.5 text-[13px] text-[#5d5d66]">
+          <input
+            type="checkbox"
+            checked={acceptedPrivacy}
+            onChange={e => setAcceptedPrivacy(e.target.checked)}
+            className={AUTH_CHECK}
+            required
+          />
+          <span>
+            I accept the{" "}
+            <Link href="/privacy" target="_blank" className={`underline underline-offset-2 ${AUTH_LINK}`}>
+              Privacy Policy
+            </Link>
+          </span>
+        </label>
 
-      {/* Right — form */}
-      <div className="w-full lg:w-1/2 relative flex items-center justify-center p-6 sm:p-10">
-        <div className="w-full max-w-md">
-          <div className="lg:hidden text-center mb-8">
-            <BrandLogo className="h-24" priority />
-            <h1 className="sr-only">Aavishield</h1>
-            <p className="text-muted-foreground mt-1">Employee Security Portal</p>
-          </div>
-
-          <div className="bg-card border border-border rounded-2xl p-8 shadow-2xl">
-            <h2 className="text-xl font-semibold text-foreground mb-6">Sign in to your account</h2>
-
-            {error && (
-              <div className="bg-red-500/10 border border-red-500/30 text-danger rounded-lg px-4 py-3 mb-4 text-sm">
-                {error}
-              </div>
-            )}
-
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-muted-foreground mb-1">Work email</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={e => { setEmail(e.target.value); setError(""); }}
-                  className={inputClass}
-                  placeholder="you@company.com"
-                  required
-                />
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-sm font-medium text-muted-foreground">Portal password</label>
-                  <Link href="/forgot-password" className="text-xs text-brand-500 hover:text-brand-400">
-                    Forgot password?
-                  </Link>
-                </div>
-                <div className="relative">
-                  <input
-                    type={showPass ? "text" : "password"}
-                    value={password}
-                    onChange={e => { setPassword(e.target.value); setError(""); }}
-                    className={`${inputClass} pr-10`}
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPass(!showPass)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              <label className="flex items-start gap-2 text-xs text-muted-foreground cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={acceptedPrivacy}
-                  onChange={e => setAcceptedPrivacy(e.target.checked)}
-                  className="mt-0.5 w-3.5 h-3.5 rounded border-border accent-brand-500"
-                  required
-                />
-                <span>
-                  I accept the{" "}
-                  <Link href="/privacy" target="_blank" className="text-brand-500 hover:text-brand-400 underline">
-                    Privacy Policy
-                  </Link>
-                </span>
-              </label>
-
-              <button
-                type="submit"
-                disabled={loading !== "" || !acceptedPrivacy}
-                className="w-full bg-primary hover:bg-brand-600 text-primary-foreground font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
-              >
-                {loading === "credentials" && <Loader2 className="w-4 h-4 animate-spin" />}
-                {loading === "credentials" ? "Signing in..." : "Sign In"}
-              </button>
-            </form>
-
-            <p className="text-center text-sm text-muted-foreground mt-6">
-              Don't have an account?{" "}
-              <Link href="/register" className="text-brand-500 hover:text-brand-400 font-medium">
-                Activate account
-              </Link>
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
+        <button type="submit" disabled={loading !== "" || !acceptedPrivacy} className={AUTH_BUTTON}>
+          {loading === "credentials" && <Loader2 className="h-4 w-4 animate-spin" />}
+          {loading === "credentials" ? "Signing in..." : "Sign in"}
+          {loading !== "credentials" && <ArrowRight className={AUTH_ARROW} />}
+        </button>
+      </form>
+    </AuthShell>
   );
 }

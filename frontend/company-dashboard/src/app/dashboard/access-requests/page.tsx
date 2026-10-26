@@ -95,7 +95,8 @@ export default function AccessRequestsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-foreground">Access Requests</h2>
+        <p className="page-eyebrow">Monitoring</p>
+        <h2 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">Access Requests</h2>
         <p className="text-sm text-muted-foreground mt-1">
           Employees ask for an exception from the activity that stopped them. Approving opens exactly that one thing for that one person, and you can revoke it at any time.
         </p>
@@ -184,7 +185,7 @@ export default function AccessRequestsPage() {
                       {r.review_note && <p className="text-[11px] text-subtle mt-1">Note: {r.review_note}</p>}
                     </td>
                     <td className="px-5 py-4 whitespace-nowrap">
-                      <span className={cn("px-2.5 py-1 rounded-full text-xs font-medium capitalize", STATUS_BADGE[r.status] ?? "bg-elevated text-body")}>
+                      <span className={cn("px-2.5 py-1 rounded-[4px] text-xs font-medium capitalize", STATUS_BADGE[r.status] ?? "bg-elevated text-body")}>
                         {r.kind === "dlp" && r.status === "approved" ? "justified" : r.status}
                       </span>
                       {r.reviewed_at && <p className="text-[11px] text-subtle mt-1">{formatDateTime(r.reviewed_at)}</p>}
@@ -260,7 +261,7 @@ function DecisionDialog({ decision, onClose }: { decision: Decision; onClose: ()
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={onClose}>
-      <div role="dialog" aria-modal="true" className="bg-card rounded-2xl shadow-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+      <div role="dialog" aria-modal="true" className="bg-card rounded-lg border border-border shadow-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-4">
           <h3 className="font-semibold text-foreground">{title}</h3>
           <button onClick={onClose} aria-label="Close" className="text-subtle hover:text-foreground"><X className="w-4 h-4" /></button>

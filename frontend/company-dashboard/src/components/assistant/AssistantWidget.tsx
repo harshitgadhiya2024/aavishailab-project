@@ -85,7 +85,7 @@ function AssistantBubble({ m, onPick }: { m: Msg; onPick?: (q: string) => void }
           <div className="mt-2 flex flex-wrap gap-1.5">
             {m.suggestions.map((s, i) => (
               <button key={i} onClick={() => onPick(s.query)}
-                className="rounded-full border border-brand-500/30 bg-brand-500/5 px-3 py-1.5 text-xs font-medium text-brand-600 transition-colors hover:bg-brand-500/15 dark:text-brand-400">
+                className="rounded-[4px] border border-brand-500/30 bg-brand-500/5 px-3 py-1.5 text-xs font-medium text-brand-600 transition-colors hover:bg-brand-500/15 dark:text-brand-400">
                 {s.label}
               </button>
             ))}
@@ -319,7 +319,7 @@ export function AssistantWidget() {
         aria-label={open ? "Close assistant" : "Open Aavishield AI assistant"}
         aria-expanded={open}
         className={cn(
-          "fixed bottom-5 right-5 z-50 grid h-14 w-14 place-items-center rounded-full bg-brand-500 text-white shadow-[0_12px_32px_-8px_rgb(255_112_0/0.7)] transition-all duration-300 hover:scale-105 hover:bg-brand-600 active:scale-95",
+          "fixed bottom-5 right-5 z-50 grid h-12 w-12 place-items-center rounded-lg bg-brand-500 text-white shadow-md transition-[background-color,transform] duration-200 hover:bg-brand-600 active:scale-95",
           open && "max-sm:hidden"
         )}
       >
@@ -329,7 +329,6 @@ export function AssistantWidget() {
         <span className={cn("absolute transition-all duration-300", open ? "-rotate-90 scale-50 opacity-0" : "rotate-0 scale-100 opacity-100")}>
           <Sparkles className="h-6 w-6" />
         </span>
-        {!open && <span className="absolute inset-0 -z-10 animate-ping rounded-full bg-brand-500/30 [animation-duration:3s]" />}
       </button>
 
       {/* Panel */}
@@ -429,7 +428,7 @@ export function AssistantWidget() {
                 <div className="flex flex-wrap gap-1.5 pl-9">
                   {QUICK_REPLIES.map((q) => (
                     <button key={q} onClick={() => { setInput(q); inputRef.current?.focus(); }}
-                      className="rounded-full border border-brand-500/30 bg-brand-500/5 px-3 py-1.5 text-left text-xs text-brand-600 transition-colors hover:bg-brand-500/15 dark:text-brand-400">
+                      className="rounded-[4px] border border-brand-500/30 bg-brand-500/5 px-3 py-1.5 text-left text-xs text-brand-600 transition-colors hover:bg-brand-500/15 dark:text-brand-400">
                       {q}
                     </button>
                   ))}

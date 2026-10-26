@@ -84,7 +84,8 @@ export default function MyScreenshotsPage() {
     <div className="mx-auto max-w-7xl space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-foreground">My Screenshots</h1>
+          <p className="page-eyebrow">My protection</p>
+          <h1 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">My Screenshots</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             The screenshots your company sees for your work day. You can add a reason to any of them.
           </p>
@@ -212,7 +213,7 @@ function MonitoringNotice({ monitoring }: { monitoring: any }) {
 function Stat({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="rounded-xl border border-border bg-card p-4">
-      <div className="text-xl font-semibold text-foreground">{value}</div>
+      <div className="[font-family:Satoshi,var(--font-inter),sans-serif] text-[1.5rem] font-medium leading-tight tracking-[-0.02em] tabular-nums text-foreground">{value}</div>
       <div className="mt-0.5 text-xs text-muted-foreground">{label}</div>
     </div>
   );
@@ -414,7 +415,7 @@ function Viewer({
           ) : canAddReason ? (
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-muted-foreground">Something here that needs explaining? Your company will see your reason next to this screenshot.</p>
-              <button onClick={() => setEditing(true)} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-brand-600">
+              <button onClick={() => setEditing(true)} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 font-mono text-[12px] font-medium uppercase tracking-[0.06em] text-primary-foreground hover:bg-brand-600">
                 <MessageSquareText className="h-4 w-4" /> Add reason
               </button>
             </div>
@@ -467,7 +468,7 @@ function ReasonEditor({ shot, onDone }: { shot: any; onDone: () => void }) {
           <button
             type="submit"
             disabled={!valid || save.isPending || text.trim() === (shot.employee_note ?? "")}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-brand-600 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 font-mono text-[12px] font-medium uppercase tracking-[0.06em] text-primary-foreground hover:bg-brand-600 disabled:opacity-50"
           >
             {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />} Save reason
           </button>

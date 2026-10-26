@@ -11,13 +11,13 @@ import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Too
 import { healthApi, overviewApi } from "@/lib/api";
 import { cn, formatINR, formatNumber, PLAN_LABELS, STATUS_STYLES, timeAgo } from "@/lib/utils";
 
-const AXIS = { fontSize: 11, fill: "#8A8A8A" };
-const TOOLTIP = { background: "#141414", border: "1px solid #262626", borderRadius: 8, color: "#F5F5F5", fontSize: 12 };
+const AXIS = { fontSize: 11, fill: "#71717A" };
+const TOOLTIP = { background: "#FFFFFF", border: "1px solid #E7E7E8", borderRadius: 6, color: "#0B0B0D", fontSize: 12, boxShadow: "0 16px 40px -20px rgb(24 24 27 / 0.2)" };
 
 const SEVERITY = {
-  critical: { icon: AlertOctagon, tone: "text-red-400 bg-red-500/10", ring: "border-red-500/30" },
-  warning: { icon: AlertTriangle, tone: "text-yellow-400 bg-yellow-500/10", ring: "border-yellow-500/20" },
-  info: { icon: Info, tone: "text-sky-400 bg-sky-500/10", ring: "border-border" },
+  critical: { icon: AlertOctagon, tone: "text-red-600 bg-red-500/10", ring: "border-red-500/30" },
+  warning: { icon: AlertTriangle, tone: "text-yellow-700 bg-yellow-500/10", ring: "border-yellow-500/20" },
+  info: { icon: Info, tone: "text-sky-700 bg-sky-500/10", ring: "border-border" },
 } as const;
 
 function greeting() {
@@ -45,7 +45,7 @@ export default function CommandCenter() {
   if (isError || !data) {
     return (
       <div className="flex items-start gap-3 rounded-xl border border-red-500/30 bg-red-500/5 p-5 text-sm text-foreground">
-        <AlertTriangle className="h-5 w-5 flex-shrink-0 text-red-400" />
+        <AlertTriangle className="h-5 w-5 flex-shrink-0 text-red-600" />
         The overview couldn&apos;t load. Check System Health, then try again.
       </div>
     );
@@ -63,7 +63,8 @@ export default function CommandCenter() {
     <div className="mx-auto max-w-[1400px] space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-semibold text-foreground">{greeting()}{name ? `, ${name}` : ""}</h2>
+          <p className="page-eyebrow">Command center</p>
+          <h2 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">{greeting()}{name ? `, ${name}` : ""}</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             {attention.length === 0
               ? "Everything is running smoothly."
@@ -75,7 +76,7 @@ export default function CommandCenter() {
             overviewApi.get(true).then((r) => qc.setQueryData(["sa-overview"], r.data));
             qc.invalidateQueries({ queryKey: ["sa-health"] });
           }}
-          className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 font-mono text-[10.5px] uppercase tracking-[0.06em] text-muted-foreground hover:bg-elevated hover:text-foreground"
         >
           <RefreshCw className={cn("h-3.5 w-3.5", isFetching && "animate-spin")} />
           Updated {timeAgo(data.generated_at)}
@@ -153,7 +154,7 @@ export default function CommandCenter() {
           <div className="mt-5 border-t border-border pt-4">
             <div className="mb-2 flex items-center justify-between text-xs">
               <span className="font-medium text-muted-foreground">Agent versions in the field</span>
-              {fl.latest_version && <span className="text-[#8A8A8A]">latest {fl.latest_version}</span>}
+              {fl.latest_version && <span className="text-subtle">latest {fl.latest_version}</span>}
             </div>
             {(fl.versions ?? []).length === 0 ? (
               <p className="text-xs text-muted-foreground">No devices yet.</p>
@@ -161,7 +162,7 @@ export default function CommandCenter() {
               <div className="space-y-1.5">
                 {(fl.versions as any[]).slice(0, 5).map((v) => (
                   <div key={v.version} className="flex items-center gap-2 text-xs">
-                    <span className={cn("w-16 font-mono", v.latest ? "text-green-400" : "text-muted-foreground")}>{v.version}</span>
+                    <span className={cn("w-16 font-mono", v.latest ? "text-green-700" : "text-muted-foreground")}>{v.version}</span>
                     <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
                       <div className={cn("h-full rounded-full", v.latest ? "bg-green-500" : "bg-brand-500/70")} style={{ width: `${(v.count / Math.max(1, fl.devices)) * 100}%` }} />
                     </div>
@@ -171,7 +172,7 @@ export default function CommandCenter() {
               </div>
             )}
             {(fl.outdated ?? 0) > 0 && (
-              <p className="mt-2 text-xs text-yellow-400">{fl.outdated} device{fl.outdated === 1 ? "" : "s"} not on the latest agent</p>
+              <p className="mt-2 text-xs text-yellow-700">{fl.outdated} device{fl.outdated === 1 ? "" : "s"} not on the latest agent</p>
             )}
           </div>
         </Card>
@@ -187,7 +188,7 @@ export default function CommandCenter() {
                   <stop offset="95%" stopColor="#FF7000" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#222" vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#EEEEEF" vertical={false} />
               <XAxis dataKey="label" tick={AXIS} tickLine={false} axisLine={false} interval={1} />
               <YAxis tick={AXIS} tickLine={false} axisLine={false} allowDecimals={false} />
               <Tooltip contentStyle={TOOLTIP} />
@@ -196,7 +197,7 @@ export default function CommandCenter() {
             </AreaChart>
           </ResponsiveContainer>
           {(us.orgs_on_own_storage ?? 0) > 0 && (
-            <p className="mt-2 text-[11px] text-[#8A8A8A]">
+            <p className="mt-2 text-[11px] text-subtle">
               {us.orgs_on_own_storage} organization{us.orgs_on_own_storage === 1 ? " keeps" : "s keep"} data in their own database and {us.orgs_on_own_storage === 1 ? "is" : "are"} not counted.
             </p>
           )}
@@ -205,10 +206,10 @@ export default function CommandCenter() {
         <Card title="New organizations" subtitle="Per week, last 12 weeks">
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={(cu.signups_by_week ?? []).map((w: any) => ({ ...w, label: new Date(w.week).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) }))} margin={{ left: -16, right: 8 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#222" vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#EEEEEF" vertical={false} />
               <XAxis dataKey="label" tick={AXIS} tickLine={false} axisLine={false} interval={1} />
               <YAxis tick={AXIS} tickLine={false} axisLine={false} allowDecimals={false} />
-              <Tooltip contentStyle={TOOLTIP} cursor={{ fill: "#ffffff08" }} />
+              <Tooltip contentStyle={TOOLTIP} cursor={{ fill: "#0b0b0d08" }} />
               <Bar dataKey="count" name="New organizations" fill="#FF7000" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
@@ -266,7 +267,7 @@ export default function CommandCenter() {
                     <span className="block truncate text-foreground">
                       <span className="text-muted-foreground">{a.actor || "System"}</span> {humanAction(a.action)} {a.resource?.replace(/_/g, " ")}
                     </span>
-                    <span className="text-xs text-[#8A8A8A]">{a.org ? `${a.org} · ` : ""}{timeAgo(a.created_at)}</span>
+                    <span className="text-xs text-subtle">{a.org ? `${a.org} · ` : ""}{timeAgo(a.created_at)}</span>
                   </span>
                 </li>
               ))}
@@ -287,18 +288,21 @@ function Card({ title, subtitle, href, action, className, children }: {
   title: string; subtitle?: string; href?: string; action?: string; className?: string; children: React.ReactNode;
 }) {
   return (
-    <section className={cn("rounded-xl border border-border bg-card p-5", className)}>
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-          {subtitle && <p className="mt-0.5 text-xs text-[#8A8A8A]">{subtitle}</p>}
-        </div>
-        {action && <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{action}</span>}
+    // The website's UI card: a mono title bar over a hairline, then the content.
+    <section className={cn("rounded-lg border border-border bg-card", className)}>
+      <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-3">
+        <h3 className="font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-foreground">{title}</h3>
+        {action && <span className="rounded-[4px] bg-brand-tint px-1.5 py-0.5 font-mono text-[10.5px] text-brand-700">{action}</span>}
         {href && (
-          <Link href={href} className="text-xs text-brand-500 hover:text-brand-400">View all</Link>
+          <Link href={href} className="inline-flex items-center gap-1 font-mono text-[10.5px] uppercase tracking-[0.08em] text-brand-600 hover:text-brand-700">
+            View all <ArrowUpRight className="h-3 w-3" />
+          </Link>
         )}
       </div>
-      {children}
+      <div className="p-5">
+        {subtitle && <p className="-mt-1 mb-4 text-[13px] text-muted-foreground">{subtitle}</p>}
+        {children}
+      </div>
     </section>
   );
 }
@@ -308,15 +312,15 @@ function Kpi({ icon: Icon, label, value, sub, href, trend }: {
   trend?: { value: string; up: boolean; show: boolean };
 }) {
   return (
-    <Link href={href} className="group rounded-xl border border-border bg-card p-5 transition-colors hover:border-brand-500/40">
+    <Link href={href} className="group rounded-lg border border-border bg-card p-5 transition-colors hover:border-border-strong">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-muted-foreground">{label}</span>
-        <Icon className="h-4 w-4 text-[#8A8A8A] transition-colors group-hover:text-brand-500" />
+        <span className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-muted-foreground">{label}</span>
+        <Icon className="h-4 w-4 text-subtle transition-colors group-hover:text-brand-500" />
       </div>
-      <p className="mt-2 text-3xl font-semibold tabular-nums text-foreground">{value}</p>
-      <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+      <p className="mt-3 [font-family:Satoshi,var(--font-inter),sans-serif] text-[2rem] font-medium leading-none tracking-[-0.03em] tabular-nums text-foreground">{value}</p>
+      <div className="mt-2.5 flex items-center gap-2 text-[12px] text-muted-foreground">
         {trend?.show && (
-          <span className={cn("inline-flex items-center gap-0.5 font-medium", trend.up ? "text-green-400" : "text-red-400")}>
+          <span className={cn("inline-flex items-center gap-0.5 font-medium", trend.up ? "text-green-700" : "text-red-600")}>
             {trend.up ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownRight className="h-3.5 w-3.5" />}
             {trend.value}
           </span>
@@ -330,15 +334,15 @@ function Kpi({ icon: Icon, label, value, sub, href, trend }: {
 function Breakdown({ title, data, labels }: { title: string; data: Record<string, number>; labels: Record<string, string> }) {
   const entries = Object.entries(data).sort((a, b) => b[1] - a[1]);
   const total = entries.reduce((s, [, n]) => s + n, 0);
-  const colors = ["bg-brand-500", "bg-sky-400", "bg-green-500", "bg-purple-400", "bg-zinc-500"];
+  const colors = ["bg-brand-500", "bg-sky-500", "bg-green-500", "bg-purple-400", "bg-zinc-500"];
   return (
     <div>
-      <p className="mb-2 text-xs font-medium text-muted-foreground">{title}</p>
+      <p className="mb-2 font-mono text-[10.5px] uppercase tracking-[0.08em] text-muted-foreground">{title}</p>
       {total === 0 ? (
-        <p className="text-xs text-[#8A8A8A]">No data yet.</p>
+        <p className="text-xs text-subtle">No data yet.</p>
       ) : (
         <>
-          <div className="flex h-2 overflow-hidden rounded-full bg-muted">
+          <div className="flex h-2 gap-px overflow-hidden bg-muted">
             {entries.map(([k, n], i) => <div key={k} className={colors[i % colors.length]} style={{ width: `${(n / total) * 100}%` }} />)}
           </div>
           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
@@ -358,8 +362,8 @@ function Breakdown({ title, data, labels }: { title: string; data: Record<string
 function Mini({ label, value, warn }: { label: string; value: string; warn?: boolean }) {
   return (
     <div>
-      <p className="text-[#8A8A8A]">{label}</p>
-      <p className={cn("mt-0.5 text-sm font-semibold tabular-nums", warn ? "text-yellow-400" : "text-foreground")}>{value}</p>
+      <p className="text-subtle">{label}</p>
+      <p className={cn("mt-0.5 [font-family:Satoshi,var(--font-inter),sans-serif] text-[1.05rem] font-medium tabular-nums", warn ? "text-yellow-700" : "text-foreground")}>{value}</p>
     </div>
   );
 }
@@ -368,7 +372,7 @@ function HealthSummary({ health }: { health: any }) {
   if (!health) return <div className="h-16 animate-pulse rounded-lg bg-muted" />;
   if (!health.reachable) {
     return (
-      <div className="flex items-start gap-2 text-sm text-yellow-400">
+      <div className="flex items-start gap-2 text-sm text-yellow-700">
         <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
         Monitoring isn&apos;t reachable, so service status is unknown.
       </div>
@@ -379,7 +383,7 @@ function HealthSummary({ health }: { health: any }) {
   return (
     <div>
       <div className="flex items-center gap-3">
-        <span className={cn("flex h-10 w-10 items-center justify-center rounded-xl", down.length ? "bg-red-500/10 text-red-400" : "bg-green-500/10 text-green-400")}>
+        <span className={cn("flex h-10 w-10 items-center justify-center rounded-xl", down.length ? "bg-red-500/10 text-red-600" : "bg-green-500/10 text-green-700")}>
           <HeartPulse className="h-5 w-5" />
         </span>
         <div>
@@ -392,7 +396,7 @@ function HealthSummary({ health }: { health: any }) {
           <span key={s.job} title={`${s.job}: ${s.up ? "up" : "down"}`} className={cn("h-2.5 w-2.5 rounded-sm", s.up ? "bg-green-500/80" : "bg-red-500")} />
         ))}
       </div>
-      {down.length > 0 && <p className="mt-2 truncate text-xs text-red-400">{down.map((s) => s.job).join(", ")}</p>}
+      {down.length > 0 && <p className="mt-2 truncate text-xs text-red-600">{down.map((s) => s.job).join(", ")}</p>}
     </div>
   );
 }

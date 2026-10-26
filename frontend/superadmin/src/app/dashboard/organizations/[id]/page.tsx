@@ -17,17 +17,17 @@ const PLAN_LABELS: Record<string, string> = {
 };
 
 const ACTION_COLORS: Record<string, string> = {
-  blocked: "bg-red-500/10 text-red-400",
-  alerted: "bg-yellow-500/10 text-yellow-400",
-  allowed: "bg-green-500/10 text-green-400",
+  blocked: "bg-red-500/10 text-red-600",
+  alerted: "bg-yellow-500/10 text-yellow-700",
+  allowed: "bg-green-500/10 text-green-700",
   monitored: "bg-brand-500/10 text-brand-500",
 };
 
 const BILLING_STATUS_COLORS: Record<string, string> = {
-  pending: "bg-yellow-500/10 text-yellow-400",
-  paid: "bg-green-500/10 text-green-400",
+  pending: "bg-yellow-500/10 text-yellow-700",
+  paid: "bg-green-500/10 text-green-700",
   cancelled: "bg-muted text-muted-foreground",
-  expired: "bg-red-500/10 text-red-400",
+  expired: "bg-red-500/10 text-red-600",
 };
 
 function formatMoney(paise: number, currency = "INR") {
@@ -155,8 +155,8 @@ export default function OrganizationDetailPage() {
   const billingRecords = billingData?.data?.records ?? [];
 
   const stats = [
-    { label: "Users", value: formatNumber(d.user_count ?? 0), icon: Users, color: "bg-green-500/10 text-green-400" },
-    { label: "Employees", value: formatNumber(d.employee_count ?? 0), icon: Shield, color: "bg-purple-500/10 text-purple-400" },
+    { label: "Users", value: formatNumber(d.user_count ?? 0), icon: Users, color: "bg-green-500/10 text-green-700" },
+    { label: "Employees", value: formatNumber(d.employee_count ?? 0), icon: Shield, color: "bg-purple-500/10 text-purple-700" },
     { label: "Devices", value: formatNumber(d.device_count ?? 0), icon: Laptop, color: "bg-brand-500/10 text-brand-500" },
     { label: "Policies", value: formatNumber(d.policy_count ?? 0), icon: Shield, color: "bg-brand-500/10 text-brand-500" },
   ];
@@ -173,7 +173,8 @@ export default function OrganizationDetailPage() {
             <Building2 className="w-7 h-7 text-brand-500" />
           </div>
           <div>
-            <h2 className="text-2xl font-bold text-foreground">{org.name}</h2>
+            <p className="page-eyebrow">Customers</p>
+            <h2 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">{org.name}</h2>
             <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
               <span className="flex items-center gap-1"><Globe className="w-3.5 h-3.5" /> {org.domain || "—"}</span>
               <span>·</span>
@@ -182,10 +183,10 @@ export default function OrganizationDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-brand-500/10 text-brand-500">
+          <span className="px-3 py-1.5 rounded-[4px] text-xs font-medium bg-brand-500/10 text-brand-500">
             {PLAN_LABELS[org.plan] ?? org.plan}
           </span>
-          <span className={cn("flex items-center gap-1.5 rounded-full bg-muted px-3 py-1.5 text-xs font-medium", st.text)}>
+          <span className={cn("flex items-center gap-1.5 rounded-[4px] bg-muted px-3 py-1.5 text-xs font-medium", st.text)}>
             <span className={cn("h-1.5 w-1.5 rounded-full", st.dot)} />
             {st.label}
             {org.status === "trial" && org.trial_ends_at && (
@@ -201,7 +202,7 @@ export default function OrganizationDetailPage() {
           onClick={() => impersonateMut.mutate()}
           disabled={!canManage || impersonateMut.isPending}
           title={canManage ? "Sign in as this org's admin" : "Requires full superadmin access"}
-          className="flex items-center gap-2 border border-border text-foreground px-3 py-2 rounded-lg text-sm font-medium hover:bg-muted disabled:opacity-50"
+          className="flex items-center gap-2 border border-border text-foreground px-3 py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em] hover:bg-muted disabled:opacity-50"
         >
           {impersonateMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserCog className="w-4 h-4" />}
           View as Org
@@ -209,7 +210,7 @@ export default function OrganizationDetailPage() {
         <button
           onClick={() => exportMut.mutate()}
           disabled={exportMut.isPending}
-          className="flex items-center gap-2 border border-border text-foreground px-3 py-2 rounded-lg text-sm font-medium hover:bg-muted disabled:opacity-50"
+          className="flex items-center gap-2 border border-border text-foreground px-3 py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em] hover:bg-muted disabled:opacity-50"
         >
           {exportMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
           Export Data
@@ -219,7 +220,7 @@ export default function OrganizationDetailPage() {
             onClick={() => setShowPurge(true)}
             disabled={!isInactive}
             title={isInactive ? "Permanently delete all data" : "Deactivate the organization first"}
-            className="flex items-center gap-2 border border-red-500/30 text-red-400 px-3 py-2 rounded-lg text-sm font-medium hover:bg-red-500/10 disabled:opacity-40"
+            className="flex items-center gap-2 border border-red-500/30 text-red-600 px-3 py-2 rounded-lg text-sm font-medium hover:bg-red-500/10 disabled:opacity-40"
           >
             <Trash2 className="w-4 h-4" />
             Purge Data
@@ -233,9 +234,9 @@ export default function OrganizationDetailPage() {
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">{s.label}</p>
-                <p className="text-3xl font-bold text-foreground mt-1">{s.value}</p>
+                <p className="mt-1.5 [font-family:Satoshi,var(--font-inter),sans-serif] text-[2rem] font-medium leading-none tracking-[-0.03em] tabular-nums text-foreground">{s.value}</p>
                 {s.label === "Users" && (
-                  <p className="text-xs text-[#6B6B6B] mt-1">of {org.max_users} seats</p>
+                  <p className="text-xs text-subtle mt-1">of {org.max_users} seats</p>
                 )}
               </div>
               <div className={`p-2.5 rounded-lg ${s.color}`}>
@@ -255,7 +256,7 @@ export default function OrganizationDetailPage() {
           </div>
           <div className="max-h-80 overflow-y-auto divide-y divide-border">
             {(d.devices ?? []).length === 0 ? (
-              <p className="text-center text-sm text-[#6B6B6B] py-10">No devices enrolled yet</p>
+              <p className="text-center text-sm text-subtle py-10">No devices enrolled yet</p>
             ) : d.devices.map((dev: any) => (
               <div key={dev.id} className="px-5 py-3 flex items-center justify-between text-sm">
                 <div>
@@ -263,8 +264,8 @@ export default function OrganizationDetailPage() {
                   <p className="text-xs text-muted-foreground">{dev.os_type} · v{dev.agent_version || "?"}</p>
                 </div>
                 <span className={cn(
-                  "text-xs font-medium px-2 py-0.5 rounded-full",
-                  dev.status === "online" ? "bg-green-500/10 text-green-400" : "bg-muted text-muted-foreground"
+                  "text-xs font-medium px-2 py-0.5 rounded-[4px]",
+                  dev.status === "online" ? "bg-green-500/10 text-green-700" : "bg-muted text-muted-foreground"
                 )}>
                   {dev.status}
                 </span>
@@ -281,7 +282,7 @@ export default function OrganizationDetailPage() {
           </div>
           <div className="max-h-80 overflow-y-auto divide-y divide-border">
             {(d.users ?? []).length === 0 ? (
-              <p className="text-center text-sm text-[#6B6B6B] py-10">No dashboard users yet</p>
+              <p className="text-center text-sm text-subtle py-10">No dashboard users yet</p>
             ) : d.users.map((u: any) => (
               <div key={u.id} className="px-5 py-3 flex items-center justify-between text-sm">
                 <div>
@@ -310,7 +311,7 @@ export default function OrganizationDetailPage() {
         </div>
         <div className="divide-y divide-border">
           {billingRecords.length === 0 ? (
-            <p className="text-center text-sm text-[#6B6B6B] py-10">No invoices yet</p>
+            <p className="text-center text-sm text-subtle py-10">No invoices yet</p>
           ) : billingRecords.map((b: any) => (
             <div key={b.id} className="px-5 py-3 flex items-center justify-between text-sm gap-3">
               <div className="min-w-0">
@@ -319,7 +320,7 @@ export default function OrganizationDetailPage() {
               </div>
               <div className="flex items-center gap-3 flex-shrink-0">
                 <span className="font-mono text-foreground">{formatMoney(b.amount_paise, b.currency)}</span>
-                <span className={cn("px-2 py-0.5 rounded-full text-xs font-medium capitalize", BILLING_STATUS_COLORS[b.status])}>
+                <span className={cn("px-2 py-0.5 rounded-[4px] text-xs font-medium capitalize", BILLING_STATUS_COLORS[b.status])}>
                   {b.status}
                 </span>
                 {b.status === "pending" && b.short_url && (
@@ -356,13 +357,13 @@ export default function OrganizationDetailPage() {
             </thead>
             <tbody className="divide-y divide-border">
               {(d.recent_activity ?? []).length === 0 ? (
-                <tr><td colSpan={4} className="text-center py-10 text-[#6B6B6B]">No activity recorded yet</td></tr>
+                <tr><td colSpan={4} className="text-center py-10 text-subtle">No activity recorded yet</td></tr>
               ) : d.recent_activity.map((ev: any) => (
                 <tr key={ev.id}>
                   <td className="px-5 py-3 text-muted-foreground">{ev.event_type}</td>
                   <td className="px-5 py-3 text-foreground max-w-xs truncate">{ev.target_domain || ev.target || "—"}</td>
                   <td className="px-5 py-3">
-                    <span className={cn("px-2 py-0.5 rounded-full text-xs font-medium", ACTION_COLORS[ev.action] ?? "bg-muted text-muted-foreground")}>
+                    <span className={cn("px-2 py-0.5 rounded-[4px] text-xs font-medium", ACTION_COLORS[ev.action] ?? "bg-muted text-muted-foreground")}>
                       {ev.action}
                     </span>
                   </td>
@@ -374,12 +375,12 @@ export default function OrganizationDetailPage() {
         </div>
       </div>
 
-      <p className="text-xs text-[#6B6B6B]">Created {formatDate(org.created_at)}</p>
+      <p className="text-xs text-subtle">Created {formatDate(org.created_at)}</p>
 
       {/* New invoice modal */}
       {showInvoice && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={() => setShowInvoice(false)}>
-          <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-card border border-border rounded-lg border border-border shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-border">
               <h3 className="font-semibold text-foreground">New Invoice</h3>
               <button onClick={() => setShowInvoice(false)} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
@@ -416,11 +417,11 @@ export default function OrganizationDetailPage() {
                   <option value="annual">Annual</option>
                 </select>
               </div>
-              <p className="text-xs text-[#6B6B6B]">Creates a real Razorpay payment link the org's finance contact can pay directly.</p>
+              <p className="text-xs text-subtle">Creates a real Razorpay payment link the org's finance contact can pay directly.</p>
               <button
                 type="submit"
                 disabled={createInvoiceMut.isPending}
-                className="w-full bg-primary text-primary-foreground py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-60"
+                className="w-full bg-primary text-primary-foreground py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em] flex items-center justify-center gap-2 disabled:opacity-60"
               >
                 {createInvoiceMut.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
                 Create Invoice
@@ -433,9 +434,9 @@ export default function OrganizationDetailPage() {
       {/* Purge confirm modal */}
       {showPurge && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={() => setShowPurge(false)}>
-          <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-card border border-border rounded-lg border border-border shadow-2xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
             <div className="w-12 h-12 bg-red-500/10 rounded-xl flex items-center justify-center mx-auto mb-4">
-              <Trash2 className="w-5 h-5 text-red-400" />
+              <Trash2 className="w-5 h-5 text-red-600" />
             </div>
             <h3 className="text-center font-semibold text-foreground mb-2">Permanently Purge Data?</h3>
             <p className="text-center text-sm text-muted-foreground mb-4">

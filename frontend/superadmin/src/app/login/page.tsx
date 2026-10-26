@@ -2,16 +2,15 @@
 
 import { useState, useEffect } from "react";
 import { signIn } from "next-auth/react";
-import { Eye, EyeOff, Loader2, CheckCircle2, Mail } from "lucide-react";
+import { ArrowRight, Loader2, Mail } from "lucide-react";
 import { otpApi } from "@/lib/api";
-import { BrandLogo } from "@/components/brand/BrandLogo";
+import {
+  AUTH_ARROW, AUTH_BUTTON, AUTH_LABEL, AUTH_LINK,
+  AuthError, AuthHeading, AuthShell, PasswordInput, authCodeInput, authInput,
+} from "@/components/brand/AuthShell";
 
-const FEATURES = [
-  "Oversee every organization's security posture",
-  "Provision and manage admin accounts",
-  "Platform-wide activity & audit visibility",
-  "Global policy templates & controls",
-];
+// Company admins sign in on the company dashboard, not here.
+const COMPANY_URL = process.env.NEXT_PUBLIC_COMPANY_URL;
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -113,150 +112,105 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen relative flex bg-gradient-to-br from-[#2B1000] via-[#140800] to-[#0A0A0A] overflow-hidden">
-      <div className="absolute inset-0 opacity-20 pointer-events-none [background-image:radial-gradient(circle_at_20%_20%,#FF7000,transparent_35%),radial-gradient(circle_at_80%_70%,#FF7000,transparent_35%)]" />
+    <AuthShell
+      topRight={
+        COMPANY_URL ? (
+          <>Company admin?{" "}<a href={`${COMPANY_URL}/login`} className={`font-medium ${AUTH_LINK}`}>Sign in here</a></>
+        ) : undefined
+      }
+    >
+      <AuthHeading
+        eyebrow={otpToken ? "Step 2 · Verify" : "Superadmin console"}
+        title={otpToken ? "Check your email" : "Sign in to Aavishield"}
+      >
+        {otpToken
+          ? <>We sent a 6-digit code to <span className="font-medium text-[#3f3f46]">{otpEmail || "your email address"}</span>. It expires in 10 minutes.</>
+          : "Platform administrators only. Every sign-in is confirmed with an emailed code."}
+      </AuthHeading>
 
-      {/* Left — brand content, sits on the same background as the form */}
-      <div className="hidden lg:flex lg:w-1/2 relative flex-col justify-between p-12">
-        <div className="flex items-center gap-3">
-          <BrandLogo className="h-[72px]" priority />
-        </div>
+      {error && (
+        <AuthError>
+          {error === "SuperadminAccessRequired"
+            ? "Please sign in with a superadmin account. Company dashboard sessions are not valid here."
+            : error}
+        </AuthError>
+      )}
 
-        <div className="space-y-8">
-          <div>
-            <h1 className="text-4xl font-bold text-white leading-tight">
-              Manage every organization from one place
-            </h1>
-            <p className="text-[#A3A3A3] mt-4 text-base">
-              The platform-wide control plane for Aavishield — organizations,
-              admins, and global policy, all in one console.
-            </p>
-          </div>
-
-          <ul className="space-y-3">
-            {FEATURES.map((f) => (
-              <li key={f} className="flex items-start gap-3 text-sm text-[#D4D4D4]">
-                <CheckCircle2 className="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" />
-                <span>{f}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <p className="text-xs text-[#6B6B6B]">© 2026 Aavishield. Zero Trust Security Platform.</p>
-      </div>
-
-      {/* Right — form, no separate background block */}
-      <div className="w-full lg:w-1/2 relative flex items-center justify-center p-6 sm:p-10">
-        <div className="w-full max-w-md">
-          <div className="lg:hidden text-center mb-8">
-            <BrandLogo className="h-24" priority />
-            <h1 className="sr-only">Aavishield</h1>
-            <p className="text-[#A3A3A3] mt-1">Superadmin Console</p>
-          </div>
-
-          <div className="bg-card/95 backdrop-blur-xl border border-white/10 rounded-2xl p-8 shadow-2xl">
-            <h2 className="text-xl font-semibold text-foreground mb-1">
-              {otpToken ? "Check your email" : "Sign in to your account"}
-            </h2>
-            {otpToken && (
-              <p className="text-sm text-muted-foreground mb-5">
-                We sent a 6-digit code to <span className="text-foreground font-medium">{otpEmail || "your email address"}</span>. It expires in 10 minutes.
-              </p>
-            )}
-            {!otpToken && <div className="mb-6" />}
-
-            {error && (
-              <div className="bg-red-500/10 border border-red-500/30 text-red-400 rounded-lg px-4 py-3 mb-4 text-sm">
-                {error === "SuperadminAccessRequired"
-                  ? "Please sign in with a superadmin account. Company dashboard sessions are not valid here."
-                  : error}
-              </div>
-            )}
-
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {otpToken ? (
-                <>
-                  <div>
-                    <label className="block text-sm font-medium text-muted-foreground mb-1">
-                      Verification code
-                    </label>
-                    <input
-                      autoFocus
-                      inputMode="numeric"
-                      autoComplete="one-time-code"
-                      maxLength={6}
-                      value={otpCode}
-                      onChange={(e) => { setOtpCode(e.target.value.replace(/\D/g, "")); setError(""); }}
-                      className="w-full border border-border bg-background rounded-lg px-3 py-2.5 text-sm tracking-[0.3em] text-center text-lg font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
-                      placeholder="000000"
-                      required
-                    />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <button type="button" onClick={backToPassword} className="text-xs text-brand-500 hover:text-brand-400">
-                      ← Use a different account
-                    </button>
-                    <button
-                      type="button"
-                      onClick={resendCode}
-                      disabled={resendIn > 0 || resending}
-                      className="inline-flex items-center gap-1.5 text-xs text-brand-500 hover:text-brand-400 disabled:text-muted-foreground"
-                    >
-                      <Mail className="w-3.5 h-3.5" />
-                      {resendIn > 0 ? `Resend in ${resendIn}s` : resending ? "Sending..." : "Resend code"}
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div>
-                    <label className="block text-sm font-medium text-muted-foreground mb-1">Email address</label>
-                    <input
-                      type="email"
-                      value={email}
-                      onChange={(e) => { setEmail(e.target.value); setError(""); }}
-                      className="w-full border border-border bg-background rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
-                      placeholder="you@company.com"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-muted-foreground mb-1">Password</label>
-                    <div className="relative">
-                      <input
-                        type={showPassword ? "text" : "password"}
-                        value={password}
-                        onChange={(e) => { setPassword(e.target.value); setError(""); }}
-                        className="w-full border border-border bg-background rounded-lg px-3 py-2.5 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
-                        placeholder="••••••••"
-                        required
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                      >
-                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
-
-              <button
-                type="submit"
-                disabled={loading || (!!otpToken && otpCode.trim().length < 6)}
-                className="w-full bg-primary hover:bg-brand-600 text-primary-foreground font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
-              >
-                {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-                {loading ? "Signing in..." : otpToken ? "Verify and sign in" : "Sign In"}
+      <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+        {otpToken ? (
+          <>
+            <div>
+              <label htmlFor="otp" className={AUTH_LABEL}>Verification code</label>
+              <input
+                id="otp"
+                autoFocus
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                value={otpCode}
+                onChange={(e) => { setOtpCode(e.target.value.replace(/\D/g, "")); setError(""); }}
+                className={authCodeInput(!!error)}
+                placeholder="000000"
+                required
+              />
+            </div>
+            <div className="flex items-center justify-between text-[13px]">
+              <button type="button" onClick={backToPassword} className={AUTH_LINK}>
+                ← Use a different account
               </button>
-            </form>
-          </div>
-        </div>
-      </div>
-    </div>
+              <button
+                type="button"
+                onClick={resendCode}
+                disabled={resendIn > 0 || resending}
+                className={`inline-flex items-center gap-1.5 ${AUTH_LINK} disabled:text-[#71717a] disabled:hover:text-[#71717a]`}
+              >
+                <Mail className="h-3.5 w-3.5" />
+                {resendIn > 0 ? `Resend in ${resendIn}s` : resending ? "Sending..." : "Resend code"}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div>
+              <label htmlFor="email" className={AUTH_LABEL}>Email address</label>
+              <input
+                id="email"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => { setEmail(e.target.value); setError(""); }}
+                className={authInput(!!error)}
+                placeholder="you@company.com"
+                required
+              />
+            </div>
+
+            <div>
+              <label htmlFor="password" className={AUTH_LABEL}>Password</label>
+              <PasswordInput
+                id="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(v) => { setPassword(v); setError(""); }}
+                show={showPassword}
+                onToggle={() => setShowPassword(!showPassword)}
+                error={!!error}
+                placeholder="Your password"
+              />
+            </div>
+          </>
+        )}
+
+        <button
+          type="submit"
+          disabled={loading || (!!otpToken && otpCode.trim().length < 6)}
+          className={AUTH_BUTTON}
+        >
+          {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+          {loading ? (otpToken ? "Verifying..." : "Signing in...") : otpToken ? "Verify and sign in" : "Sign in"}
+          {!loading && <ArrowRight className={AUTH_ARROW} />}
+        </button>
+      </form>
+    </AuthShell>
   );
 }

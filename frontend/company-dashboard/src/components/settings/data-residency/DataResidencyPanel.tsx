@@ -84,16 +84,16 @@ function Toggle({ checked, onChange, disabled, label }: { checked: boolean; onCh
 
 function StatusPill({ status, company }: { status: string; company: boolean }) {
   if (!company) {
-    return <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-elevated px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+    return <span className="inline-flex items-center gap-1.5 rounded-[4px] border border-border bg-elevated px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
       <CircleDashed className="h-3 w-3" /> Aavishield storage
     </span>;
   }
   if (status === "unreachable") {
-    return <span className="inline-flex items-center gap-1.5 rounded-full border border-red-500/30 bg-red-500/10 px-2.5 py-0.5 text-xs font-medium text-danger">
+    return <span className="inline-flex items-center gap-1.5 rounded-[4px] border border-red-500/30 bg-red-500/10 px-2.5 py-0.5 text-xs font-medium text-danger">
       <XCircle className="h-3 w-3" /> Unreachable
     </span>;
   }
-  return <span className="inline-flex items-center gap-1.5 rounded-full border border-green-500/30 bg-green-500/10 px-2.5 py-0.5 text-xs font-medium text-green-600 dark:text-green-400">
+  return <span className="inline-flex items-center gap-1.5 rounded-[4px] border border-green-500/30 bg-green-500/10 px-2.5 py-0.5 text-xs font-medium text-green-600 dark:text-green-400">
     <CheckCircle2 className="h-3 w-3" /> Connected
   </span>;
 }
@@ -382,7 +382,7 @@ function Connector({ kind, providers, state, canWrite, egressIPs }: {
                   Tell us what you run and our engineers will scope a connector for it.
                 </p>
                 <Link href={customRequestLink(kind === "database" ? "database" : "file storage")}
-                  className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600">
+                  className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-brand-500 px-4 py-2 font-mono text-[12px] font-medium uppercase tracking-[0.06em] text-white hover:bg-brand-600">
                   Request a custom integration <ArrowRight className="h-4 w-4" />
                 </Link>
               </div>
@@ -428,11 +428,11 @@ function Connector({ kind, providers, state, canWrite, egressIPs }: {
                       className="mr-auto rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-elevated hover:text-foreground">Cancel</button>
                   )}
                   <button type="button" onClick={() => testMut.mutate()} disabled={busy}
-                    className="flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-body hover:bg-elevated disabled:opacity-60">
+                    className="flex items-center gap-2 rounded-lg border border-border px-4 py-2 font-mono text-[12px] font-medium uppercase tracking-[0.06em] text-body hover:bg-elevated disabled:opacity-60">
                     {testMut.isPending && <Loader2 className="h-4 w-4 animate-spin" />} Test connection
                   </button>
                   <button type="submit" disabled={busy}
-                    className="flex items-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-60">
+                    className="flex items-center gap-2 rounded-lg bg-brand-500 px-4 py-2 font-mono text-[12px] font-medium uppercase tracking-[0.06em] text-white hover:bg-brand-600 disabled:opacity-60">
                     {saveMut.isPending && <Loader2 className="h-4 w-4 animate-spin" />} Save &amp; connect
                   </button>
                 </div>
@@ -507,7 +507,7 @@ function HistoryCard({ state, canWrite }: { state: ResidencyState; canWrite: boo
                 <p className="mt-2 break-words text-xs text-danger">The last attempt stopped: {cfg.migration_error}. Nothing was deleted; you can retry.</p>
               )}
               {canWrite && (
-                <button onClick={() => setConfirm(true)} className="mt-3 flex items-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600">
+                <button onClick={() => setConfirm(true)} className="mt-3 flex items-center gap-2 rounded-lg bg-brand-500 px-4 py-2 font-mono text-[12px] font-medium uppercase tracking-[0.06em] text-white hover:bg-brand-600">
                   Move history to my storage <ArrowRight className="h-4 w-4" />
                 </button>
               )}

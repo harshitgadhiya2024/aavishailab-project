@@ -54,8 +54,8 @@ export const PLAN_LABELS: Record<string, string> = {
   trial: "Trial", starter: "Starter", professional: "Professional", enterprise: "Enterprise",
 };
 export const STATUS_STYLES: Record<string, { label: string; dot: string; text: string }> = {
-  active: { label: "Active", dot: "bg-green-500", text: "text-green-400" },
-  trial: { label: "Trial", dot: "bg-sky-400", text: "text-sky-400" },
-  suspended: { label: "Suspended", dot: "bg-red-500", text: "text-red-400" },
+  active: { label: "Active", dot: "bg-green-500", text: "text-green-700" },
+  trial: { label: "Trial", dot: "bg-sky-500", text: "text-sky-700" },
+  suspended: { label: "Suspended", dot: "bg-red-500", text: "text-red-600" },
   inactive: { label: "Inactive", dot: "bg-zinc-500", text: "text-muted-foreground" },
 };

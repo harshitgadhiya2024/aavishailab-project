@@ -139,7 +139,7 @@ export function DeviceScheduleModal({
             <button
               onClick={() => draft && saveMut.mutate(draft)}
               disabled={!draft || draft.windows.length === 0 || saveMut.isPending}
-              className="inline-flex items-center gap-2 rounded-lg bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground hover:bg-brand-600 disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-3.5 py-2 font-mono text-[12px] font-medium uppercase tracking-[0.06em] text-primary-foreground hover:bg-brand-600 disabled:opacity-60"
             >
               {saveMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               Save for this device

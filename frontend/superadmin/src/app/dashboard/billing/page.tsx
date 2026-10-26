@@ -12,10 +12,10 @@ import {
 } from "recharts";
 
 const BILLING_STATUS_COLORS: Record<string, string> = {
-  pending: "bg-yellow-500/10 text-yellow-400",
-  paid: "bg-green-500/10 text-green-400",
+  pending: "bg-yellow-500/10 text-yellow-700",
+  paid: "bg-green-500/10 text-green-700",
   cancelled: "bg-muted text-muted-foreground",
-  expired: "bg-red-500/10 text-red-400",
+  expired: "bg-red-500/10 text-red-600",
 };
 
 function formatMoney(paise: number) {
@@ -47,16 +47,17 @@ export default function BillingPage() {
   const trend = (r?.monthly_revenue_trend ?? []).map((t: any) => ({ month: t.month, amount: t.amount_paise / 100 }));
 
   const cards = [
-    { label: "MRR Estimate", value: formatMoney(r?.mrr_paise ?? 0), icon: TrendingUp, color: "bg-green-500/10 text-green-400" },
+    { label: "MRR Estimate", value: formatMoney(r?.mrr_paise ?? 0), icon: TrendingUp, color: "bg-green-500/10 text-green-700" },
     { label: "Collected", value: formatMoney(r?.total_collected_paise ?? 0), icon: CreditCard, color: "bg-brand-500/10 text-brand-500" },
-    { label: "Pending", value: formatMoney(r?.total_pending_paise ?? 0), icon: Clock, color: "bg-yellow-500/10 text-yellow-400" },
-    { label: "Overdue Invoices", value: r?.overdue_invoices ?? 0, icon: AlertTriangle, color: "bg-red-500/10 text-red-400" },
+    { label: "Pending", value: formatMoney(r?.total_pending_paise ?? 0), icon: Clock, color: "bg-yellow-500/10 text-yellow-700" },
+    { label: "Overdue Invoices", value: r?.overdue_invoices ?? 0, icon: AlertTriangle, color: "bg-red-500/10 text-red-600" },
   ];
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-foreground">Billing & Revenue</h2>
+        <p className="page-eyebrow">Revenue</p>
+        <h2 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">Billing & Revenue</h2>
         <p className="text-sm text-muted-foreground mt-1">Real Razorpay-backed invoices across every organization</p>
       </div>
 
@@ -66,7 +67,7 @@ export default function BillingPage() {
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">{c.label}</p>
-                <p className="text-2xl font-bold text-foreground mt-1">{c.value}</p>
+                <p className="mt-1.5 [font-family:Satoshi,var(--font-inter),sans-serif] text-[1.6rem] font-medium leading-tight tracking-[-0.02em] tabular-nums text-foreground">{c.value}</p>
               </div>
               <div className={`p-2.5 rounded-lg ${c.color}`}>
                 <c.icon className="w-5 h-5" />
@@ -98,7 +99,7 @@ export default function BillingPage() {
             </AreaChart>
           </ResponsiveContainer>
         ) : (
-          <div className="h-[220px] flex items-center justify-center text-[#6B6B6B] text-sm">No paid invoices yet</div>
+          <div className="h-[220px] flex items-center justify-center text-subtle text-sm">No paid invoices yet</div>
         )}
       </div>
 
@@ -136,7 +137,7 @@ export default function BillingPage() {
                   </tr>
                 ))
               ) : records.length === 0 ? (
-                <tr><td colSpan={6} className="text-center py-12 text-[#6B6B6B]">No invoices yet</td></tr>
+                <tr><td colSpan={6} className="text-center py-12 text-subtle">No invoices yet</td></tr>
               ) : records.map((b: any) => (
                 <tr key={b.id} className="hover:bg-muted transition-colors">
                   <td className="px-5 py-3">
@@ -147,7 +148,7 @@ export default function BillingPage() {
                   <td className="px-5 py-3 text-foreground max-w-xs truncate">{b.description}</td>
                   <td className="px-5 py-3 font-mono text-foreground">{formatMoney(b.amount_paise)}</td>
                   <td className="px-5 py-3">
-                    <span className={cn("px-2 py-0.5 rounded-full text-xs font-medium capitalize", BILLING_STATUS_COLORS[b.status])}>
+                    <span className={cn("px-2 py-0.5 rounded-[4px] text-xs font-medium capitalize", BILLING_STATUS_COLORS[b.status])}>
                       {b.status}
                     </span>
                   </td>

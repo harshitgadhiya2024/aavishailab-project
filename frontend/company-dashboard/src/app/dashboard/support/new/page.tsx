@@ -72,7 +72,7 @@ function NewRequestForm() {
         <ChevronRight className="h-3.5 w-3.5" />
         <span className="text-foreground">New request</span>
       </nav>
-      <h2 className="text-2xl font-bold tracking-tight text-foreground">Create a support request</h2>
+      <h2 className="text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">Create a support request</h2>
       <p className="mt-1 text-sm text-muted-foreground">The more detail you share, the faster we can fix it.</p>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_280px]">
@@ -160,7 +160,7 @@ function NewRequestForm() {
           <div className="flex items-center justify-end gap-3 border-t border-border pt-5">
             <Link href="/dashboard/support" className="rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground">Cancel</Link>
             <button type="submit" disabled={sending}
-              className="flex items-center gap-2 rounded-lg bg-brand-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-60">
+              className="flex items-center gap-2 rounded-lg bg-brand-500 px-5 py-2.5 font-mono text-[12px] font-medium uppercase tracking-[0.06em] text-white hover:bg-brand-600 disabled:opacity-60">
               {sending && <Loader2 className="h-4 w-4 animate-spin" />}
               Submit request
             </button>

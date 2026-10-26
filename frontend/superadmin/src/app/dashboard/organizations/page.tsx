@@ -13,10 +13,10 @@ import { Modal } from "@/components/ui/Modal";
 import { Pagination } from "@/components/ui/Pagination";
 
 const PLAN_COLORS: Record<string, string> = {
-  trial: "bg-sky-500/10 text-sky-400",
+  trial: "bg-sky-500/10 text-sky-700",
   starter: "bg-muted text-muted-foreground",
   professional: "bg-brand-500/10 text-brand-500",
-  enterprise: "bg-purple-500/10 text-purple-400",
+  enterprise: "bg-purple-500/10 text-purple-700",
 };
 
 const STATUS_FILTERS = [
@@ -153,14 +153,15 @@ export default function OrganizationsPage() {
     <div className="mx-auto max-w-[1400px] space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-semibold text-foreground">Organizations</h2>
+          <p className="page-eyebrow">Customers</p>
+          <h2 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">Organizations</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             {total} customer{total === 1 ? "" : "s"} · seats, devices and activity at a glance
           </p>
         </div>
         <button
           onClick={openCreate}
-          className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-brand-600"
+          className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 font-mono text-[12px] font-medium uppercase tracking-[0.06em] text-primary-foreground transition-colors hover:bg-brand-600"
         >
           <Plus className="h-4 w-4" />
           New organization
@@ -266,14 +267,14 @@ export default function OrganizationsPage() {
                       </td>
                       <td className="px-5 py-3.5">
                         <div className="flex flex-col items-start gap-1">
-                          <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", PLAN_COLORS[org.plan] ?? "bg-muted text-muted-foreground")}>
+                          <span className={cn("rounded-[4px] px-2 py-0.5 text-xs font-medium", PLAN_COLORS[org.plan] ?? "bg-muted text-muted-foreground")}>
                             {PLAN_LABELS[org.plan] ?? org.plan}
                           </span>
                           <span className={cn("inline-flex items-center gap-1.5 text-xs", st.text)}>
                             <span className={cn("h-1.5 w-1.5 rounded-full", st.dot)} />
                             {st.label}
                             {trialDays !== null && (
-                              <span className={cn("ml-1", trialDays <= 3 ? "text-yellow-400" : "text-muted-foreground")}>
+                              <span className={cn("ml-1", trialDays <= 3 ? "text-yellow-700" : "text-muted-foreground")}>
                                 · {trialDays > 0 ? `${trialDays}d left` : "ended"}
                               </span>
                             )}
@@ -297,12 +298,12 @@ export default function OrganizationsPage() {
                       </td>
                       <td className="px-5 py-3.5">
                         {(org.device_count ?? 0) === 0 ? (
-                          <span className="text-xs text-yellow-400">None connected</span>
+                          <span className="text-xs text-yellow-700">None connected</span>
                         ) : (
                           <span className="inline-flex items-center gap-1.5 text-xs">
                             <Laptop className="h-3.5 w-3.5 text-muted-foreground" />
                             <span className="tabular-nums text-foreground">{org.device_count}</span>
-                            <span className={cn("tabular-nums", org.online_count > 0 ? "text-green-400" : "text-muted-foreground")}>
+                            <span className={cn("tabular-nums", org.online_count > 0 ? "text-green-700" : "text-muted-foreground")}>
                               · {org.online_count ?? 0} online
                             </span>
                           </span>
@@ -315,7 +316,7 @@ export default function OrganizationsPage() {
                           <button onClick={() => openEdit(org)} className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground" title="Edit" aria-label={`Edit ${org.name}`}>
                             <Edit className="h-4 w-4" />
                           </button>
-                          <button onClick={() => setDeleteId(org.id)} className="rounded p-1.5 text-muted-foreground hover:bg-red-500/10 hover:text-red-400" title="Delete" aria-label={`Delete ${org.name}`}>
+                          <button onClick={() => setDeleteId(org.id)} className="rounded p-1.5 text-muted-foreground hover:bg-red-500/10 hover:text-red-600" title="Delete" aria-label={`Delete ${org.name}`}>
                             <Trash2 className="h-4 w-4" />
                           </button>
                           <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
@@ -471,7 +472,7 @@ export default function OrganizationsPage() {
                 <button
                   type="submit"
                   disabled={isPending}
-                  className="flex-1 bg-primary text-primary-foreground py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-60"
+                  className="flex-1 bg-primary text-primary-foreground py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em] flex items-center justify-center gap-2 disabled:opacity-60"
                 >
                   {isPending && <Loader2 className="w-4 h-4 animate-spin" />}
                   {editOrg ? "Save Changes" : "Create"}
@@ -484,7 +485,7 @@ export default function OrganizationsPage() {
       <Modal open={!!deleteId} onClose={() => setDeleteId(null)} className="max-w-sm">
           <div className="p-6">
             <div className="w-12 h-12 bg-red-500/10 rounded-xl flex items-center justify-center mx-auto mb-4">
-              <Trash2 className="w-5 h-5 text-red-400" />
+              <Trash2 className="w-5 h-5 text-red-600" />
             </div>
             <h3 className="text-center font-semibold text-foreground mb-2">Delete Organization?</h3>
             <p className="text-center text-sm text-muted-foreground mb-6">

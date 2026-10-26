@@ -31,13 +31,14 @@ export default function SystemHealthPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">System Health</h2>
+          <p className="page-eyebrow">Platform</p>
+          <h2 className="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em] text-foreground">System Health</h2>
           <p className="text-sm text-muted-foreground mt-1">Live status of every backend service, pulled from Prometheus</p>
         </div>
         {d && (
           <span className={cn(
             "flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium",
-            d.up_count === d.total && d.total > 0 ? "bg-green-500/10 text-green-400" : "bg-yellow-500/10 text-yellow-400"
+            d.up_count === d.total && d.total > 0 ? "bg-green-500/10 text-green-700" : "bg-yellow-500/10 text-yellow-700"
           )}>
             <Activity className="w-4 h-4" />
             {d.up_count}/{d.total} services up
@@ -47,9 +48,9 @@ export default function SystemHealthPage() {
 
       {!isLoading && !reachable && (
         <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-5 flex items-start gap-3">
-          <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+          <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
           <div>
-            <p className="font-medium text-red-400">Could not reach Prometheus</p>
+            <p className="font-medium text-red-600">Could not reach Prometheus</p>
             <p className="text-sm text-muted-foreground mt-0.5">{d?.error ?? "The metrics backend is unreachable — service status below is unavailable."}</p>
           </div>
         </div>
@@ -70,18 +71,18 @@ export default function SystemHealthPage() {
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-sm font-medium text-foreground">{SERVICE_LABELS[s.job] ?? s.job}</p>
-                <p className="text-xs text-[#6B6B6B] mt-0.5">{s.job}</p>
+                <p className="text-xs text-subtle mt-0.5">{s.job}</p>
               </div>
               {s.up ? (
-                <CheckCircle2 className="w-5 h-5 text-green-400" />
+                <CheckCircle2 className="w-5 h-5 text-green-700" />
               ) : (
-                <XCircle className="w-5 h-5 text-red-400" />
+                <XCircle className="w-5 h-5 text-red-600" />
               )}
             </div>
             <div className="mt-4 flex items-center justify-between">
               <span className={cn(
-                "text-xs font-medium px-2 py-0.5 rounded-full",
-                s.up ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400"
+                "text-xs font-medium px-2 py-0.5 rounded-[4px]",
+                s.up ? "bg-green-500/10 text-green-700" : "bg-red-500/10 text-red-600"
               )}>
                 {s.up ? "Healthy" : "Down"}
               </span>
@@ -95,7 +96,7 @@ export default function SystemHealthPage() {
         ))}
       </div>
 
-      <p className="text-xs text-[#6B6B6B]">
+      <p className="text-xs text-subtle">
         Status reflects each service's last Prometheus scrape (15s interval). Refreshes automatically every 15 seconds.
       </p>
     </div>
