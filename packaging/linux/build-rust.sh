@@ -29,8 +29,8 @@ OUT_DIR="$REPO_ROOT/dist"
 ARCH="$(dpkg --print-architecture 2>/dev/null || echo amd64)"
 INSTALL_PREFIX="/opt/aavishield"
 
-ADMIN_URL="${AAVISHIELD_ADMIN_URL:-https://aavishield-api.aavishailab.com}"
-PORTAL_URL="${AAVISHIELD_PORTAL_URL:-https://aavishield-employee.aavishailab.com}"
+ADMIN_URL="${AAVISHIELD_ADMIN_URL:-https://api.aavishield.com}"
+PORTAL_URL="${AAVISHIELD_PORTAL_URL:-https://employee.aavishield.com}"
 
 echo "==> Building Aavishield Rust connector $VERSION for Linux ($ARCH)"
 echo "    admin:  $ADMIN_URL"
@@ -157,7 +157,7 @@ Section: net
 Priority: optional
 Architecture: $ARCH
 Maintainer: Aavishield <info@aavishailab.com>
-Homepage: https://aavishield.aavishailab.com
+Homepage: https://website.aavishield.com
 Installed-Size: $INSTALLED_SIZE
 Depends: $RUNTIME_DEPENDS
 Conflicts: aavishield-agent

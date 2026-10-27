@@ -24,7 +24,7 @@ const STATUS_STYLE: Record<string, string> = {
   declined: "bg-muted text-muted-foreground",
 };
 
-const WEBSITE_URL = process.env.NEXT_PUBLIC_WEBSITE_URL ?? "https://aavishield.aavishailab.com";
+const WEBSITE_URL = process.env.NEXT_PUBLIC_WEBSITE_URL ?? "https://website.aavishield.com";
 
 type Entry = {
   id: string;

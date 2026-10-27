@@ -35,8 +35,8 @@ OUT_DIR="$REPO_ROOT/dist"
 INSTALL_PREFIX="/Applications"
 APP_NAME="Aavishield.app"
 
-ADMIN_URL="${AAVISHIELD_ADMIN_URL:-https://aavishield-api.aavishailab.com}"
-PORTAL_URL="${AAVISHIELD_PORTAL_URL:-https://aavishield-employee.aavishailab.com}"
+ADMIN_URL="${AAVISHIELD_ADMIN_URL:-https://api.aavishield.com}"
+PORTAL_URL="${AAVISHIELD_PORTAL_URL:-https://employee.aavishield.com}"
 
 # Apple Silicon only, same known gap build.sh's own comments document for
 # the Python build (and the same one agent-packages.yml's macos job carries
