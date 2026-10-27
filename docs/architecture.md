@@ -61,8 +61,17 @@ Everything else DLP-related (a Python `extract-service`, and `ai-service`'s
 
 Postgres is the single source of truth (organizations, employees, devices,
 policies, activity events). Redis backs the DLP AI tier's cache and daily
-budget counters, and the agent-token cache. Both run as containers in
-`docker-compose.yml` on the production host by default;
-`ADMIN_API_DATABASE_URL` can point admin-api at an external Postgres instead
-(this was tried against Neon on 2026-09-29 and reverted — see
-[bug-fixes.md](bug-fixes.md) — the bundled container is what's live).
+budget counters, and the agent-token cache. Redis runs as a container in
+`docker-compose.yml` on the production host. Production Postgres is a
+dedicated Postgres 16 server on the same private network, reached over SSL:
+`ADMIN_API_DATABASE_URL` in `.env` points admin-api at it (admin-api is the
+only service that talks to Postgres). It went live on 2026-10-27 as a fresh
+database: schema and seed data, the superadmin account, and platform-level
+tables (threat intel, domain risk assessments, URL categories, demo and
+waitlist leads). No organization data was carried over. WAL-G archives WAL
+continuously and takes a nightly full backup to a private OCI Object Storage
+bucket in Mumbai (7 full backups kept). With
+`ADMIN_API_DATABASE_URL` unset, admin-api falls back to the bundled `postgres`
+container, which is what local development uses. (Neon was tried for
+production on 2026-09-29 and reverted over latency — see
+[bug-fixes.md](bug-fixes.md).)
