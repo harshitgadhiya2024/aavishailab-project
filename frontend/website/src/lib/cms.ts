@@ -1,4 +1,5 @@
 import { readdir, readFile } from "node:fs/promises";
+import http from "node:http";
 import path from "node:path";
 
 /*
@@ -34,7 +35,6 @@ export type PostSummary = {
 export type Post = PostSummary & { body: string; seo_title: string; seo_description: string };
 
 const API = process.env.ADMIN_API_INTERNAL_URL;
-const REVALIDATE = 300;
 
 /** Where each kind lives on the site. */
 export const BASE: Record<ContentKind, string> = { blog: "/blog", guide: "/knowledge-hub" };
@@ -50,14 +50,26 @@ export const GUIDE_CATEGORIES: { name: string; body: string }[] = [
   { name: "Account and billing", body: "Plans, pricing and cancellation." },
 ];
 
-async function api<T>(url: string): Promise<T | null> {
-  try {
-    const res = await fetch(`${API}${url}`, { next: { revalidate: REVALIDATE, tags: ["content"] }, signal: AbortSignal.timeout(5000) });
-    if (!res.ok) return null;
-    return (await res.json()) as T;
-  } catch {
-    return null;
-  }
+// admin-api listens on 6000 inside the compose network, and 6000 is on the
+// fetch spec's blocked-port list (fetch fails with "bad port"), so this uses
+// node:http directly. Caching comes from each page's `revalidate` export.
+function api<T>(url: string): Promise<T | null> {
+  return new Promise((resolve) => {
+    const r = http.get(`${API}${url}`, { timeout: 5000 }, (res) => {
+      let body = "";
+      res.on("data", (c) => (body += c));
+      res.on("end", () => {
+        if (res.statusCode !== 200) return resolve(null);
+        try {
+          resolve(JSON.parse(body) as T);
+        } catch {
+          resolve(null);
+        }
+      });
+    });
+    r.on("timeout", () => r.destroy(new Error("timeout")));
+    r.on("error", () => resolve(null));
+  });
 }
 
 // ─── Local seed fallback ─────────────────────────────────────────────────────

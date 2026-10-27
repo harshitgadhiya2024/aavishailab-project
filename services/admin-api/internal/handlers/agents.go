@@ -1516,8 +1516,9 @@ func mitmSettingsFromOrg(org *models.Organization) (enabled bool, bypass []strin
 }
 
 // injectNoticeFromOrg reports whether a blocked upload should also get the
-// agent's in-page notice shim injected into the page that triggered it (see
-// aavishield-agent.py's _inject_block_shim) — the mechanism that lets an
+// agent's in-page notice shim injected into the page that triggered it (only
+// the removed Python connector implemented it; the Rust connector doesn't
+// inject it yet) — the mechanism that lets an
 // XHR/fetch-based upload (Gmail, Slack, Teams, Outlook Web — none of which
 // use a plain form POST) show the real block reason instead of a generic
 // "Upload failed". Defaults to true (on) so existing orgs get the notice

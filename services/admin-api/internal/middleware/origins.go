@@ -22,9 +22,9 @@ func AllowedOrigins() []string {
 			"http://localhost:1001",
 			"http://localhost:1002",
 			"http://localhost:1003",
-			"https://aavishield-admin.aavishailab.com",
-			"https://aavishield-app.aavishailab.com",
-			"https://aavishield-employee.aavishailab.com",
+			"https://superadmin.aavishield.com",
+			"https://app.aavishield.com",
+			"https://employee.aavishield.com",
 		}
 	}
 	return origins

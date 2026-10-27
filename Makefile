@@ -64,7 +64,6 @@ restart:
 # Single service:   make rebuild s=admin-api
 rebuild:
 	@cp -n .env.example .env 2>/dev/null || true
-	@cp scripts/agent/aavishield-agent.py services/admin-api/internal/handlers/assets/aavishield-agent.py
 	$(COMPOSE) build $(s)
 	$(COMPOSE) up -d $(WAIT) $(s)
 	@$(MAKE) --no-print-directory urls
@@ -90,7 +89,6 @@ ps:
 	$(COMPOSE) ps
 
 build:
-	@cp scripts/agent/aavishield-agent.py services/admin-api/internal/handlers/assets/aavishield-agent.py
 	$(COMPOSE) build --parallel
 
 clean:

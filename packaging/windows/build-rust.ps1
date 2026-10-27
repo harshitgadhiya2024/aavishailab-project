@@ -1,8 +1,8 @@
 ﻿<#
 Builds a Windows .msi installer for the Rust Aavishield connector
-(services/endpoint-agent). A sibling to build.ps1, which does the same for
-the Python connector — see packaging/macos/build-rust.sh's header for why
-this is a separate script rather than one shared with a language flag.
+(services/endpoint-agent). It replaced build.ps1, the removed Python
+connector's builder — every "build.ps1" mention below points at that script
+in git history.
 
     powershell -ExecutionPolicy Bypass -File packaging\windows\build-rust.ps1 -Version 1.0.0
 
@@ -40,8 +40,8 @@ $AgentDir  = Join-Path $RepoRoot "services\endpoint-agent"
 $BuildDir  = Join-Path $RepoRoot "build\windows-rust"
 $OutDir    = Join-Path $RepoRoot "dist"
 
-$AdminUrl  = if ($env:AAVISHIELD_ADMIN_URL)  { $env:AAVISHIELD_ADMIN_URL }  else { "https://aavishield-api.aavishailab.com" }
-$PortalUrl = if ($env:AAVISHIELD_PORTAL_URL) { $env:AAVISHIELD_PORTAL_URL } else { "https://aavishield-employee.aavishailab.com" }
+$AdminUrl  = if ($env:AAVISHIELD_ADMIN_URL)  { $env:AAVISHIELD_ADMIN_URL }  else { "https://api.aavishield.com" }
+$PortalUrl = if ($env:AAVISHIELD_PORTAL_URL) { $env:AAVISHIELD_PORTAL_URL } else { "https://employee.aavishield.com" }
 
 Write-Host "==> Building Aavishield Rust connector $Version for Windows"
 Write-Host "    admin:  $AdminUrl"

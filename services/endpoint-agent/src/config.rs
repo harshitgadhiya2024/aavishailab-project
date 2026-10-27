@@ -28,8 +28,8 @@ pub const ENROLL_TOKEN_ENV: &str = "AAVISHIELD_ENROLL_TOKEN";
 pub const ENROLL_ADMIN_ENV: &str = "AAVISHIELD_ADMIN_URL";
 pub const ENROLL_PORTAL_ENV: &str = "AAVISHIELD_PORTAL_URL";
 
-pub const DEFAULT_ADMIN_URL: &str = "https://aavishield-api.aavishailab.com";
-pub const DEFAULT_PORTAL_URL: &str = "https://aavishield-employee.aavishailab.com";
+pub const DEFAULT_ADMIN_URL: &str = "https://api.aavishield.com";
+pub const DEFAULT_PORTAL_URL: &str = "https://employee.aavishield.com";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {

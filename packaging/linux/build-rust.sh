@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
 # Builds a Linux .deb (and a portable .tar.gz) for the Rust Aavishield
-# connector (services/endpoint-agent). A sibling to build.sh, which does the
-# same for the Python connector — see packaging/macos/build-rust.sh's header
-# for why this is a separate script rather than a shared one with a flag.
+# connector (services/endpoint-agent). It replaced build.sh, the removed
+# Python connector's builder — every "build.sh" mention below points at that
+# script in git history.
 #
 #   ./packaging/linux/build-rust.sh [version]
 #
@@ -29,8 +29,8 @@ OUT_DIR="$REPO_ROOT/dist"
 ARCH="$(dpkg --print-architecture 2>/dev/null || echo amd64)"
 INSTALL_PREFIX="/opt/aavishield"
 
-ADMIN_URL="${AAVISHIELD_ADMIN_URL:-https://aavishield-api.aavishailab.com}"
-PORTAL_URL="${AAVISHIELD_PORTAL_URL:-https://aavishield-employee.aavishailab.com}"
+ADMIN_URL="${AAVISHIELD_ADMIN_URL:-https://api.aavishield.com}"
+PORTAL_URL="${AAVISHIELD_PORTAL_URL:-https://employee.aavishield.com}"
 
 echo "==> Building Aavishield Rust connector $VERSION for Linux ($ARCH)"
 echo "    admin:  $ADMIN_URL"
@@ -156,8 +156,8 @@ Version: $VERSION
 Section: net
 Priority: optional
 Architecture: $ARCH
-Maintainer: Aavishield <info@aavishield.com>
-Homepage: https://aavishield.aavishailab.com
+Maintainer: Aavishield <info@aavishailab.com>
+Homepage: https://website.aavishield.com
 Installed-Size: $INSTALLED_SIZE
 Depends: $RUNTIME_DEPENDS
 Conflicts: aavishield-agent

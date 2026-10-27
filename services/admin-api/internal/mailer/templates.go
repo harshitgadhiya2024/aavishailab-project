@@ -9,7 +9,7 @@ import (
 // logoURL is the hosted Aavishield logo shown at the top of every email. The
 // company dashboard serves it from /brand; MAIL_LOGO_URL overrides it.
 func logoURL() string {
-	return envOr("MAIL_LOGO_URL", "https://aavishield-app.aavishailab.com/brand/logo-horizontal-tagline-light.png")
+	return envOr("MAIL_LOGO_URL", "https://app.aavishield.com/brand/logo-horizontal-tagline-light.png")
 }
 
 // layout wraps content in the branded shell. Table-based and inline-styled on
@@ -631,7 +631,7 @@ func DemoRequestConfirmation(to, name string) {
 			"Thanks, "+html.EscapeString(name),
 			"Your demo request reached the Aavishield team.",
 			body, "", "",
-			"You're receiving this because you booked a demo on aavishield.aavishailab.com."),
+			"You're receiving this because you booked a demo on website.aavishield.com."),
 	})
 }
 
@@ -678,7 +678,7 @@ func WaitlistConfirmation(to, name string) {
 			"You're on the list, "+html.EscapeString(name),
 			"Thanks for joining the Aavishield early access waitlist.",
 			body, "", "",
-			"You're receiving this because you joined the waitlist on aavishield.aavishailab.com."),
+			"You're receiving this because you joined the waitlist on aavishield.com."),
 	})
 }
 

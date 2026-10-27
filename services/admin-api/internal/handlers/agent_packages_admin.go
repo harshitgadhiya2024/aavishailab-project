@@ -28,7 +28,8 @@ func NewAgentPackageAdminHandler(db *gorm.DB) *AgentPackageAdminHandler {
 }
 
 // filenamePlatformVersion parses the (platform, version) pair out of a
-// filename produced by packaging/{macos,windows,linux}/build.sh — the CI
+// filename produced by packaging/{macos,linux}/build-rust.sh and
+// packaging/windows/build-rust.ps1 — the CI
 // workflow's own naming convention, not something this handler invents.
 var packageFilenamePatterns = []struct {
 	platform string

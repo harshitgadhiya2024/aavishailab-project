@@ -1,23 +1,17 @@
 name: Agent packages
 
-# Native installers have to be built on their own OS — PyInstaller freezes the
-# host's interpreter, and codesign/signtool only exist on macOS/Windows. Hence
-# one job per platform rather than a cross-compile.
+# Native installers have to be built on their own OS — the GUI/tray/screen-
+# capture stack links each platform's native libraries, and codesign/signtool
+# only exist on macOS/Windows. Hence one job per platform rather than a
+# cross-compile.
 #
-# Rust is the connector that ships now: `manifest`'s "Publish to production"
-# reads the macos-rust/windows-rust/linux-rust jobs' artifacts and pushes
-# them to admin-api — that is what NativePackageFor and the employee
-# portal's download buttons actually serve. The Python connector
-# (macos/windows/linux) still builds every run and lands in
-# `python-manifest` as its own `agent-packages-python` CI artifact — kept
-# deliberately available, not deleted, as a same-pipeline rollback path if
-# the Rust connector needs to be pulled back for any device class. See
-# the verification history behind this switch (real macOS hardware
-# throughout the session that made it, a first successful Windows build
-# on a real windows-latest runner)
-# and its one open gap (nobody has yet installed the real .msi and clicked
-# through it on a Windows desktop — this cutover accepts that gap rather
-# than waiting on it, a decision made explicitly, not by default).
+# The Rust connector (services/endpoint-agent) is the only connector:
+# `manifest`'s "Publish to production" reads the macos-rust/windows-rust/
+# linux-rust jobs' artifacts and pushes them to admin-api — that is what
+# NativePackageFor and the employee portal's download buttons serve. The
+# Python connector it replaced has been removed; git history is the
+# rollback path. One open gap: nobody has yet installed the real .msi and
+# clicked through it on a Windows desktop.
 
 on:
   push:
@@ -63,149 +57,10 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Resolved version: $VERSION"
 
-  macos:
-    needs: resolve-version
-    runs-on: macos-14 # Apple Silicon only — see the arm64-only note in the Build .pkg step
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      # Pinned so a build never silently changes what it produces, and
-      # covers every optional feature (mss/pynput screen+activity capture,
-      # cryptography for policy-signature verification) that the frozen
-      # binary otherwise degrades away from without any visible error.
-      - run: pip install -r scripts/agent/requirements-build.txt
-
-      # Signing secrets are optional: without them the job still produces an
-      # unsigned .pkg so the pipeline is testable before certs exist.
-      - name: Import signing certificate
-        if: env.MACOS_CERT_P12 != ''
-        env:
-          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
-          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
-        run: |
-          echo "$MACOS_CERT_P12" | base64 --decode > /tmp/cert.p12
-          security create-keychain -p actions build.keychain
-          security default-keychain -s build.keychain
-          security unlock-keychain -p actions build.keychain
-          security import /tmp/cert.p12 -k build.keychain -P "$MACOS_CERT_PASSWORD" \
-            -T /usr/bin/codesign -T /usr/bin/productbuild
-          security set-key-partition-list -S apple-tool:,apple: -s -k actions build.keychain
-          rm /tmp/cert.p12
-
-      - name: Build .pkg
-        env:
-          DEVELOPER_ID_APP: ${{ secrets.DEVELOPER_ID_APP }}
-          DEVELOPER_ID_INSTALLER: ${{ secrets.DEVELOPER_ID_INSTALLER }}
-          NOTARY_PROFILE: ${{ secrets.NOTARY_PROFILE }}
-          # Baked into the binary: the package carries no employee-specific
-          # token, so the agent has to already know where to enrol.
-          AAVISHIELD_ADMIN_URL: ${{ vars.AAVISHIELD_ADMIN_URL }}
-          AAVISHIELD_PORTAL_URL: ${{ vars.AAVISHIELD_PORTAL_URL }}
-          # KNOWN GAP: macos-14 is Apple Silicon only, and this produces an
-          # arm64-only .pkg — it will not install on an Intel Mac. Tried
-          # AAVISHIELD_TARGET_ARCH=universal2 here; PyInstaller's own
-          # interpreter is universal2 but pip installs arch-specific wheels
-          # for compiled deps (confirmed: Pillow's _imagingft.so came back
-          # arm64-only and PyInstaller refused to proceed — "is not a fat
-          # binary"). A real fix needs each dependency built/lipo-merged for
-          # both arches, or two separate builds merged after the fact —
-          # more than a one-line flag, and not verifiable without real
-          # Intel Mac hardware to test the result on.
-        run: bash packaging/macos/build.sh "${{ needs.resolve-version.outputs.version }}"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: macos-pkg
-          path: dist/*.pkg
-
-  windows:
-    needs: resolve-version
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      # Pinned so a build never silently changes what it produces, and
-      # covers every optional feature (mss/pynput screen+activity capture,
-      # cryptography for policy-signature verification) that the frozen
-      # binary otherwise degrades away from without any visible error.
-      - run: pip install -r scripts/agent/requirements-build.txt
-      - run: choco install wixtoolset --no-progress -y
-      - run: echo "C:\Program Files (x86)\WiX Toolset v3.14\bin" >> $env:GITHUB_PATH
-
-      # SIGNING_CERT_PFX_B64 (the secret) holds the .pfx file's bytes,
-      # base64-encoded — a secret can't hold a filesystem path that would mean
-      # anything on a fresh runner. Decode it to an actual file here, the same
-      # way the macOS job imports MACOS_CERT_P12 into a keychain, before
-      # build.ps1 hands a real path to signtool. Thumbprint-based signing (an
-      # already-installed machine cert) skips this — there's no file to decode.
-      - name: Decode signing certificate
-        if: env.SIGNING_CERT_PFX_B64 != ''
-        env:
-          SIGNING_CERT_PFX_B64: ${{ secrets.SIGNING_CERT_PFX_B64 }}
-        run: |
-          $bytes = [Convert]::FromBase64String($env:SIGNING_CERT_PFX_B64)
-          [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\aavishield-signing.pfx", $bytes)
-
-      - name: Build .msi
-        env:
-          SIGNING_CERT_PASSWORD: ${{ secrets.SIGNING_CERT_PASSWORD }}
-          SIGNING_CERT_THUMBPRINT: ${{ secrets.SIGNING_CERT_THUMBPRINT }}
-          AAVISHIELD_ADMIN_URL: ${{ vars.AAVISHIELD_ADMIN_URL }}
-          AAVISHIELD_PORTAL_URL: ${{ vars.AAVISHIELD_PORTAL_URL }}
-        run: |
-          if (Test-Path "$env:RUNNER_TEMP\aavishield-signing.pfx") {
-            $env:SIGNING_CERT_PFX = "$env:RUNNER_TEMP\aavishield-signing.pfx"
-          }
-          powershell -ExecutionPolicy Bypass -File packaging\windows\build.ps1 -Version "${{ needs.resolve-version.outputs.version }}"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: windows-msi
-          path: dist/*.msi
-
-  linux:
-    needs: resolve-version
-    runs-on: ubuntu-22.04 # oldest supported glibc — binaries built here run on newer
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      # Pinned so a build never silently changes what it produces, and
-      # covers every optional feature (mss/pynput screen+activity capture,
-      # cryptography for policy-signature verification) that the frozen
-      # binary otherwise degrades away from without any visible error.
-      - run: pip install -r scripts/agent/requirements-build.txt
-      - name: Build .deb
-        env:
-          AAVISHIELD_ADMIN_URL: ${{ vars.AAVISHIELD_ADMIN_URL }}
-          AAVISHIELD_PORTAL_URL: ${{ vars.AAVISHIELD_PORTAL_URL }}
-        run: bash packaging/linux/build.sh "${{ needs.resolve-version.outputs.version }}"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: linux-deb
-          path: |
-            dist/*.deb
-            dist/*.tar.gz
-
   manifest:
     needs: [resolve-version, macos-rust, windows-rust, linux-rust]
     runs-on: ubuntu-latest
     steps:
-      # Three explicit named downloads, not one no-filter merge-multiple:
-      # this job must only ever see the Rust connector's own three
-      # artifacts. The Python jobs below upload their own separately-named
-      # artifacts in the same workflow run (into python-manifest, not this
-      # job) — an unfiltered download here would silently mix the two
-      # connectors' packages into one "publish to production" pass.
       - uses: actions/download-artifact@v4
         with: { name: macos-rust-pkg, path: dist }
       - uses: actions/download-artifact@v4
@@ -238,6 +93,10 @@ jobs:
         with:
           name: agent-packages
           path: dist/
+          # Production keeps its own copy of every published package
+          # (admin-api's agent-packages dir), so this is only a CI-side
+          # convenience — the 90-day default filled the storage quota.
+          retention-days: 30
 
       # Pushes each built package to the running admin-api over its own
       # upload token (not portal/agent auth — this runner has neither
@@ -267,8 +126,7 @@ jobs:
             echo
           done
 
-  # ─── Rust connector — built and uploaded as CI artifacts, never published
-  # to production by this workflow. See this file's top-of-file comment.
+  # ─── Per-platform builds — `manifest` above publishes their artifacts.
 
   macos-rust:
     needs: resolve-version
@@ -305,6 +163,7 @@ jobs:
         with:
           name: macos-rust-pkg
           path: dist/aavishield-agent-rust-*.pkg
+          retention-days: 7 # only `manifest` reads it, in this same run
 
   windows-rust:
     needs: resolve-version
@@ -355,10 +214,11 @@ jobs:
         with:
           name: windows-rust-msi
           path: dist/aavishield-agent-rust-*.msi
+          retention-days: 7 # only `manifest` reads it, in this same run
 
   linux-rust:
     needs: resolve-version
-    # NOT ubuntu-22.04, unlike the Python job — tried that first and it
+    # NOT ubuntu-22.04 (oldest glibc) — tried that first and it
     # doesn't build: xcap's PipeWire/Wayland-portal backend (via the
     # `libspa`/`pipewire-sys` crates) generates its Rust bindings from
     # whatever PipeWire C headers are on the build machine at compile time,
@@ -368,7 +228,7 @@ jobs:
     # first-CI-run failure, not a hypothetical one:
     # "error[E0609]: no field `flags` on type `spa_video_info_raw`".
     # ubuntu-24.04 ships a new enough PipeWire; this does mean giving up
-    # the Python job's "oldest glibc for max compat" property specifically
+    # the "oldest glibc for max compat" property specifically
     # for this dependency chain — an unavoidable trade for depending on
     # xcap's Wayland backend at all. It does not weaken the resulting
     # .deb's own portability claim: dpkg-shlibdeps (below) still computes
@@ -409,49 +269,4 @@ jobs:
           path: |
             dist/aavishield-agent-rust-*.deb
             dist/aavishield-agent-rust-*.tar.gz
-
-  # Python connector — still built every run, deliberately kept as a
-  # same-pipeline rollback path rather than deleted the day the Rust
-  # connector took over "Publish to production" above. Bundled the same
-  # way `manifest` bundles Rust's, just never pushed anywhere: if the Rust
-  # connector needs to be pulled back for any reason, these are one
-  # `curl`/manual-upload away from being live again without waiting on a
-  # rebuild.
-  python-manifest:
-    needs: [resolve-version, macos, windows, linux]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with: { name: macos-pkg, path: dist-python }
-      - uses: actions/download-artifact@v4
-        with: { name: windows-msi, path: dist-python }
-      - uses: actions/download-artifact@v4
-        with: { name: linux-deb, path: dist-python }
-
-      - name: Write manifest-python.json
-        run: |
-          VERSION="${{ needs.resolve-version.outputs.version }}"
-          python3 - "$VERSION" <<'PY'
-          import json, os, sys
-          version = sys.argv[1]
-          artifacts = {}
-          for f in sorted(os.listdir("dist-python")):
-              if f.endswith(".pkg"):
-                  artifacts["macos"] = f
-              elif f.endswith(".msi"):
-                  artifacts["windows"] = f
-              elif f.endswith(".deb"):
-                  artifacts["linux"] = f
-          json.dump({"version": version, "artifacts": artifacts},
-                    open("dist-python/manifest-python.json", "w"), indent=2)
-          print(json.dumps({"version": version, "artifacts": artifacts}, indent=2))
-          PY
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: agent-packages-python
-          path: dist-python/
-
-      # Deliberately no "Publish to production" step here — see this
-      # file's top comment for why the Python connector is a rollback
-      # path now, not the live download.
+          retention-days: 7 # only `manifest` reads it, in this same run

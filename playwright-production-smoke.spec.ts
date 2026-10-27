@@ -1,10 +1,10 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
-const API = process.env.E2E_API_URL || "https://aavishield-api.aavishailab.com";
-const AI = process.env.E2E_AI_URL || "https://aavishield-ai.aavishailab.com";
-const COMPANY = process.env.E2E_COMPANY_URL || "https://aavishield-app.aavishailab.com";
-const EMPLOYEE = process.env.E2E_EMPLOYEE_URL || "https://aavishield-employee.aavishailab.com";
-const SUPERADMIN = process.env.E2E_SUPERADMIN_URL || "https://aavishield-admin.aavishailab.com";
+const API = process.env.E2E_API_URL || "https://api.aavishield.com";
+const AI = process.env.E2E_AI_URL || "https://ai.aavishield.com";
+const COMPANY = process.env.E2E_COMPANY_URL || "https://app.aavishield.com";
+const EMPLOYEE = process.env.E2E_EMPLOYEE_URL || "https://employee.aavishield.com";
+const SUPERADMIN = process.env.E2E_SUPERADMIN_URL || "https://superadmin.aavishield.com";
 
 // Credentials come from the CI environment — never hardcode real or default
 // account passwords in a tracked file. The smoke test is skipped if they are

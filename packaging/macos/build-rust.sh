@@ -1,20 +1,18 @@
 #!/usr/bin/env bash
 #
 # Builds a macOS .pkg installer for the Rust Aavishield connector
-# (services/endpoint-agent). A sibling to build.sh, which does the same for
-# the Python connector — kept as two scripts, not one with a language flag,
-# because the two differ in exactly the ways that make a shared script worse
-# than two clear ones: no PyInstaller freeze step, no source-stamping (the
-# Rust binary reads its deployment URLs from the LaunchAgent's own
-# EnvironmentVariables instead of having them compiled in), and no CA-trust
-# LaunchDaemon — the Rust connector doesn't install the CA into the system
-# trust store yet (see the top-level README's Scope section), so shipping a
-# daemon that claims to would be actively misleading.
+# (services/endpoint-agent). It replaced build.sh, the removed Python
+# connector's builder — every "build.sh" mention below points at that
+# script in git history. Differences from it: no PyInstaller freeze step, no
+# source-stamping (the Rust binary reads its deployment URLs from the
+# LaunchAgent's own EnvironmentVariables instead of having them compiled
+# in), and no CA-trust LaunchDaemon — the Rust connector doesn't install the
+# CA into the system trust store yet (see the top-level README's Scope
+# section), so shipping a daemon that claims to would be actively misleading.
 #
 #   ./packaging/macos/build-rust.sh [version]
 #
-# Signing and notarization are opt-in via environment variables, exactly as
-# in build.sh:
+# Signing and notarization are opt-in via environment variables:
 #
 #   DEVELOPER_ID_APP="Developer ID Application: Acme Inc (TEAMID)"
 #   DEVELOPER_ID_INSTALLER="Developer ID Installer: Acme Inc (TEAMID)"
@@ -37,8 +35,8 @@ OUT_DIR="$REPO_ROOT/dist"
 INSTALL_PREFIX="/Applications"
 APP_NAME="Aavishield.app"
 
-ADMIN_URL="${AAVISHIELD_ADMIN_URL:-https://aavishield-api.aavishailab.com}"
-PORTAL_URL="${AAVISHIELD_PORTAL_URL:-https://aavishield-employee.aavishailab.com}"
+ADMIN_URL="${AAVISHIELD_ADMIN_URL:-https://api.aavishield.com}"
+PORTAL_URL="${AAVISHIELD_PORTAL_URL:-https://employee.aavishield.com}"
 
 # Apple Silicon only, same known gap build.sh's own comments document for
 # the Python build (and the same one agent-packages.yml's macos job carries

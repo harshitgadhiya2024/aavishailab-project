@@ -3,7 +3,7 @@ import { Eye, EyeOff, ShieldCheck } from "lucide-react";
 import { AuthBrandPanel } from "./AuthBrandPanel";
 import { BrandLogo } from "./BrandLogo";
 
-const WEBSITE_URL = process.env.NEXT_PUBLIC_WEBSITE_URL ?? "https://aavishield.aavishailab.com";
+const WEBSITE_URL = process.env.NEXT_PUBLIC_WEBSITE_URL ?? "https://website.aavishield.com";
 
 /*
  * The frame every sign-in screen shares, in the website's light style: the

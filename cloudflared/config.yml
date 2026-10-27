@@ -2,25 +2,31 @@ tunnel: 5c80b1cc-3e08-425f-931e-0dc4ede64ec0
 credentials-file: /etc/cloudflared/creds.json
 
 ingress:
-  # Employee Portal
-  - hostname: aavishield-employee.aavishailab.com
-    service: http://employee-portal:1003
+  # Prelaunch: the apex serves only the waitlist page
+  # (enforced by frontend/website/src/proxy.ts).
+  - hostname: aavishield.com
+    service: http://website:1005
+  - hostname: www.aavishield.com
+    service: http://website:1005
+  # Public marketing website
+  - hostname: website.aavishield.com
+    service: http://website:1005
   # Company Dashboard
-  - hostname: aavishield-app.aavishailab.com
+  - hostname: app.aavishield.com
     service: http://company-dashboard:1002
-  # Superadmin
-  - hostname: aavishield-admin.aavishailab.com
+  # Employee Portal
+  - hostname: employee.aavishield.com
+    service: http://employee-portal:1003
+  # Superadmin Panel
+  - hostname: superadmin.aavishield.com
     service: http://superadmin:1001
-  # Backend (admin-api)
-  - hostname: aavishield-api.aavishailab.com
+  # Admin API
+  - hostname: api.aavishield.com
     service: http://admin-api:6000
   # AI assistant
-  - hostname: aavishield-ai.aavishailab.com
+  - hostname: ai.aavishield.com
     service: http://ai-service:6002
   # Documentation site
-  - hostname: aavishield-docs.aavishailab.com
+  - hostname: docs.aavishield.com
     service: http://docs:1004
-  # Public marketing website
-  - hostname: aavishield.aavishailab.com
-    service: http://website:1005
   - service: http_status:404
