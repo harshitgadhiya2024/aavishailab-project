@@ -4,10 +4,10 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useState } from "react";
 import { LiveDot, StatePill, type EventState } from "./visuals";
 
-type Item = { label: string; detail: string; control: string; state: EventState };
+export type LiveFeedItem = { label: string; detail: string; control: string; state: EventState };
 
 // Same fictional demo data as the console screenshots.
-const FEED: Item[] = [
+const FEED: LiveFeedItem[] = [
   { label: "bet365.com", detail: "Gambling category", control: "Web", state: "blocked" },
   { label: "Q3-salaries.xlsx → chatgpt.com", detail: "Salary data, PAN × 12", control: "DLP", state: "flagged" },
   { label: "NordVPN.app", detail: "VPN client", control: "VPN", state: "blocked" },
@@ -20,9 +20,18 @@ const FEED: Item[] = [
 const VISIBLE = 4;
 
 /** The hero's "live decisions" panel: a new event slides in every few seconds. */
-export function LiveFeed({ className = "" }: { className?: string }) {
+export function LiveFeed({
+  className = "",
+  items = FEED,
+  scope = "All devices",
+}: {
+  className?: string;
+  items?: LiveFeedItem[];
+  scope?: string;
+}) {
   const reduce = useReducedMotion();
   const [head, setHead] = useState(0);
+  const feed = items.length ? items : FEED;
 
   useEffect(() => {
     if (reduce) return;
@@ -32,7 +41,7 @@ export function LiveFeed({ className = "" }: { className?: string }) {
 
   const rows = Array.from({ length: VISIBLE }, (_, i) => {
     const n = head - i;
-    return { key: n, item: FEED[((n % FEED.length) + FEED.length) % FEED.length] };
+    return { key: n, item: feed[((n % feed.length) + feed.length) % feed.length] };
   });
 
   return (
@@ -41,7 +50,7 @@ export function LiveFeed({ className = "" }: { className?: string }) {
         <span className="flex items-center gap-2 font-mono text-[10.5px] uppercase tracking-[0.1em] text-fg">
           <LiveDot /> Live decisions
         </span>
-        <span className="font-mono text-[10px] text-muted">All devices</span>
+        <span className="max-w-[46%] truncate text-right font-mono text-[10px] text-muted">{scope}</span>
       </div>
       <ul className="relative h-[232px]">
         <AnimatePresence initial={false}>

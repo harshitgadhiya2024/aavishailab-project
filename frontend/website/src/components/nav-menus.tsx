@@ -16,7 +16,18 @@ import { useState } from "react";
 import { CTA, modules, resources, type ModuleSlug } from "@/lib/content";
 import { industries, solutionsList } from "@/lib/solutions";
 import { GridButton } from "./landing/grid-button";
-import { ControlsHero, FeedHero, ModuleVisual } from "./landing/hero-widgets";
+import {
+  BlogHero,
+  ConsolidateHero,
+  ControlsHero,
+  FaqHero,
+  HubHero,
+  ModuleVisual,
+  PlanHero,
+  RolloutHero,
+  SolutionsFeedHero,
+  TrustHero,
+} from "./landing/hero-widgets";
 import { ModuleIcon } from "./icons";
 import { SolutionIcon } from "./solution-icon";
 
@@ -196,7 +207,10 @@ export function PlatformMenu({ onNavigate }: { onNavigate: () => void }) {
   );
 }
 
+type SolutionsPreview = { kind: "all" } | { kind: "solution"; slug: string } | { kind: "industry"; slug: string };
+
 export function SolutionsMenu({ onNavigate }: { onNavigate: () => void }) {
+  const [hover, setHover] = useState<SolutionsPreview>({ kind: "all" });
   return (
     <MegaPanel>
       {/* Names only (no hints) so the nine problems fit a small laptop in one column. */}
@@ -206,20 +220,34 @@ export function SolutionsMenu({ onNavigate }: { onNavigate: () => void }) {
           <ul>
             {solutionsList.map((s) => (
               <li key={s.slug}>
-                <MenuLink href={`/solutions/${s.slug}`} icon={<SolutionIcon icon={s.icon} size={16} className="text-brand-ink" />} onNavigate={onNavigate}>
+                <MenuLink
+                  href={`/solutions/${s.slug}`}
+                  icon={<SolutionIcon icon={s.icon} size={16} className="text-brand-ink" />}
+                  onNavigate={onNavigate}
+                  onHover={() => setHover({ kind: "solution", slug: s.slug })}
+                  active={hover.kind === "solution" && hover.slug === s.slug}
+                >
                   {s.name}
                 </MenuLink>
               </li>
             ))}
           </ul>
-          <AllLink href="/solutions" onNavigate={onNavigate}>All solutions</AllLink>
+          <AllLink href="/solutions" onNavigate={onNavigate} onHover={() => setHover({ kind: "all" })} active={hover.kind === "all"}>
+            All solutions
+          </AllLink>
         </div>
         <div className={`${COL} border-l border-line`}>
           <ColumnLabel>By industry</ColumnLabel>
           <ul>
             {industries.map((ind) => (
               <li key={ind.slug}>
-                <MenuLink href={`/industries/${ind.slug}`} icon={<SolutionIcon icon={ind.icon} size={16} className="text-brand-ink" />} onNavigate={onNavigate}>
+                <MenuLink
+                  href={`/industries/${ind.slug}`}
+                  icon={<SolutionIcon icon={ind.icon} size={16} className="text-brand-ink" />}
+                  onNavigate={onNavigate}
+                  onHover={() => setHover({ kind: "industry", slug: ind.slug })}
+                  active={hover.kind === "industry" && hover.slug === ind.slug}
+                >
                   {ind.name}
                 </MenuLink>
               </li>
@@ -228,14 +256,54 @@ export function SolutionsMenu({ onNavigate }: { onNavigate: () => void }) {
           <Callout label="Not sure where to start?" title="Tell us the problem. We will show you the fix." href="/contact" cta={CTA.demo} onNavigate={onNavigate} />
         </div>
         <Stage>
-          <FeedHero />
+          <SolutionsFeedHero kind={hover.kind} slug={hover.kind === "all" ? undefined : hover.slug} />
         </Stage>
       </div>
     </MegaPanel>
   );
 }
 
+const RESOURCE_TITLE: Record<string, string> = {
+  "/knowledge-hub": "Find the guide, then do the step.",
+  "/blog": "Notes from the team building Aavishield.",
+  "/product-tour": "Walk through the real console, screen by screen.",
+  "/how-it-works": "From install to first event in an afternoon.",
+  "/why-aavishield": "One agent instead of four separate tools.",
+  "/security": "A security product has to earn trust first.",
+  "/faq": "Straight answers to the questions teams ask first.",
+  "/pricing": "Pay per device. Nothing to rack.",
+};
+
+const RESOURCE_BODY: Record<string, string> = {
+  "/pricing": "Essentials and Business cover up to 50 devices. Enterprise is for larger fleets. Every plan includes macOS, Windows and Linux.",
+};
+
+function resourcesVisual(href: string) {
+  switch (href) {
+    case "/knowledge-hub":
+      return <HubHero />;
+    case "/blog":
+      return <BlogHero />;
+    case "/how-it-works":
+      return <RolloutHero />;
+    case "/why-aavishield":
+      return <ConsolidateHero />;
+    case "/security":
+      return <TrustHero />;
+    case "/faq":
+      return <FaqHero />;
+    case "/pricing":
+      return <PlanHero />;
+    default:
+      return <ModuleVisual slug="web-gateway" />;
+  }
+}
+
 export function ResourcesMenu({ onNavigate }: { onNavigate: () => void }) {
+  const [hover, setHover] = useState("/product-tour");
+  const current = resources.find((r) => r.href === hover);
+  const title = RESOURCE_TITLE[hover] ?? current?.label ?? "Resources";
+  const body = RESOURCE_BODY[hover] ?? current?.body ?? "";
   return (
     <MegaPanel>
       <div className={TAB}>
@@ -244,27 +312,48 @@ export function ResourcesMenu({ onNavigate }: { onNavigate: () => void }) {
           <ul>
             {resources.map((r) => (
               <li key={r.href}>
-                <Link href={r.href} onClick={onNavigate} className="group -mx-3 flex items-center gap-3 rounded-[4px] px-3 py-2 text-[15px] text-fg-2 transition-colors duration-200 hover:bg-brand-soft hover:text-fg">
+                <Link
+                  href={r.href}
+                  onClick={onNavigate}
+                  onPointerEnter={() => setHover(r.href)}
+                  onFocus={() => setHover(r.href)}
+                  className={`group -mx-3 flex items-center gap-3 rounded-[4px] px-3 py-2 text-[15px] transition-colors duration-200 ${hover === r.href ? "bg-brand-soft text-fg" : "text-fg-2 hover:bg-brand-soft hover:text-fg"}`}
+                >
                   {r.label}
-                  <ArrowRight size={13} className="ml-auto -translate-x-1 text-brand-ink opacity-0 transition-[opacity,transform] duration-200 group-hover:translate-x-0 group-hover:opacity-100" />
+                  <ArrowRight size={13} className={`ml-auto text-brand-ink transition-[opacity,transform] duration-200 ${hover === r.href ? "translate-x-0 opacity-100" : "-translate-x-1 opacity-0 group-hover:translate-x-0 group-hover:opacity-100"}`} />
                 </Link>
               </li>
             ))}
           </ul>
         </div>
         <div className={`${COL} border-l border-line`}>
-          <ColumnLabel>Featured</ColumnLabel>
-          <p className="font-display text-[24px] leading-snug tracking-[-0.02em] text-fg">Walk through the real console, screen by screen.</p>
-          <p className="mt-3 text-sm leading-relaxed text-muted">Every control, every report, with demo data from a fictional company.</p>
-          <AllLink href="/product-tour" onNavigate={onNavigate}>Take the product tour</AllLink>
+          <ColumnLabel>{current?.label ?? (hover === "/pricing" ? "Pricing" : "Featured")}</ColumnLabel>
+          <div className="relative min-h-[8.5rem]">
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={hover}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="absolute inset-x-0 top-0"
+              >
+                <p className="font-display text-[24px] leading-snug tracking-[-0.02em] text-fg">{title}</p>
+                <p className="mt-3 text-sm leading-relaxed text-muted">{body}</p>
+              </motion.div>
+            </AnimatePresence>
+          </div>
+          <AllLink href={hover === "/pricing" ? "/pricing" : (current?.href ?? "/product-tour")} onNavigate={onNavigate}>
+            {hover === "/product-tour" ? "Take the product tour" : hover === "/pricing" ? "See pricing" : `Open ${current?.label ?? "page"}`}
+          </AllLink>
           <div className={`mt-6 flex items-center gap-6 ${mono} text-muted`}>
-            <Link href="/pricing" onClick={onNavigate} className="hover:text-fg">Pricing</Link>
-            <Link href="/security" onClick={onNavigate} className="hover:text-fg">Security</Link>
+            <Link href="/pricing" onClick={onNavigate} onPointerEnter={() => setHover("/pricing")} className={hover === "/pricing" ? "text-fg" : "hover:text-fg"}>Pricing</Link>
+            <Link href="/security" onClick={onNavigate} onPointerEnter={() => setHover("/security")} className={hover === "/security" ? "text-fg" : "hover:text-fg"}>Security</Link>
           </div>
           <Callout label="See it on your devices" title="A pilot can be live in an afternoon." href="/contact" cta={CTA.demo} onNavigate={onNavigate} />
         </div>
         <Stage>
-          <ModuleVisual slug="web-gateway" />
+          <div key={hover} className="h-full">{resourcesVisual(hover)}</div>
         </Stage>
       </div>
     </MegaPanel>
