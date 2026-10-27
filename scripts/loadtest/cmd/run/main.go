@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"sort"
@@ -40,6 +41,9 @@ func main() {
 	activityInterval := flag.Duration("activity-interval", 5*time.Second, "activity flush interval")
 	heartbeatInterval := flag.Duration("heartbeat-interval", 60*time.Second, "heartbeat interval")
 	label := flag.String("label", "baseline", "label printed with results, e.g. 'baseline' or 'phase1'")
+	// Real agents boot at different moments, so their tickers are out of
+	// phase. 0 starts every device on the same instant — the worst-case burst.
+	startJitter := flag.Duration("start-jitter", 0, "spread device start times uniformly over this window (0 = all start together)")
 	flag.Parse()
 
 	data, err := os.ReadFile(*tokensFile)
@@ -76,6 +80,14 @@ func main() {
 		go func(tok tokenRecord) {
 			defer wg.Done()
 			auth := "Bearer " + tok.DeviceID + ":" + tok.AgentKey
+
+			if *startJitter > 0 {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(time.Duration(rand.Int63n(int64(*startJitter)))):
+				}
+			}
 
 			rulesTicker := time.NewTicker(*rulesInterval)
 			activityTicker := time.NewTicker(*activityInterval)
