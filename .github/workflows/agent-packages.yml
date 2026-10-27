@@ -6,12 +6,22 @@ name: Agent packages
 # cross-compile.
 #
 # The Rust connector (services/endpoint-agent) is the only connector:
-# `manifest`'s "Publish to production" reads the macos-rust/windows-rust/
-# linux-rust jobs' artifacts and pushes them to admin-api — that is what
-# NativePackageFor and the employee portal's download buttons serve. The
-# Python connector it replaced has been removed; git history is the
-# rollback path. One open gap: nobody has yet installed the real .msi and
-# clicked through it on a Windows desktop.
+# `publish` pushes the macos-rust/windows-rust/linux-rust packages to
+# admin-api — that is what NativePackageFor and the employee portal's
+# download buttons serve. The Python connector it replaced has been
+# removed; git history is the rollback path. One open gap: nobody has yet
+# installed the real .msi and clicked through it on a Windows desktop.
+#
+# Packages move between jobs through Cloudflare R2, not GitHub artifacts
+# (the account's artifact storage quota blocked every upload):
+#
+#   <root>/staging/<version>/<run id>/   each platform job stages here
+#   <root>/releases/<version>/           publish copies here once live
+#
+# A release is all-or-nothing: `publish` needs all three platform jobs, so
+# if any one fails nothing is published and the staged files stay put for
+# inspection. releases/<version>/manifest.json is written last and marks a
+# version as published — resolve-version refuses to build it again.
 
 on:
   push:
@@ -22,6 +32,21 @@ on:
         description: "Agent version (e.g. 1.1.0)"
         required: true
         default: "1.1.0"
+
+# R2 is S3-compatible; every job talks to it with the runner's AWS CLI.
+env:
+  AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+  AWS_DEFAULT_REGION: auto
+  # Newer AWS CLIs send checksum headers on every request by default;
+  # only send them when the API requires it, which is all R2 accepts.
+  AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+  AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+  R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
+  R2_BUCKET: ${{ secrets.R2_BUCKET_NAME }}
+  # The bucket is shared with another application; everything this
+  # workflow writes stays under this prefix.
+  R2_ROOT: ${{ vars.R2_PREFIX || 'aavishield' }}/agent-packages
 
 jobs:
   # Computes VERSION exactly once so every other job reads the same value
@@ -54,25 +79,66 @@ jobs:
             echo "::error::could not resolve a version from this trigger (event=${{ github.event_name }}, ref=${{ github.ref_name }})"
             exit 1
           fi
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::version '$VERSION' is not MAJOR.MINOR.PATCH"
+            exit 1
+          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Resolved version: $VERSION"
 
-  manifest:
+      # Fails before ~15 minutes of builds rather than after: a version that
+      # already has a release marker, or one older than the newest release,
+      # would either overwrite what devices are running or move them
+      # backwards. Rollback is the superadmin dashboard's job, not this one.
+      - name: Check version against published releases
+        env:
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          r2() { aws --endpoint-url "$R2_ENDPOINT_URL" "$@"; }
+          if out=$(r2 s3api head-object --bucket "$R2_BUCKET" --key "$R2_ROOT/releases/$VERSION/manifest.json" 2>&1); then
+            echo "::error::$VERSION is already published — bump the version"
+            exit 1
+          elif ! grep -qE "Not Found|404" <<<"$out"; then
+            echo "::error::could not check R2 for an existing release: $out"
+            exit 1
+          fi
+          latest=$(r2 s3 ls "s3://$R2_BUCKET/$R2_ROOT/releases/" | awk '$1=="PRE"{sub("/$","",$2); print $2}' \
+            | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)
+          if [ -n "$latest" ] && [ "$(printf '%s\n%s\n' "$latest" "$VERSION" | sort -V | tail -1)" != "$VERSION" ]; then
+            echo "::error::$VERSION is older than the latest release $latest"
+            exit 1
+          fi
+          echo "Latest release: ${latest:-none}; building $VERSION"
+
+  # Runs only when every platform job succeeded (the `needs` default), so a
+  # failed build anywhere publishes nothing — not a partial release.
+  publish:
     needs: [resolve-version, macos-rust, windows-rust, linux-rust]
     runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.resolve-version.outputs.version }}
     steps:
-      - uses: actions/download-artifact@v4
-        with: { name: macos-rust-pkg, path: dist }
-      - uses: actions/download-artifact@v4
-        with: { name: windows-rust-msi, path: dist }
-      - uses: actions/download-artifact@v4
-        with: { name: linux-rust-deb, path: dist }
+      - name: Download and verify staged packages
+        run: |
+          set -euo pipefail
+          r2() { aws --endpoint-url "$R2_ENDPOINT_URL" "$@"; }
+          r2 s3 cp --recursive --only-show-errors \
+            "s3://$R2_BUCKET/$R2_ROOT/staging/$VERSION/${{ github.run_id }}/" dist/
+          cd dist
+          ls -l
+          for ext in pkg msi deb; do
+            n=$(ls *."$ext" 2>/dev/null | wc -l)
+            [ "$n" -eq 1 ] || { echo "::error::expected exactly one .$ext staged, found $n"; exit 1; }
+          done
+          # Proves the bytes about to go live are the bytes each build job
+          # produced, not something truncated or swapped in R2 in between.
+          cat *.sha256 | sha256sum --check --strict
 
       # Filenames only. admin-api computes every checksum from the bytes it
       # actually serves, so a hash written here could only ever go stale.
       - name: Write manifest.json
         run: |
-          VERSION="${{ needs.resolve-version.outputs.version }}"
           python3 - "$VERSION" <<'PY'
           import json, os, sys
           version = sys.argv[1]
@@ -89,36 +155,32 @@ jobs:
           print(json.dumps({"version": version, "artifacts": artifacts}, indent=2))
           PY
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: agent-packages
-          path: dist/
-          # Production keeps its own copy of every published package
-          # (admin-api's agent-packages dir), so this is only a CI-side
-          # convenience — the 90-day default filled the storage quota.
-          retention-days: 30
+      # Files first, marker last: releases/<version>/ without a manifest.json
+      # means a publish that didn't finish, and resolve-version lets that
+      # same version be built again.
+      - name: Copy to R2 releases
+        run: |
+          set -euo pipefail
+          aws --endpoint-url "$R2_ENDPOINT_URL" s3 cp --recursive --only-show-errors \
+            --exclude manifest.json dist/ "s3://$R2_BUCKET/$R2_ROOT/releases/$VERSION/"
 
       # Pushes each built package to the running admin-api over its own
       # upload token (not portal/agent auth — this runner has neither
-      # identity). Skipped entirely if the secret isn't set yet, so this
-      # workflow stays usable for local testing before production is wired up.
+      # identity).
       - name: Publish to production
-        if: env.AAVISHIELD_ADMIN_URL != ''
         env:
           AAVISHIELD_ADMIN_URL: ${{ secrets.AAVISHIELD_ADMIN_URL }}
           AGENT_PACKAGE_UPLOAD_TOKEN: ${{ secrets.AGENT_PACKAGE_UPLOAD_TOKEN }}
         run: |
           set -euo pipefail
-          VERSION="${{ needs.resolve-version.outputs.version }}"
           for f in dist/*.pkg dist/*.msi dist/*.deb; do
-            [ -e "$f" ] || continue
             case "$f" in
               *.pkg) platform=macos ;;
               *.msi) platform=windows ;;
               *.deb) platform=linux ;;
             esac
             echo "==> Publishing $f as $platform"
-            curl -fsSL -X POST "$AAVISHIELD_ADMIN_URL/internal/admin/agent-packages" \
+            curl -fsSL --retry 3 --retry-all-errors -X POST "$AAVISHIELD_ADMIN_URL/internal/admin/agent-packages" \
               -H "Authorization: Bearer $AGENT_PACKAGE_UPLOAD_TOKEN" \
               -F "platform=$platform" \
               -F "version=$VERSION" \
@@ -126,7 +188,14 @@ jobs:
             echo
           done
 
-  # ─── Per-platform builds — `manifest` above publishes their artifacts.
+      - name: Mark release published
+        run: |
+          set -euo pipefail
+          r2() { aws --endpoint-url "$R2_ENDPOINT_URL" "$@"; }
+          r2 s3 cp --only-show-errors dist/manifest.json "s3://$R2_BUCKET/$R2_ROOT/releases/$VERSION/manifest.json"
+          r2 s3 rm --recursive --only-show-errors "s3://$R2_BUCKET/$R2_ROOT/staging/$VERSION/${{ github.run_id }}/"
+
+  # ─── Per-platform builds — each stages to R2; `publish` above releases them.
 
   macos-rust:
     needs: resolve-version
@@ -183,11 +252,10 @@ jobs:
           AAVISHIELD_PORTAL_URL: ${{ vars.AAVISHIELD_PORTAL_URL }}
         run: bash packaging/macos/build-rust.sh "${{ needs.resolve-version.outputs.version }}"
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: macos-rust-pkg
-          path: dist/aavishield-agent-rust-*.pkg
-          retention-days: 7 # only `manifest` reads it, in this same run
+      - name: Stage to R2
+        env:
+          STAGE_URI: s3://${{ env.R2_BUCKET }}/${{ env.R2_ROOT }}/staging/${{ needs.resolve-version.outputs.version }}/${{ github.run_id }}
+        run: bash packaging/ci/stage-to-r2.sh dist/aavishield-agent-rust-*.pkg
 
   windows-rust:
     needs: resolve-version
@@ -234,11 +302,11 @@ jobs:
           }
           & .\packaging\windows\build-rust.ps1 -Version "${{ needs.resolve-version.outputs.version }}"
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: windows-rust-msi
-          path: dist/aavishield-agent-rust-*.msi
-          retention-days: 7 # only `manifest` reads it, in this same run
+      - name: Stage to R2
+        shell: bash # Git Bash — same script as the other two platforms
+        env:
+          STAGE_URI: s3://${{ env.R2_BUCKET }}/${{ env.R2_ROOT }}/staging/${{ needs.resolve-version.outputs.version }}/${{ github.run_id }}
+        run: bash packaging/ci/stage-to-r2.sh dist/aavishield-agent-rust-*.msi
 
   linux-rust:
     needs: resolve-version
@@ -287,10 +355,7 @@ jobs:
           AAVISHIELD_PORTAL_URL: ${{ vars.AAVISHIELD_PORTAL_URL }}
         run: bash packaging/linux/build-rust.sh "${{ needs.resolve-version.outputs.version }}"
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: linux-rust-deb
-          path: |
-            dist/aavishield-agent-rust-*.deb
-            dist/aavishield-agent-rust-*.tar.gz
-          retention-days: 7 # only `manifest` reads it, in this same run
+      - name: Stage to R2
+        env:
+          STAGE_URI: s3://${{ env.R2_BUCKET }}/${{ env.R2_ROOT }}/staging/${{ needs.resolve-version.outputs.version }}/${{ github.run_id }}
+        run: bash packaging/ci/stage-to-r2.sh dist/aavishield-agent-rust-*.deb dist/aavishield-agent-rust-*.tar.gz
