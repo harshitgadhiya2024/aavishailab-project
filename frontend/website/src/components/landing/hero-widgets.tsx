@@ -19,6 +19,7 @@ import { AnimatePresence, motion } from "motion/react";
 import type { ModuleSlug } from "@/lib/content";
 import { LogoMark } from "../wordmark";
 import { LiveFeed } from "./live-feed";
+import { DataScanWidget, ModesWidget, ThreatQueueWidget } from "./section-widgets";
 import { AgentTag, AppControlVisual, DlpVisual, LiveDot, PixelPanel, POP, PostureVisual, StatePill, UiCard, useTimeline, WebGatewayVisual } from "./visuals";
 import { IsolationWidget, PolicyWidget, VpnWidget } from "./why-grid";
 
@@ -359,6 +360,93 @@ export function FeedHero() {
       <LiveFeed className="w-full max-w-[400px]" />
     </Stage>
   );
+}
+
+function CategoryVisual() {
+  const cats = [
+    { n: "Social media", d: "Instagram, X, Facebook", on: true },
+    { n: "Gambling", d: "Betting and fantasy sports", on: true },
+    { n: "Streaming", d: "YouTube and short video", on: true },
+    { n: "Games", d: "Stores and web games", on: true },
+    { n: "Cloud storage", d: "Personal drives", on: false },
+  ];
+  const { ref, t } = useTimeline(50, 49);
+  return (
+    <div ref={ref} className="h-full">
+      <Stage tag={<AgentTag className="bottom-[5%] right-[6%]">Working hours</AgentTag>}>
+        <UiCard title="Web categories" meta={<span className="font-mono text-[10px] text-muted">Company policy</span>} className="w-full max-w-[380px]">
+          <ul className="grid gap-0.5">
+            {cats.map((c, i) => {
+              const on = c.on && t >= 4 + i * 5;
+              return (
+                <li key={c.n} className="flex items-center gap-3 rounded-[4px] px-1.5 py-2">
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm text-fg">{c.n}</span>
+                    <span className="block truncate text-[11.5px] text-muted">{c.d}</span>
+                  </span>
+                  <span className={`relative h-5 w-9 rounded-full transition-colors duration-300 ${on ? "bg-brand" : "bg-line-strong"}`}>
+                    <motion.span layout transition={{ type: "spring", stiffness: 500, damping: 32 }} className={`absolute top-0.5 size-4 rounded-full bg-white shadow ${on ? "right-0.5" : "left-0.5"}`} />
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </UiCard>
+      </Stage>
+    </div>
+  );
+}
+
+/** Solutions mega menu: Live decisions only for All solutions. Every other row gets its own product widget. */
+export function SolutionsFeedHero({ kind, slug }: { kind: "all" | "solution" | "industry"; slug?: string }) {
+  const visual =
+    kind === "solution"
+      ? {
+          "ai-data-leakage": <DlpVisual />,
+          "remote-workforce-security": <WebGatewayVisual />,
+          "insider-threat": <ActivityVisual />,
+          "compliance-audit-readiness": <PostureVisual />,
+          "shadow-it": <AppControlVisual />,
+          "vpn-and-proxy-bypass": (
+            <Stage tag={<AgentTag tone="ink" className="bottom-[5%] right-[6%]">Blocked by default</AgentTag>}>
+              <VpnWidget />
+            </Stage>
+          ),
+          "phishing-and-malware": (
+            <ThreatQueueWidget
+              items={[
+                { title: "invoice-q3-final.exe from WeTransfer" },
+                { title: "it-helpdesk-login.com lookalike page" },
+                { title: "zoom-update.zip bundle installer" },
+                { title: "chrome-plugin.crx browser stealer" },
+              ]}
+              modules={["malware-scanning", "web-gateway", "malware-scanning", "malware-scanning"]}
+            />
+          ),
+          "productivity-and-distraction": <CategoryVisual />,
+          "contractors-and-byod": <RolloutHero />,
+        }[slug ?? ""]
+      : kind === "industry"
+        ? {
+            "it-and-software": <DataScanWidget items={["Source code", "API keys and tokens", "Database URLs", "Client documents", "Customer exports"]} />,
+            "financial-services": <DataTypesHero />,
+            healthcare: (
+              <ThreatQueueWidget
+                items={[
+                  { title: "lab-report-4412.pdf sent on WhatsApp Web" },
+                  { title: "aadhaar-scan.jpg photographed at reception" },
+                  { title: "update-scanner.exe on a shared desk" },
+                  { title: "prescription.pdf to a personal Gmail" },
+                ]}
+                modules={["data-loss-prevention", "data-loss-prevention", "malware-scanning", "data-loss-prevention"]}
+              />
+            ),
+            "bpo-and-customer-support": <ModesWidget />,
+            "startups-and-smbs": <ControlsHero />,
+          }[slug ?? ""]
+        : undefined;
+
+  return <div key={`${kind}-${slug ?? "all"}`} className="h-full">{visual ?? <FeedHero />}</div>;
 }
 
 /** Security: the signed policy bundle above company isolation. */

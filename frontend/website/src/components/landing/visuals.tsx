@@ -471,11 +471,11 @@ function Wire({ active }: { active: boolean }) {
 
 function StepCard({ n, title, on, dark = false, children }: { n: string; title: string; on: boolean; dark?: boolean; children: React.ReactNode }) {
   return (
-    <div className={`relative rounded-[6px] border p-4 transition-[border-color,box-shadow] duration-500 ${dark ? "bg-ink text-ink-fg" : "bg-surface"} ${on ? "border-brand/60 shadow-[0_0_0_4px_rgb(255_112_0/0.12)]" : "border-line-strong/70"}`}>
+    <div className={`relative flex h-full min-h-[172px] flex-col overflow-hidden rounded-[6px] border p-4 transition-[border-color,box-shadow] duration-500 ${dark ? "bg-ink text-ink-fg" : "bg-surface"} ${on ? "border-brand/60 shadow-[0_0_0_4px_rgb(255_112_0/0.12)]" : "border-line-strong/70"}`}>
       <span className={`font-mono text-[10.5px] uppercase tracking-[0.1em] ${on ? "text-brand-ink" : dark ? "text-ink-fg/60" : "text-muted"}`}>
         {n} · {title}
       </span>
-      <div className="mt-3">{children}</div>
+      <div className="mt-3 min-h-[112px] flex-1 overflow-hidden">{children}</div>
     </div>
   );
 }
@@ -531,7 +531,7 @@ export function FlowDiagram() {
         ))}
       </div>
 
-      <div className="mt-6 grid gap-0 lg:grid-cols-[1fr_40px_1.15fr_40px_1fr_40px_1fr] lg:items-stretch">
+      <div className="mt-6 grid items-stretch gap-0 lg:grid-cols-[1fr_40px_1.15fr_40px_1fr_40px_1fr]">
         <StepCard n="01" title="Request" on={!at(10)}>
           <p className="flex items-center gap-2 text-[12px] text-muted">
             <Laptop size={14} /> {s.device}
@@ -549,7 +549,7 @@ export function FlowDiagram() {
             {s.checks.map(([k, v], i) => {
               const done = at(14 + i * 4);
               return (
-                <li key={k} className="flex items-center justify-between gap-3 text-[12.5px]">
+                <li key={k} className="flex h-[22px] items-center justify-between gap-3 text-[12.5px]">
                   <span className="flex items-center gap-2 text-fg">
                     <span className="grid size-[14px] place-items-center">
                       {done ? <CheckCircle size={14} weight="fill" className="text-brand" /> : at(12) ? <CircleNotch size={12} className="animate-spin text-muted" /> : <span className="size-2 bg-line-strong" />}
@@ -567,16 +567,16 @@ export function FlowDiagram() {
         </StepCard>
         <Wire key={`b${scene}${at(26)}`} active={at(26) && !at(32) && !reduce} />
         <StepCard n="03" title="Decision" on={at(28) && !at(36)}>
-          <div className="h-[92px]">
-            <AnimatePresence mode="wait">
+          <div className="relative h-[112px] overflow-hidden">
+            <AnimatePresence mode="wait" initial={false}>
               {at(28) ? (
-                <motion.div key={`d${scene}`} {...POP}>
+                <motion.div key={`d${scene}`} {...POP} className="absolute inset-0">
                   <StatePill state={s.decision} />
-                  <p className="mt-2 text-[13px] text-fg">{s.target}</p>
+                  <p className="mt-2 truncate text-[13px] text-fg">{s.target}</p>
                   <p className="mt-1 text-[11.5px] leading-snug text-muted">{s.reason}</p>
                 </motion.div>
               ) : (
-                <motion.p key={`w${scene}`} {...POP} className="flex items-center gap-2 font-mono text-[11px] text-muted">
+                <motion.p key={`w${scene}`} {...POP} className="absolute inset-0 flex items-center gap-2 font-mono text-[11px] text-muted">
                   <CircleNotch size={12} className="animate-spin" /> Waiting for the agent
                 </motion.p>
               )}
@@ -585,23 +585,13 @@ export function FlowDiagram() {
         </StepCard>
         <Wire key={`c${scene}${at(32)}`} active={at(32) && !at(36) && !reduce} />
         <StepCard n="04" title="Admin console" on={at(34)} dark>
-          <ul className="grid gap-1.5">
-            <AnimatePresence initial={false}>
-              {log.map((i) => (
-                <motion.li
-                  key={i}
-                  layout
-                  initial={{ opacity: 0, x: 10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.35, ease: EASE }}
-                  className="flex items-center justify-between gap-2 border-b border-ink-fg/10 pb-1.5 text-[12px] last:border-0"
-                >
-                  <span className="min-w-0 truncate text-ink-fg/90">{SCENARIOS[i].target}</span>
-                  <StatePill state={SCENARIOS[i].decision} />
-                </motion.li>
-              ))}
-            </AnimatePresence>
+          <ul className="grid h-[96px] grid-rows-3 content-start gap-1.5 overflow-hidden">
+            {log.map((i, slot) => (
+              <li key={slot} className="flex min-h-0 items-center justify-between gap-2 border-b border-ink-fg/10 pb-1.5 text-[12px] last:border-0">
+                <span className="min-w-0 truncate text-ink-fg/90">{SCENARIOS[i].target}</span>
+                <StatePill state={SCENARIOS[i].decision} />
+              </li>
+            ))}
           </ul>
         </StepCard>
       </div>
