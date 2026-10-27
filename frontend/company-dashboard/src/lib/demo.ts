@@ -122,7 +122,31 @@ const EMPLOYEES = Object.entries(EMP).map(([key, e], i) => {
 
 const DEPARTMENTS = [...new Set(EMPLOYEES.map((e) => e.department))];
 
-const DLP_EVENTS = [
+type DemoEvent = {
+  id: string;
+  action: string;
+  target: string;
+  target_domain?: string;
+  target_app?: string;
+  event_type?: string;
+  operation?: string;
+  category: string;
+  policy_name?: string;
+  risk_score: number;
+  timestamp: string;
+  employee: { first_name: string; last_name: string; email: string };
+  process_name?: string;
+  metadata?: {
+    request_source?: string;
+    service?: string;
+    site?: string;
+    content_kind?: string;
+    detectors?: string[];
+    app_name?: string;
+  };
+};
+
+const DLP_EVENTS: DemoEvent[] = [
   { id: "dlp-1", action: "alerted", target: "passport-copy.png", target_domain: "mail.google.com", risk_score: 80, timestamp: hoursAgo(2), category: "dlp", operation: "File upload", policy_name: "Sensitive data", employee: EMP.aisha, metadata: { request_source: "browser", service: "Gmail", site: "mail.google.com", content_kind: "file-upload", detectors: ["passport_number"] } },
   { id: "dlp-2", action: "alerted", target: "aadhaar-scan.jpg", target_domain: "mail.google.com", risk_score: 84, timestamp: hoursAgo(5), category: "dlp", operation: "File upload", policy_name: "Sensitive data", employee: EMP.farhan, metadata: { request_source: "browser", service: "Gmail", site: "mail.google.com", content_kind: "file-upload", detectors: ["aadhaar_number"] } },
   { id: "dlp-3", action: "alerted", target: "aadhaar-scan.jpg", target_domain: "mail.google.com", risk_score: 74, timestamp: hoursAgo(26), category: "dlp", operation: "File upload", policy_name: "Sensitive data", employee: EMP.farhan, metadata: { request_source: "browser", service: "Gmail", site: "mail.google.com", content_kind: "file-upload", detectors: ["aadhaar_number"] } },
@@ -133,7 +157,7 @@ const DLP_EVENTS = [
   { id: "dlp-8", action: "alerted", target: "prod.env", target_domain: "", risk_score: 95, timestamp: daysAgo(3, 21), category: "dlp", operation: "File shared", policy_name: "Sensitive data", employee: EMP.rohan, metadata: { request_source: "app", app_name: "Microsoft Teams", content_kind: "text", detectors: ["aws_key", "database_url"] } },
 ];
 
-const WEB_EVENTS = [
+const WEB_EVENTS: DemoEvent[] = [
   { id: "web-1", action: "blocked", target: "x.com", target_domain: "x.com", target_app: "X", event_type: "web_request", operation: "Web request", category: "url_category", policy_name: "Social Media", risk_score: 10, timestamp: hoursAgo(1), employee: EMP.aisha },
   { id: "web-2", action: "blocked", target: "perplexity.ai", target_domain: "perplexity.ai", target_app: "Perplexity", event_type: "web_request", operation: "Web request", category: "url_category", policy_name: "AI Tools", risk_score: 25, timestamp: hoursAgo(3), employee: EMP.neha },
   { id: "web-3", action: "blocked", target: "instagram.com", target_domain: "instagram.com", target_app: "Instagram", event_type: "web_request", operation: "Web request", category: "url_category", policy_name: "Social Media", risk_score: 10, timestamp: hoursAgo(4), employee: EMP.isha },
@@ -144,24 +168,24 @@ const WEB_EVENTS = [
   { id: "web-8", action: "blocked", target: "chat.deepseek.com", target_domain: "chat.deepseek.com", event_type: "web_request", operation: "Web request", category: "url_category", policy_name: "AI Tools", risk_score: 25, timestamp: daysAgo(1, 10), employee: EMP.arjun },
 ];
 
-const APP_EVENTS = [
+const APP_EVENTS: DemoEvent[] = [
   { id: "app-1", action: "blocked", target: "Tor Browser", target_domain: "", event_type: "app_launch", operation: "App launch", category: "application_control", policy_name: "Application control: Tor Browser", risk_score: 0, timestamp: hoursAgo(18), employee: EMP.farhan, process_name: "tor" },
   { id: "app-2", action: "blocked", target: "uTorrent", target_domain: "", event_type: "app_launch", operation: "App launch", category: "application_control", policy_name: "Application control: uTorrent", risk_score: 0, timestamp: hoursAgo(21), employee: EMP.karan, process_name: "utorrent" },
   { id: "app-3", action: "blocked", target: "AnyDesk", target_domain: "", event_type: "app_launch", operation: "App launch", category: "application_control", policy_name: "Application control: AnyDesk", risk_score: 0, timestamp: daysAgo(1, 12), employee: EMP.aditya, process_name: "anydesk" },
 ];
 
-const VPN_EVENTS = [
+const VPN_EVENTS: DemoEvent[] = [
   { id: "vpn-1", action: "blocked", target: "NordVPN", target_domain: "", event_type: "app_launch", operation: "App launch", category: "application_control", policy_name: "VPN control", risk_score: 40, timestamp: daysAgo(1, 9), employee: EMP.nikhil, process_name: "nordvpn" },
 ];
 
-const MALWARE_EVENTS = [
+const MALWARE_EVENTS: DemoEvent[] = [
   { id: "mal-1", action: "blocked", target: "invoice-q3-final.exe", target_domain: "files.wetransfer.com", event_type: "file_download", operation: "File download", category: "malware_detection", policy_name: "Trojan.GenericKD.48291", risk_score: 96, timestamp: hoursAgo(6), employee: EMP.vikram },
   { id: "mal-2", action: "blocked", target: "payroll-fix.msi", target_domain: "cdn.discordapp.com", event_type: "file_download", operation: "File download", category: "malware_detection", policy_name: "Win32.Downloader.Agent", risk_score: 91, timestamp: hoursAgo(14), employee: EMP.kabir },
   { id: "mal-3", action: "blocked", target: "zoom-update.zip", target_domain: "drive.google.com", event_type: "file_download", operation: "File download", category: "malware_detection", policy_name: "PUA.Win.BundleInstaller", risk_score: 72, timestamp: daysAgo(1, 17), employee: EMP.isha },
   { id: "mal-4", action: "blocked", target: "chrome-plugin.crx", target_domain: "github.com", event_type: "file_download", operation: "File download", category: "malware_detection", policy_name: "JS.BrowserStealer", risk_score: 88, timestamp: daysAgo(2, 11), employee: EMP.aditya },
 ];
 
-const POSTURE_EVENTS = [
+const POSTURE_EVENTS: DemoEvent[] = [
   { id: "pos-1", action: "alerted", target: "OS updates off", target_domain: "NW-DANIEL-LT08", event_type: "posture_check", operation: "Posture check", category: "device_posture", policy_name: "Device security baseline", risk_score: 70, timestamp: hoursAgo(9), employee: EMP.daniel },
   { id: "pos-2", action: "alerted", target: "OS updates off", target_domain: "NW-KARAN-LT12", event_type: "posture_check", operation: "Posture check", category: "device_posture", policy_name: "Device security baseline", risk_score: 68, timestamp: hoursAgo(11), employee: EMP.karan },
   { id: "pos-3", action: "alerted", target: "Firewall off", target_domain: "NW-SIDDHARTH-LT17", event_type: "posture_check", operation: "Posture check", category: "device_posture", policy_name: "Device security baseline", risk_score: 82, timestamp: hoursAgo(16), employee: EMP.siddharth },
