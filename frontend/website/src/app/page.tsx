@@ -282,9 +282,7 @@ export default function Home() {
               />
             </div>
             <div className="px-5 pb-16 pt-10 sm:px-8 md:px-12 md:pb-20">
-              <PixelPanel className="px-4 py-8 sm:px-6 md:px-10 md:py-12">
-                <ConsoleShowcase screens={tour} />
-              </PixelPanel>
+              <ConsoleShowcase screens={tour} />
             </div>
           </GridRow>
 
