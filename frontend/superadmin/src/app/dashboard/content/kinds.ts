@@ -22,4 +22,4 @@ export type KindKey = keyof typeof KINDS;
 
 export const isKind = (k: string): k is KindKey => k in KINDS;
 
-export const WEBSITE_URL = process.env.NEXT_PUBLIC_WEBSITE_URL ?? "https://aavishield.aavishailab.com";
+export const WEBSITE_URL = process.env.NEXT_PUBLIC_WEBSITE_URL ?? "https://website.aavishield.com";

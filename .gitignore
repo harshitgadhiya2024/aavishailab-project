@@ -170,3 +170,9 @@ cloudflared/*-creds.json
 
 # Load-test artifacts (synthetic device tokens, not real secrets, but no need to commit)
 scripts/loadtest/tokens*.json
+
+# Code-signing certificates and private keys — never commit
+*.p12
+*.pfx
+*.cer
+*.certSigningRequest

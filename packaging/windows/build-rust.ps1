@@ -40,8 +40,8 @@ $AgentDir  = Join-Path $RepoRoot "services\endpoint-agent"
 $BuildDir  = Join-Path $RepoRoot "build\windows-rust"
 $OutDir    = Join-Path $RepoRoot "dist"
 
-$AdminUrl  = if ($env:AAVISHIELD_ADMIN_URL)  { $env:AAVISHIELD_ADMIN_URL }  else { "https://aavishield-api.aavishailab.com" }
-$PortalUrl = if ($env:AAVISHIELD_PORTAL_URL) { $env:AAVISHIELD_PORTAL_URL } else { "https://aavishield-employee.aavishailab.com" }
+$AdminUrl  = if ($env:AAVISHIELD_ADMIN_URL)  { $env:AAVISHIELD_ADMIN_URL }  else { "https://api.aavishield.com" }
+$PortalUrl = if ($env:AAVISHIELD_PORTAL_URL) { $env:AAVISHIELD_PORTAL_URL } else { "https://employee.aavishield.com" }
 
 Write-Host "==> Building Aavishield Rust connector $Version for Windows"
 Write-Host "    admin:  $AdminUrl"
