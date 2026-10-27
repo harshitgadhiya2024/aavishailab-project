@@ -1,23 +1,22 @@
 #!/usr/bin/env python3
-"""Builds every Aavishield connector icon from the brand favicon.
+"""Builds every Aavishield connector icon from the website's brand files.
 
-    python3 packaging/make-icons.py      (needs Pillow and numpy)
+    python3 packaging/make-icons.py      (needs Pillow and cairosvg)
 
-Source of truth is the brand artwork in logos/ at the repo root:
-  - favicon-white-theme.png                 -> app icons (.icns, .ico, PNGs)
-  - black-theme-sideview-with-tagline.png   -> the logo in the connector window
-
-Both ship on a solid background. That background is removed with a soft
-colour-to-alpha ramp that leaves every pixel of the artwork itself untouched
-(compositing the result back onto the original background reproduces the
-source to within the background's own noise), then the result is trimmed.
+Source of truth is the same artwork the website and dashboards use, so the
+connector can't drift from them again:
+  - frontend/website/public/brand/mark.svg  -> app icons, tray, window icon
+                                               (the favicon is this mark too)
+  - the mark plus "Aavishield" in Sora SemiBold, white, for the dark window
+    header — the lockup website/src/components/wordmark.tsx sets in live
+    text. Sora ships next to this script (packaging/icons/fonts/, OFL).
 
 Writes:
   packaging/icons/aavishield.icns           macOS app bundle icon
   packaging/icons/aavishield.ico            Windows .exe and installer icon
   packaging/icons/aavishield-<n>.png        Linux hicolor icons (48..512) + 1024
-  services/endpoint-agent/assets/mark-256.png          tray + window icon
-  services/endpoint-agent/assets/logo-tagline-dark.png window header logo
+  services/endpoint-agent/assets/mark-256.png   tray + window icon
+  services/endpoint-agent/assets/logo-dark.png  window header logo
 
 The outputs are committed so a build never depends on this running. ICNS is
 written by hand so this works on any OS (no iconutil).
@@ -28,28 +27,14 @@ import os
 import struct
 import sys
 
-import numpy as np
-from PIL import Image
+import cairosvg
+from PIL import Image, ImageDraw, ImageFont
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LOGOS = os.path.join(ROOT, "logos")
+MARK_SVG = os.path.join(ROOT, "frontend", "website", "public", "brand", "mark.svg")
+SORA = os.path.join(ROOT, "packaging", "icons", "fonts", "Sora[wght].ttf")
 ICON_DIR = os.path.join(ROOT, "packaging", "icons")
 ASSET_DIR = os.path.join(ROOT, "services", "endpoint-agent", "assets")
-
-WHITE, BLACK = (255, 255, 255), (0, 0, 0)
-
-
-def knockout(img, bg, t1=22.0, t2=70.0):
-    """Pixels within t1 of `bg` become transparent, beyond t2 stay opaque, and
-    the ramp between them has the background un-mixed from its colour, so
-    anti-aliased edges stay clean on any backdrop."""
-    a = np.asarray(img.convert("RGB")).astype(np.float32)
-    b = np.array(bg, dtype=np.float32)
-    d = np.sqrt(((a - b) ** 2).sum(axis=2))
-    alpha = np.clip((d - t1) / (t2 - t1), 0, 1)
-    safe = np.maximum(alpha, 1e-3)[..., None]
-    fg = np.clip((a - (1 - alpha[..., None]) * b) / safe, 0, 255)
-    return Image.fromarray(np.dstack([fg, alpha * 255]).astype(np.uint8), "RGBA")
 
 
 def trim(img):
@@ -66,13 +51,39 @@ def square(img, size, pad):
     return out
 
 
-MARK = trim(knockout(Image.open(os.path.join(LOGOS, "favicon-white-theme.png")), WHITE))
+# Rasterized well above the largest output (1024) so every size is a
+# downscale of the vector, never an upscale.
+MARK = trim(Image.open(io.BytesIO(cairosvg.svg2png(url=MARK_SVG, output_width=2048))).convert("RGBA"))
 
 
 def render(size):
     # A little breathing room so the mark sits at the same visual weight as
     # neighbouring icons in the Dock, taskbar and app menus.
     return square(MARK, size, pad=0.06)
+
+
+def logo_dark(width=840, height=280):
+    """The website lockup in white on transparent, on the original 3:1
+    canvas brand.rs's test pins. Proportions are wordmark.tsx's: the mark
+    1.22em tall and 0.28em from the word."""
+    em = 300
+    font = ImageFont.truetype(SORA, em)
+    font.set_variation_by_axes([600])  # SemiBold
+    mark = MARK.resize((round(MARK.width * 1.22 * em / MARK.height), round(1.22 * em)), Image.LANCZOS)
+    left, top, right, bottom = font.getbbox("Aavishield")
+    gap = round(0.28 * em)
+    canvas = Image.new("RGBA", (mark.width + gap + right, max(mark.height, bottom)), (0, 0, 0, 0))
+    canvas.paste(mark, (0, (canvas.height - mark.height) // 2), mark)
+    # Centre the word's ink on the mark, as the flex `items-center` does.
+    ImageDraw.Draw(canvas).text((mark.width + gap, (canvas.height - (top + bottom)) // 2),
+                                "Aavishield", font=font, fill=(255, 255, 255, 255))
+    lockup = trim(canvas)
+    # Same margin the brand canvas always had: the lockup fills ~84% of the width.
+    scale = min(width * 0.84 / lockup.width, height * 0.6 / lockup.height)
+    lockup = lockup.resize((round(lockup.width * scale), round(lockup.height * scale)), Image.LANCZOS)
+    out = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    out.paste(lockup, ((width - lockup.width) // 2, (height - lockup.height) // 2), lockup)
+    return out
 
 
 ICNS_TYPES = [
@@ -114,12 +125,10 @@ def main():
     square(MARK, 256, pad=0.02).save(p, optimize=True)
     out.append(p)
 
-    # The connector window is dark (#111), so it uses the white-wordmark
-    # lockup. 840px wide covers a ~210pt header on a 4x display.
-    logo = trim(knockout(Image.open(os.path.join(LOGOS, "black-theme-sideview-with-tagline.png")), BLACK))
-    logo = logo.resize((840, round(logo.height * 840 / logo.width)), Image.LANCZOS)
-    p = os.path.join(ASSET_DIR, "logo-tagline-dark.png")
-    logo.save(p, optimize=True)
+    # The connector window is dark (#111), so it uses the white wordmark.
+    # 840px wide covers a ~210pt header on a 4x display.
+    p = os.path.join(ASSET_DIR, "logo-dark.png")
+    logo_dark().save(p, optimize=True)
     out.append(p)
 
     for p in out:

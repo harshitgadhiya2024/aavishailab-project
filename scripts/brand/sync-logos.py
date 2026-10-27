@@ -15,7 +15,6 @@ employee-portal, superadmin, docs):
   logo-horizontal-light.png / -dark.png           without tagline
   logo-stacked-light.png, logo-stacked-tagline-light.png
   mark.png, mark-on-dark.png                      the shield mark alone
-and the connector window logo at services/endpoint-agent/assets/.
 
 It prints the final pixel size of every lockup. If a new logo file has a
 different shape (aspect ratio), update the width/height numbers in:
@@ -87,13 +86,11 @@ def main():
     lockups["mark.png"].resize((192, 192), Image.LANCZOS).save(
         os.path.join(ROOT, "frontend", "website", "public", "brand", "mark-192.png"), optimize=True)
 
-    # Connector window (dark): same lockup, same proportions, 840px wide.
-    agent = os.path.join(ROOT, "services", "endpoint-agent", "assets", "logo-tagline-dark.png")
-    width(load("black-theme-sideview-with-tagline.png", BLACK), 840).save(agent, optimize=True)
+    # The connector's artwork comes from packaging/make-icons.py, which builds
+    # it from the website's current brand files rather than logos/.
 
     for name, img in lockups.items():
         print(f"  {name:36s} {img.width}x{img.height}  ({img.width / img.height:.2f}:1)")
-    print(f"  {'agent logo-tagline-dark.png':36s} {Image.open(agent).size}")
     return 0
 
 
