@@ -6,10 +6,13 @@ import { AnnouncementBanner } from "@/components/layout/AnnouncementBanner";
 import { DataStoreBanner } from "@/components/layout/DataStoreBanner";
 import { authOptions } from "@/lib/auth";
 import { AssistantWidget } from "@/components/assistant/AssistantWidget";
+import { isDemo } from "@/lib/demo";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const session = await getServerSession(authOptions);
-  if (!session) redirect("/login");
+  if (!isDemo) {
+    const session = await getServerSession(authOptions);
+    if (!session) redirect("/login");
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">

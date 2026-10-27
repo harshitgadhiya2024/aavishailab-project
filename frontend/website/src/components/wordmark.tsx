@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { HydratedLink } from "./hydrated-link";
 
 // The Aavishield logo (source: public/brand/logo.svg): the orange mark, then
 // "Aavishield" set in Sora SemiBold. The mark is the original vector path;
@@ -34,8 +34,8 @@ export function Logo({ className = "text-[22px]" }: { className?: string }) {
 /** The site's home link: the Aavishield logo. */
 export function Wordmark({ className = "" }: { className?: string }) {
   return (
-    <Link href="/" aria-label="Aavishield home" className={`inline-flex items-center ${className}`}>
+    <HydratedLink href="/" aria-label="Aavishield home" className={`inline-flex items-center ${className}`}>
       <Logo className="text-[22px]" />
-    </Link>
+    </HydratedLink>
   );
 }

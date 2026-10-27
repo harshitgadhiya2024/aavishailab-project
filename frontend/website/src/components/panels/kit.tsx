@@ -1,15 +1,14 @@
 "use client";
 
 import { TrendDown, TrendUp } from "@phosphor-icons/react";
-import { AnimatePresence, motion } from "motion/react";
 import { useId, useState } from "react";
-import { POP, StatePill, useTimeline, type EventState } from "../landing/visuals";
+import { StatePill, useTimeline, type EventState } from "../landing/visuals";
 import { Big, Panel, PanelCard, Tick, fmt, useProgress } from "./panel";
 
 /*
  * Two reusable panel layouts, filled with data per screen:
  * StatChartPanel (numbers on the left, a trend chart on the right) and
- * FeedPanel (a headline number over a list of events that arrive live).
+ * FeedPanel (a headline number over a list of events that fade in live).
  */
 
 function path(values: number[], w: number, h: number, max: number) {
@@ -183,8 +182,9 @@ export function StatChartPanel({ data }: { data: StatChartData }) {
 export type FeedRow = { title: string; sub: string; state?: EventState; right?: string };
 
 /**
- * A headline number over a list of rows that arrive one by one; the count
- * climbs as they land. Rows can end in a state pill or a short value.
+ * A headline number over a list of rows that fade in one by one; the count
+ * climbs as they land. Every row is in the layout from the start so the
+ * orange stage around the panel does not grow when a row appears.
  */
 export function FeedPanel({ context, label, base, aside, rows, unit }: { context: string; label: string; base: number; aside?: string; rows: FeedRow[]; unit?: string }) {
   const STEP = 8;
@@ -205,19 +205,20 @@ export function FeedPanel({ context, label, base, aside, rows, unit }: { context
             </div>
             {aside && <p className="max-w-[20ch] text-right text-[12.5px] text-muted">{aside}</p>}
           </div>
-          <ul className="mt-5 min-h-[248px] border-t border-line">
-            <AnimatePresence initial={false}>
-              {rows.slice(0, shown).map((r) => (
-                <motion.li key={r.title + r.sub} {...POP} className="flex items-center gap-4 border-b border-line py-3 last:border-b-0">
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[14px] text-fg">{r.title}</span>
-                    <span className="mt-0.5 block truncate text-[12px] text-muted">{r.sub}</span>
-                  </span>
-                  {r.right && <span className="shrink-0 font-mono text-[12px] tabular-nums text-fg">{r.right}</span>}
-                  {r.state && <StatePill state={r.state} />}
-                </motion.li>
-              ))}
-            </AnimatePresence>
+          <ul className="mt-5 border-t border-line">
+            {rows.map((r, i) => (
+              <li
+                key={r.title + r.sub}
+                className={`flex items-center gap-4 border-b border-line py-3 last:border-b-0 transition-opacity duration-500 ${i < shown ? "opacity-100" : "opacity-0"}`}
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[14px] text-fg">{r.title}</span>
+                  <span className="mt-0.5 block truncate text-[12px] text-muted">{r.sub}</span>
+                </span>
+                {r.right && <span className="shrink-0 font-mono text-[12px] tabular-nums text-fg">{r.right}</span>}
+                {r.state && <StatePill state={r.state} />}
+              </li>
+            ))}
           </ul>
         </PanelCard>
       </Panel>

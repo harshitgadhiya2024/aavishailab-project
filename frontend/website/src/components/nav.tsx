@@ -3,10 +3,10 @@
 import { CaretDown, List, X } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "motion/react";
 import dynamic from "next/dynamic";
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRef, useState } from "react";
 import { CTA, nav, resources } from "@/lib/content";
+import { HydratedLink } from "./hydrated-link";
 import { GridButton } from "./landing/grid-button";
 import { Wordmark } from "./wordmark";
 
@@ -66,6 +66,7 @@ export function Nav() {
             return (
               <li
                 key={item.label}
+                suppressHydrationWarning
                 className={key ? "relative" : undefined}
                 onPointerEnter={key ? () => openMenu(key) : undefined}
                 onPointerLeave={key ? closeMenu : undefined}
@@ -78,7 +79,7 @@ export function Nav() {
                     : undefined
                 }
               >
-                <Link
+                <HydratedLink
                   href={item.href}
                   aria-expanded={key ? menu === key : undefined}
                   aria-haspopup={key ? "true" : undefined}
@@ -89,7 +90,7 @@ export function Nav() {
                   )}
                   {item.label}
                   {key && <CaretDown size={11} weight="bold" className={`transition-transform duration-300 ${menu === key ? "rotate-180" : ""}`} />}
-                </Link>
+                </HydratedLink>
                 {key && (
                   <AnimatePresence>
                     {menu === key && key === "platform" && <PlatformMenu onNavigate={() => setMenu(null)} />}

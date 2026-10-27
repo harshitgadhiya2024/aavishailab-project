@@ -156,7 +156,7 @@ Version: $VERSION
 Section: net
 Priority: optional
 Architecture: $ARCH
-Maintainer: Aavishield <info@aavishailab.com>
+Maintainer: Aavishield <info@aavishield.com>
 Homepage: https://aavishield.aavishailab.com
 Installed-Size: $INSTALLED_SIZE
 Depends: $RUNTIME_DEPENDS

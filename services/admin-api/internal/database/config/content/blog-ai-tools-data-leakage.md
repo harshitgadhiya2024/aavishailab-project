@@ -6,6 +6,8 @@ excerpt: Generative AI arrived faster than any policy. Here is what tends to lea
 category: Data protection
 tags: ai, chatgpt, dlp, shadow ai
 author: Aavishield team
+cover: /images/blog/ai-tools-hero.jpg
+thumbnail: /images/blog/ai-tools-thumb.jpg
 seo_title: AI Data Leakage: What Employees Paste Into ChatGPT
 seo_description: Engineers paste secrets, finance uploads salary sheets. How endpoint DLP shows what reaches AI tools without blocking work.
 featured: true

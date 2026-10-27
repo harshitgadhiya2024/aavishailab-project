@@ -2,7 +2,7 @@
 // actually works (see the platform README). Review with counsel before
 // relying on them; commercial terms marked in the refund policy in particular.
 
-export const LEGAL_EMAIL = "info@aavishailab.com";
+export const LEGAL_EMAIL = "info@aavishield.com";
 export const LEGAL_UPDATED = "1 October 2026";
 
 export type LegalSection = { id: string; title: string; body: string[]; list?: string[] };

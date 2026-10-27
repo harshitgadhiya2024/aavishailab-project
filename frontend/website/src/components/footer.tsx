@@ -18,7 +18,7 @@ const columns = [
       { href: "/company", label: "About" },
       { href: "/pricing", label: "Pricing" },
       { href: "/contact", label: "Book a demo" },
-      { href: "mailto:info@aavishailab.com", label: "info@aavishailab.com" },
+      { href: "mailto:info@aavishield.com", label: "info@aavishield.com" },
     ],
   },
 ];
@@ -42,7 +42,7 @@ export function Footer() {
           <div className="md:justify-self-end">
             <div className="flex flex-wrap gap-3">
               <GridButton href="/contact">{CTA.demo}</GridButton>
-              <GridButton href="mailto:info@aavishailab.com" variant="ghost" icon={EnvelopeSimple}>info@aavishailab.com</GridButton>
+              <GridButton href="mailto:info@aavishield.com" variant="ghost" icon={EnvelopeSimple}>info@aavishield.com</GridButton>
             </div>
             <p className="mt-4 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-muted">
               <span className="size-1.5 bg-brand" /> Runs on macOS · Windows · Linux

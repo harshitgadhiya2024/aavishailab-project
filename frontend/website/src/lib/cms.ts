@@ -23,6 +23,7 @@ export type PostSummary = {
   tags: string[] | null;
   author_name: string;
   cover_image: string;
+  thumbnail_image: string;
   featured: boolean;
   sort_order: number;
   published_at: string | null;
@@ -86,7 +87,8 @@ function parseSeed(file: string, raw: string): Post | null {
     category: meta.category ?? "",
     tags: (meta.tags ?? "").split(",").map((t) => t.trim()).filter(Boolean),
     author_name: meta.author ?? "",
-    cover_image: "",
+    cover_image: meta.cover ?? "",
+    thumbnail_image: meta.thumbnail ?? "",
     seo_title: meta.seo_title ?? "",
     seo_description: meta.seo_description ?? "",
     featured: meta.featured === "true",
@@ -111,25 +113,58 @@ const byOrder = (kind: ContentKind) => (a: PostSummary, b: PostSummary) =>
     ? a.sort_order - b.sort_order || a.title.localeCompare(b.title)
     : (b.published_at ?? "").localeCompare(a.published_at ?? "");
 
+// Branded stills for the starter posts. Applied when a row has no cover,
+// including database posts seeded before the images existed.
+const BLOG_ART: Record<string, { thumb: string; hero: string }> = {
+  "what-your-team-pastes-into-ai-tools": {
+    thumb: "/images/blog/ai-tools-thumb.jpg",
+    hero: "/images/blog/ai-tools-hero.jpg",
+  },
+  "personal-vpns-bypass-web-filtering": {
+    thumb: "/images/blog/personal-vpns-thumb.jpg",
+    hero: "/images/blog/personal-vpns-hero.jpg",
+  },
+  "roll-out-endpoint-security-without-losing-trust": {
+    thumb: "/images/blog/rollout-trust-thumb.jpg",
+    hero: "/images/blog/rollout-trust-hero.jpg",
+  },
+};
+
+function withArt<T extends { slug: string; cover_image: string; thumbnail_image?: string | null }>(p: T): T {
+  const art = BLOG_ART[p.slug];
+  if (!art) return { ...p, thumbnail_image: p.thumbnail_image ?? "" };
+  return {
+    ...p,
+    cover_image: p.cover_image || art.hero,
+    thumbnail_image: p.thumbnail_image || art.thumb,
+  };
+}
+
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 /** Every published post of a kind, without bodies. */
 export async function listPosts(kind: ContentKind): Promise<PostSummary[]> {
-  if (API) return (await api<{ posts: PostSummary[] }>(`/public/content?kind=${kind}`))?.posts ?? [];
-  return (await seed())
-    .filter((p) => p.kind === kind)
-    .sort(byOrder(kind))
-    .map((p): PostSummary => ({ ...p, body: undefined, seo_title: undefined, seo_description: undefined }) as PostSummary);
+  const posts = API
+    ? (await api<{ posts: PostSummary[] }>(`/public/content?kind=${kind}`))?.posts ?? []
+    : (await seed())
+        .filter((p) => p.kind === kind)
+        .sort(byOrder(kind))
+        .map((p): PostSummary => ({ ...p, body: undefined, seo_title: undefined, seo_description: undefined }) as PostSummary);
+  return posts.map(withArt);
 }
 
 /** One published post and up to three related posts from its category. */
 export async function getPost(kind: ContentKind, slug: string): Promise<{ post: Post; related: PostSummary[] } | null> {
-  if (API) return api(`/public/content/${kind}/${encodeURIComponent(slug)}`);
+  if (API) {
+    const found = await api<{ post: Post; related: PostSummary[] }>(`/public/content/${kind}/${encodeURIComponent(slug)}`);
+    if (!found) return null;
+    return { post: withArt(found.post), related: found.related.map(withArt) };
+  }
   const all = (await seed()).filter((p) => p.kind === kind);
   const post = all.find((p) => p.slug === slug);
   if (!post) return null;
   const related = all.filter((p) => p.id !== post.id && p.category === post.category).sort(byOrder(kind)).slice(0, 3);
-  return { post, related };
+  return { post: withArt(post), related: related.map(withArt) };
 }
 
 /** Knowledge hub articles grouped into sections, in reading order. */

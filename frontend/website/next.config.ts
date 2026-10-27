@@ -4,6 +4,9 @@ const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
   compress: true,
+  // Link otherwise attaches onTouchStart only on the client, which React 19
+  // reports as a hydration mismatch on every <Link>.
+  experimental: { linkNoTouchStart: true },
   images: {
     formats: ["image/avif", "image/webp"],
     // Up to the screenshots' own 2880px width, so console captures stay sharp on

@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { streamChat, aiChatApi, type ChatTurn } from "@/lib/api";
+import { isDemo } from "@/lib/demo";
 import { usePermissions, PERMISSIONS } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/components/ui/Markdown";
@@ -103,7 +104,20 @@ export function AssistantWidget() {
   const [open, setOpen] = useState(false);
   const [big, setBig] = useState(false);
   const [view, setView] = useState<"chat" | "history">("chat");
-  const [msgs, setMsgs] = useState<Msg[]>([]);
+  const [msgs, setMsgs] = useState<Msg[]>(() => isDemo ? [
+    { id: "demo-q", role: "user", content: "What needs my attention today?" },
+    {
+      id: "demo-a",
+      role: "assistant",
+      content:
+        "Four laptops need a fix at Northwind Labs:\n\n" +
+        "- **Daniel Fernandez** (`NW-DANIEL-LT08`) — OS updates are off\n" +
+        "- **Karan Sethi** (`NW-KARAN-LT12`) — OS updates are off\n" +
+        "- **Siddharth Pillai** (`NW-SIDDHARTH-LT17`) — firewall and OS updates are off, and the agent has been offline for 9 days\n" +
+        "- **Isha Desai** (`NW-ISHA-MB04`) — disk encryption is off on a personal Mac\n\n" +
+        "There are also **2 pending access requests** (Instagram and Perplexity). I can open the device compliance report if you want the full list.",
+    },
+  ] : []);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);

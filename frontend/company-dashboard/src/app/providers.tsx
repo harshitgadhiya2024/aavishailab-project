@@ -4,6 +4,7 @@ import { SessionProvider } from "next-auth/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "next-themes";
 import { useEffect, useState } from "react";
+import { DEMO_SESSION, isDemo } from "@/lib/demo";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [qc] = useState(() => new QueryClient({
@@ -25,7 +26,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
       disableTransitionOnChange
       storageKey="aavishield-theme"
     >
-      <SessionProvider>
+      <SessionProvider
+        session={isDemo ? (DEMO_SESSION as any) : undefined}
+        refetchInterval={isDemo ? 0 : undefined}
+        refetchOnWindowFocus={!isDemo}
+      >
         <QueryClientProvider client={qc}>{children}</QueryClientProvider>
       </SessionProvider>
     </ThemeProvider>

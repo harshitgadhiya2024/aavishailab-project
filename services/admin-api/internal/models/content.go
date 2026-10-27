@@ -49,6 +49,9 @@ type ContentPost struct {
 	Tags           []string      `gorm:"type:jsonb;serializer:json" json:"tags"`
 	AuthorName     string        `json:"author_name"`
 	CoverImage     string        `json:"cover_image"`
+	// Card crop on the blog index; the hero uses CoverImage. Empty falls back
+	// to the website's branded stills for the starter posts.
+	ThumbnailImage string        `json:"thumbnail_image"`
 	SEOTitle       string        `gorm:"column:seo_title" json:"seo_title"`
 	SEODescription string        `gorm:"column:seo_description;type:text" json:"seo_description"`
 	Featured       bool          `gorm:"default:false" json:"featured"`

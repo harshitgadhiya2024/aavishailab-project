@@ -34,8 +34,8 @@ const agenda = [
 const channels = [
   { I: CalendarCheck, title: "Sales and demos", body: "Use the form on this page. We reply within one working day." },
   { I: Lifebuoy, title: "Customer support", body: "Raise a ticket from the Support menu in your console." },
-  { I: ShieldCheck, title: "Security and privacy", body: "Write to info@aavishailab.com with the subject 'Security' or 'Privacy'." },
-  { I: EnvelopeSimple, title: "Everything else", body: "info@aavishailab.com" },
+  { I: ShieldCheck, title: "Security and privacy", body: "Write to info@aavishield.com with the subject 'Security' or 'Privacy'." },
+  { I: EnvelopeSimple, title: "Everything else", body: "info@aavishield.com" },
 ];
 
 const faq = [
