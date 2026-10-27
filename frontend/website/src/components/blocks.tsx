@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArrowRight, ArrowUpRight, CaretRight, Check, X } from "@phosphor-icons/react/dist/ssr";
+import { HydratedLink } from "./hydrated-link";
 import type { Shot } from "@/lib/shots";
 import { BrowserFrame } from "./browser-frame";
 import { panelForShot } from "./panels";
@@ -17,7 +18,7 @@ export function Breadcrumbs({ trail }: { trail: { name: string; href?: string }[
           <li key={t.name} className="flex items-center gap-1.5">
             {i > 0 && <CaretRight size={10} aria-hidden />}
             {t.href ? (
-              <Link href={t.href} className="hover:text-fg">{t.name}</Link>
+              <HydratedLink href={t.href} className="hover:text-fg">{t.name}</HydratedLink>
             ) : (
               <span aria-current="page" className="text-brand-ink">{t.name}</span>
             )}

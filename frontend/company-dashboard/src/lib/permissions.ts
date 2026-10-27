@@ -1,6 +1,7 @@
 "use client";
 
 import { useSession } from "next-auth/react";
+import { isDemo } from "@/lib/demo";
 
 /**
  * Permission constants — must match models/permissions.go. The API enforces
@@ -55,8 +56,8 @@ export function usePermissions() {
   // flashing a stripped-down UI that then fills in — the API is the real gate.
   const loading = status === "loading";
 
-  const can = (permission: string) => loading || permissions.includes(permission);
-  const canAny = (...perms: string[]) => loading || perms.some(p => permissions.includes(p));
+  const can = (permission: string) => isDemo || loading || permissions.includes(permission);
+  const canAny = (...perms: string[]) => isDemo || loading || perms.some(p => permissions.includes(p));
 
   return {
     role,

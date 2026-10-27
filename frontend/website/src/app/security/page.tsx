@@ -41,7 +41,7 @@ const faq = [
   { q: "Where is our data stored?", a: "In Aavishield's cloud infrastructure, scoped to your organisation. Ask us during the demo about hosting details for your region." },
   { q: "Does Aavishield decrypt HTTPS traffic?", a: "The agent runs a local HTTPS proxy with a per-organisation certificate so it can apply web policy and inspect uploads for DLP. The certificate authority key is stored encrypted, and sensitive services that break under inspection are passed through untouched." },
   { q: "Can Aavishield staff see our data?", a: "Access is restricted to what is needed to operate and support the service, and is never used for anything else." },
-  { q: "How do I report a vulnerability?", a: "Email info@aavishailab.com with details. We will acknowledge your report and keep you updated while we investigate." },
+  { q: "How do I report a vulnerability?", a: "Email info@aavishield.com with details. We will acknowledge your report and keep you updated while we investigate." },
 ];
 
 export default function SecurityPage() {
@@ -120,7 +120,7 @@ export default function SecurityPage() {
             <h2 className="text-3xl font-normal tracking-tight text-fg">Found a vulnerability?</h2>
             <p className="mt-3 max-w-[52ch] leading-relaxed text-muted">We welcome reports from security researchers. Please give us reasonable time to fix an issue before disclosing it, and do not access other customers&apos; data.</p>
           </div>
-          <a href="mailto:info@aavishailab.com?subject=Security%20report" className="inline-flex h-12 items-center justify-center rounded-[6px] bg-brand px-6 font-medium text-on-brand hover:bg-brand-dark md:justify-self-end">Report an issue</a>
+          <a href="mailto:info@aavishield.com?subject=Security%20report" className="inline-flex h-12 items-center justify-center rounded-[6px] bg-brand px-6 font-medium text-on-brand hover:bg-brand-dark md:justify-self-end">Report an issue</a>
         </Reveal>
       </Section>
 

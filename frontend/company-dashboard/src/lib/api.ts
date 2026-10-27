@@ -1,5 +1,6 @@
 import axios, { AxiosInstance, AxiosError } from "axios";
 import { getSession, signOut } from "next-auth/react";
+import { isDemo, resolveDemo } from "@/lib/demo";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:6000";
 const AI_URL = process.env.NEXT_PUBLIC_AI_URL || "http://localhost:6002";
@@ -12,6 +13,17 @@ export function createApiClient(): AxiosInstance {
   });
 
   client.interceptors.request.use(async (config) => {
+    if (isDemo) {
+      const data = resolveDemo(config);
+      config.adapter = async () => ({
+        data,
+        status: 200,
+        statusText: "OK",
+        headers: { "content-type": "application/json" },
+        config,
+      });
+      return config;
+    }
     if (!config.headers.Authorization) {
       const session = await getSession();
       const token = (session as any)?.accessToken;

@@ -20,6 +20,7 @@ type Form = {
   tags: string;
   author_name: string;
   cover_image: string;
+  thumbnail_image: string;
   seo_title: string;
   seo_description: string;
   featured: boolean;
@@ -29,7 +30,7 @@ type Form = {
 
 const EMPTY: Form = {
   title: "", slug: "", excerpt: "", body: "", category: "", tags: "", author_name: "Aavishield team",
-  cover_image: "", seo_title: "", seo_description: "", featured: false, sort_order: 0, published_at: "",
+  cover_image: "", thumbnail_image: "", seo_title: "", seo_description: "", featured: false, sort_order: 0, published_at: "",
 };
 
 const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 120);
@@ -103,6 +104,7 @@ export default function ContentEditorPage() {
       tags: (post.tags ?? []).join(", "),
       author_name: post.author_name ?? "",
       cover_image: post.cover_image ?? "",
+      thumbnail_image: post.thumbnail_image ?? "",
       seo_title: post.seo_title ?? "",
       seo_description: post.seo_description ?? "",
       featured: !!post.featured,
@@ -339,10 +341,15 @@ export default function ContentEditorPage() {
           </div>
 
           <div className="space-y-3 rounded-xl border border-border bg-card p-5">
-            <h3 className="text-sm font-semibold text-foreground">Cover image</h3>
-            <Field label="Image URL" hint="Optional, 16:9">
+            <h3 className="text-sm font-semibold text-foreground">Images</h3>
+            <Field label="Main image" hint="Article hero, 16:9">
               <input value={form.cover_image} onChange={(e) => set("cover_image", e.target.value)} className={INPUT} placeholder="https://… or /images/…" />
             </Field>
+            {form.cover_image && <img src={form.cover_image.startsWith("/") ? `${WEBSITE_URL}${form.cover_image}` : form.cover_image} alt="" className="aspect-[16/9] w-full rounded-md border border-border object-cover" />}
+            <Field label="Thumbnail" hint="Blog cards, 16:9">
+              <input value={form.thumbnail_image} onChange={(e) => set("thumbnail_image", e.target.value)} className={INPUT} placeholder="https://… or /images/…" />
+            </Field>
+            {form.thumbnail_image && <img src={form.thumbnail_image.startsWith("/") ? `${WEBSITE_URL}${form.thumbnail_image}` : form.thumbnail_image} alt="" className="aspect-[16/9] w-full rounded-md border border-border object-cover" />}
           </div>
         </aside>
       </div>

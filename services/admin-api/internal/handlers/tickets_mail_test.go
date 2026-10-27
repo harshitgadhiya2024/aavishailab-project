@@ -10,12 +10,12 @@ import (
 func TestExtractReply(t *testing.T) {
 	cases := map[string]struct{ in, want string }{
 		"gmail wrapped wrote line": {
-			"Turned it on, thanks!\n\nOn Wed, 30 Sep 2026 at 17:24, Aavishield Security <info@aavishailab.com>\nwrote:\n> Hi Utsavi,\n> Open System Settings",
+			"Turned it on, thanks!\n\nOn Wed, 30 Sep 2026 at 17:24, Aavishield Security <info@aavishield.com>\nwrote:\n> Hi Utsavi,\n> Open System Settings",
 			"Turned it on, thanks!",
 		},
 		"gmail one line":    {"Done.\nOn Wed, 30 Sep 2026, Aavishield wrote:\n> old", "Done."},
 		"outlook separator": {"Still failing after reboot.\r\n\r\n________________________________\r\nFrom: Aavishield\r\nSent: Wednesday", "Still failing after reboot."},
-		"outlook headers":   {"Works now\n\nFrom: Aavishield <info@aavishailab.com>\nSent: 30 September 2026 17:24\nTo: Utsavi", "Works now"},
+		"outlook headers":   {"Works now\n\nFrom: Aavishield <info@aavishield.com>\nSent: 30 September 2026 17:24\nTo: Utsavi", "Works now"},
 		"our marker":        {"Here is the log\n\n" + mailer.ReplyMarker + " Reply to this email\nHarshit replied", "Here is the log"},
 		"quoted tail":       {"Yes please\n> earlier text\n> more", "Yes please"},
 		"only quote":        {"On Wed, X wrote:\n> hi", ""},
@@ -52,7 +52,7 @@ func TestThreadIDSignature(t *testing.T) {
 func TestParseMailMultipart(t *testing.T) {
 	raw := strings.Join([]string{
 		"From: Utsavi Narola <Utsavi@Delphic.in>",
-		"To: info@aavishailab.com",
+		"To: info@aavishield.com",
 		"Subject: Re: [DS-1002] Firewall",
 		"Message-ID: <reply-1@mail.gmail.com>",
 		"In-Reply-To: <t.x.customer.y@aavishailab.com>",

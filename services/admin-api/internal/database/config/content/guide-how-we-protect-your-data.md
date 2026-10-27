@@ -43,4 +43,4 @@ Personal data is never sold or used for advertising. Access is restricted to wha
 
 ## Reporting a vulnerability
 
-Email info@aavishailab.com with details. We will acknowledge your report and keep you updated while we investigate.
+Email info@aavishield.com with details. We will acknowledge your report and keep you updated while we investigate.

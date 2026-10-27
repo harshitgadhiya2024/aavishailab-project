@@ -58,6 +58,10 @@ func parseContentSeed(name string, raw []byte) (models.ContentPost, error) {
 			}
 		case "author":
 			post.AuthorName = value
+		case "cover":
+			post.CoverImage = value
+		case "thumbnail":
+			post.ThumbnailImage = value
 		case "seo_title":
 			post.SEOTitle = value
 		case "seo_description":

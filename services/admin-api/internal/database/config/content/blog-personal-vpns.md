@@ -6,6 +6,8 @@ excerpt: A free VPN extension takes seconds to install and makes most web filter
 category: Web security
 tags: vpn, web filtering, proxy, remote work
 author: Aavishield team
+cover: /images/blog/personal-vpns-hero.jpg
+thumbnail: /images/blog/personal-vpns-thumb.jpg
 seo_title: How Personal VPNs Bypass Company Web Filtering
 seo_description: Personal VPNs and proxy extensions tunnel around network web filters. Learn how blocking them on the device restores your policy.
 published: 2026-10-15

@@ -16,7 +16,7 @@ import { useState } from "react";
 import { CTA, modules, resources, type ModuleSlug } from "@/lib/content";
 import { industries, solutionsList } from "@/lib/solutions";
 import { GridButton } from "./landing/grid-button";
-import { FeedHero, ModuleVisual } from "./landing/hero-widgets";
+import { ControlsHero, FeedHero, ModuleVisual } from "./landing/hero-widgets";
 import { ModuleIcon } from "./icons";
 import { SolutionIcon } from "./solution-icon";
 
@@ -70,9 +70,31 @@ function MenuLink({ href, icon, children, sub, onNavigate, onHover, active = fal
   );
 }
 
-function AllLink({ href, children, onNavigate }: { href: string; children: React.ReactNode; onNavigate: () => void }) {
+function AllLink({
+  href,
+  children,
+  onNavigate,
+  onHover,
+  active = false,
+  pin = false,
+}: {
+  href: string;
+  children: React.ReactNode;
+  onNavigate: () => void;
+  onHover?: () => void;
+  active?: boolean;
+  pin?: boolean;
+}) {
   return (
-    <Link href={href} onClick={onNavigate} className={`mt-5 inline-flex items-center gap-1.5 ${mono} text-fg underline decoration-fg/30 underline-offset-4 hover:text-brand-ink`}>
+    <Link
+      href={href}
+      onClick={onNavigate}
+      onPointerEnter={onHover}
+      onFocus={onHover}
+      className={`inline-flex items-center gap-1.5 ${mono} underline underline-offset-4 ${
+        pin ? "mt-auto pt-6" : "mt-5"
+      } ${active ? "text-brand-ink decoration-brand/40" : "text-fg decoration-fg/30 hover:text-brand-ink"}`}
+    >
       {children} <ArrowRight size={12} />
     </Link>
   );
@@ -80,7 +102,11 @@ function AllLink({ href, children, onNavigate }: { href: string; children: React
 
 /** Right-hand stage: a live product widget on a tall pixel-grid stage. */
 function Stage({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <div className={`border-l border-line p-8 [&_.pixel-grid]:min-h-[380px] [&>*]:h-full ${className}`}>{children}</div>;
+  return (
+    <div className={`min-h-0 overflow-hidden border-l border-line p-8 [&>*]:h-full [&_.pixel-grid]:h-full [&_.pixel-grid]:min-h-0 ${className}`}>
+      {children}
+    </div>
+  );
 }
 
 /** A small callout card used to close a column: label, line, and a button. */
@@ -99,14 +125,26 @@ function Callout({ label, title, href, cta, onNavigate }: { label: string; title
   );
 }
 
-// One template for every tab: links, context, live widget. Taller than the
-// content needs, so every column has room and the stage reads as a feature.
-const TAB = "grid min-h-[460px] grid-cols-[minmax(260px,0.85fr)_minmax(260px,0.8fr)_1.25fr]";
-const COL = "flex flex-col p-10";
+// One template for every tab. Height is locked so hovering a control never
+// resizes the band (different copy and widgets used to push it around).
+const TAB = "grid h-[min(34rem,calc(100dvh-4rem))] grid-cols-[minmax(260px,0.85fr)_minmax(260px,0.8fr)_1.25fr]";
+const COL = "flex min-h-0 flex-col p-10";
+
+const OVERVIEW = {
+  name: "Platform",
+  headline: "Every control your devices need, in one agent.",
+  short: "Web, DLP, apps, VPNs, malware, posture and activity monitoring. Turn each one on when you are ready.",
+  href: "/platform",
+  cta: "Explore platform",
+} as const;
+
+type Preview = ModuleSlug | "overview";
 
 export function PlatformMenu({ onNavigate }: { onNavigate: () => void }) {
-  const [hover, setHover] = useState<ModuleSlug>(modules[0].slug);
-  const current = modules.find((m) => m.slug === hover)!;
+  const [hover, setHover] = useState<Preview>(modules[0].slug);
+  const current = hover === "overview" ? OVERVIEW : modules.find((m) => m.slug === hover)!;
+  const href = hover === "overview" ? OVERVIEW.href : `/platform/${hover}`;
+  const cta = hover === "overview" ? OVERVIEW.cta : "Explore";
   return (
     <MegaPanel>
       <div className={TAB}>
@@ -127,20 +165,31 @@ export function PlatformMenu({ onNavigate }: { onNavigate: () => void }) {
               </li>
             ))}
           </ul>
-          <AllLink href="/platform" onNavigate={onNavigate}>Platform overview</AllLink>
+          <AllLink href="/platform" onNavigate={onNavigate} onHover={() => setHover("overview")} active={hover === "overview"} pin>
+            Platform overview
+          </AllLink>
         </div>
         <div className={`${COL} border-l border-line`}>
           <ColumnLabel>{current.name}</ColumnLabel>
-          <AnimatePresence mode="wait">
-            <motion.div key={hover} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
-              <p className="font-display text-[24px] leading-snug tracking-[-0.02em] text-fg">{current.headline}</p>
-              <p className="mt-3 text-sm leading-relaxed text-muted">{current.short}</p>
-            </motion.div>
-          </AnimatePresence>
-          <Callout label="See it working" title={`${current.name} on your own devices.`} href={`/platform/${hover}`} cta={`Explore ${current.name.split(" ")[0]}`} onNavigate={onNavigate} />
+          <div className="relative min-h-[8.5rem]">
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={hover}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="absolute inset-x-0 top-0"
+              >
+                <p className="font-display text-[24px] leading-snug tracking-[-0.02em] text-fg">{current.headline}</p>
+                <p className="mt-3 text-sm leading-relaxed text-muted">{current.short}</p>
+              </motion.div>
+            </AnimatePresence>
+          </div>
+          <Callout label="See it working" title="See it on your own devices." href={href} cta={cta} onNavigate={onNavigate} />
         </div>
         <Stage>
-          <ModuleVisual key={hover} slug={hover} />
+          {hover === "overview" ? <ControlsHero /> : <ModuleVisual key={hover} slug={hover} />}
         </Stage>
       </div>
     </MegaPanel>

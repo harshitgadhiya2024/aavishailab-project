@@ -6,6 +6,8 @@ excerpt: The software takes an afternoon. Trust takes a plan. Four steps we reco
 category: Guides
 tags: rollout, change management, privacy, employees
 author: Aavishield team
+cover: /images/blog/rollout-trust-hero.jpg
+thumbnail: /images/blog/rollout-trust-thumb.jpg
 seo_title: How to Roll Out Endpoint Security Without Losing Trust
 seo_description: A practical four-step rollout plan: pilot, review, communicate, then enroll everyone, in two to three weeks.
 published: 2026-10-08

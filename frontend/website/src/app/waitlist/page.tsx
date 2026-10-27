@@ -1,4 +1,4 @@
-import { ArrowRight, ArrowUpRight } from "@phosphor-icons/react/dist/ssr";
+import { ArrowRight } from "@phosphor-icons/react/dist/ssr";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ArtBand } from "@/components/flow-steps";
@@ -253,9 +253,6 @@ function PrelaunchHeader() {
           </span>
         </div>
         <div className="flex items-center gap-2 sm:gap-4">
-          <Link href="/" className="hidden items-center gap-1 font-mono text-[11px] uppercase tracking-[0.08em] text-fg-2 transition-colors hover:text-fg sm:inline-flex">
-            Website <ArrowUpRight size={12} weight="bold" />
-          </Link>
           <GridButton href="#join" icon={ArrowRight}>Join waitlist</GridButton>
         </div>
       </div>
@@ -268,11 +265,6 @@ function PrelaunchFooter() {
     <footer>
       <div className="frame-w flex flex-col gap-4 border-x border-line px-5 py-8 font-mono text-[10.5px] uppercase tracking-[0.1em] text-muted sm:flex-row sm:items-center sm:justify-between sm:px-8 md:px-12">
         <span>© 2026 Aavishield · An Aavish AI Lab product</span>
-        <nav aria-label="Legal" className="flex gap-5">
-          <Link href="/privacy-policy" className="transition-colors hover:text-fg">Privacy</Link>
-          <Link href="/terms-and-conditions" className="transition-colors hover:text-fg">Terms</Link>
-          <Link href="/" className="transition-colors hover:text-fg">Website</Link>
-        </nav>
       </div>
     </footer>
   );

@@ -8,12 +8,13 @@ import { LogoMark } from "../wordmark";
  * typographic card on the pixel grid, so every post looks finished.
  */
 export function Cover({ post, large = false }: { post: PostSummary; large?: boolean }) {
-  if (post.cover_image) {
+  const src = large ? post.cover_image : post.thumbnail_image || post.cover_image;
+  if (src) {
     return (
       // Covers can live on any host the editor pastes, so next/image's
       // remote allowlist would get in the way here.
       // eslint-disable-next-line @next/next/no-img-element
-      <img src={post.cover_image} alt="" className="aspect-[16/9] w-full rounded-[4px] border border-line object-cover" loading="lazy" />
+      <img src={src} alt="" className="aspect-[16/9] w-full rounded-[4px] border border-line object-cover" loading={large ? "eager" : "lazy"} />
     );
   }
   // The title always sits right next to the cover, so the cover carries the mark instead of repeating it.

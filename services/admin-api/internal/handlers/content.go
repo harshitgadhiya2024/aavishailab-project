@@ -36,7 +36,7 @@ func parseContentKind(s string) (models.ContentKind, bool) {
 // column, so it is left out of every list query.
 var contentListColumns = []string{
 	"id", "created_at", "updated_at", "kind", "slug", "title", "excerpt", "category", "tags",
-	"author_name", "cover_image", "featured", "sort_order", "status", "published_at", "reading_minutes",
+	"author_name", "cover_image", "thumbnail_image", "featured", "sort_order", "status", "published_at", "reading_minutes",
 }
 
 // ─── Superadmin ─────────────────────────────────────────────────────────────
@@ -95,6 +95,7 @@ type contentRequest struct {
 	Tags           *[]string `json:"tags"`
 	AuthorName     *string   `json:"author_name"`
 	CoverImage     *string   `json:"cover_image"`
+	ThumbnailImage *string   `json:"thumbnail_image"`
 	SEOTitle       *string   `json:"seo_title"`
 	SEODescription *string   `json:"seo_description"`
 	Featured       *bool     `json:"featured"`
@@ -116,6 +117,7 @@ func (r *contentRequest) apply(item *models.ContentPost) string {
 	str(r.Category, &item.Category, 60)
 	str(r.AuthorName, &item.AuthorName, 120)
 	str(r.CoverImage, &item.CoverImage, 500)
+	str(r.ThumbnailImage, &item.ThumbnailImage, 500)
 	str(r.SEOTitle, &item.SEOTitle, 200)
 	str(r.SEODescription, &item.SEODescription, 320)
 	if r.Body != nil {

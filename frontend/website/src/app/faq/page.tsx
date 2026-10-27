@@ -122,7 +122,7 @@ export default function FaqPage() {
         <Reveal className="rounded-[6px] border border-line bg-surface p-8 text-center md:p-12">
           <h2 className="text-2xl font-normal tracking-tight text-fg md:text-3xl">Still have a question?</h2>
           <p className="mx-auto mt-3 max-w-[48ch] text-muted">
-            Write to <a href="mailto:info@aavishailab.com" className="font-medium text-brand-ink hover:underline">info@aavishailab.com</a> or{" "}
+            Write to <a href="mailto:info@aavishield.com" className="font-medium text-brand-ink hover:underline">info@aavishield.com</a> or{" "}
             <Link href="/contact" className="font-medium text-brand-ink hover:underline">book a demo</Link> and ask us live.
           </p>
         </Reveal>
