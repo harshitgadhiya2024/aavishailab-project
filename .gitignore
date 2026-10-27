@@ -176,3 +176,6 @@ scripts/loadtest/tokens*.json
 *.pfx
 *.cer
 *.certSigningRequest
+# Certificate passwords kept next to signing material
+*password*.txt
+*password*.md
