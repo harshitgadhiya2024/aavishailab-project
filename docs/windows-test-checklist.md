@@ -69,6 +69,31 @@ verdict arrives, so a malicious file never finishes downloading.
 has never run on real Windows. Check that a file name containing quotes or
 `&` still shows a notification and doesn't throw an error.
 
+### 1b. App traffic was treated as downloads (regression in 2.9.6)
+- [ ] Tested on Windows — date / Windows version / result:
+
+**Test it together with fix 1, on the first Windows build that includes
+fix 1** · fixed 2026-10-28 · PR #16 · Windows 2.9.5 never had this bug
+
+**Problem:** 2.9.6 scanned apps' background API calls as if they were
+downloads: Cursor (`api2.cursor.sh`), Chrome Safe Browsing and
+Optimization Guide. It held each response until a verdict came back, so
+Cursor stalled and errored. The dashboard filled with "Download not
+scanned" for traffic nobody downloaded.
+
+**Now:** only real downloads are held and scanned. That means a response
+with an `attachment` header, or a GET with a file extension or a file
+content type. A bare binary response counts only when the browser
+navigated to it, which is what happens when you click a download link.
+
+**Test on Windows:**
+1. Use Cursor (or VS Code with Copilot), Teams and Chrome normally for 30
+   minutes. **Expected:** no stalls or errors in those apps, and no
+   "Download not scanned" rows for their API hosts in Activity →
+   Downloads.
+2. Repeat fix 1, steps 1–2. **Expected:** real downloads are still
+   scanned, and EICAR is still blocked.
+
 ### 2. Malware verdicts shared across devices (hash reputation)
 - [ ] Tested on Windows — date / Windows version / result:
 
