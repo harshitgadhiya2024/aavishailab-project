@@ -666,6 +666,13 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 			agent.GET("/policy-public-key", agentH.PolicyPublicKey)
 			agent.POST("/activity", agentH.ReportActivity)
 			agent.POST("/scan-file", agentH.ScanFile)
+			// Downloads of any size: hash reputation, then a chunked
+			// upload scanned in the background — see download_scan.go.
+			agent.POST("/scan-hash", agentH.ScanHash)
+			agent.POST("/scan-jobs", agentH.CreateScanJob)
+			agent.PUT("/scan-jobs/:id/parts", agentH.UploadScanJobPart)
+			agent.POST("/scan-jobs/:id/complete", agentH.CompleteScanJob)
+			agent.GET("/scan-jobs/:id", agentH.GetScanJob)
 			// Application control: which processes to watch for, and the
 			// report when one is stopped.
 			agent.GET("/app-control", agentH.GetAppControl)

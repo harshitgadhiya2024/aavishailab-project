@@ -29,7 +29,11 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 
-pub type BoxBody = http_body_util::combinators::BoxBody<Bytes, hyper::Error>;
+/// Not `hyper::Error`: a relayed download has to be able to fail on its
+/// own terms — a malware block aborts the transfer (scan::ScannedDownload),
+/// and hyper offers no way to construct one of its own errors.
+pub type BodyError = Box<dyn std::error::Error + Send + Sync>;
+pub type BoxBody = http_body_util::combinators::BoxBody<Bytes, BodyError>;
 
 fn empty_body() -> BoxBody {
     Empty::<Bytes>::new().map_err(|never| match never {}).boxed()
@@ -259,32 +263,30 @@ async fn forward_plain_http(req: Request<Incoming>, host: &str, port: u16, path_
 
     let resp = sender.send_request(upstream_req).await.map_err(std::io::Error::other)?;
     let (resp_parts, resp_body) = resp.into_parts();
-    let resp_bytes = resp_body.collect().await.map_err(std::io::Error::other)?.to_bytes();
 
-    if resp_parts.status.is_success() && resp_bytes.len() <= crate::scan::MAX_SCAN_BODY {
-        let verdict = crate::scan::download_verdict(
-            &deps.client,
-            &deps.gate,
-            host,
-            &path,
-            resp_parts.headers.get(hyper::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or(""),
-            resp_parts.headers.get(hyper::header::CONTENT_DISPOSITION).and_then(|v| v.to_str().ok()).unwrap_or(""),
-            &resp_bytes,
-        )
-        .await;
-        if verdict.blocked {
+    let body = match crate::scan::screen_download(deps, host, &path, &resp_parts, resp_body).await {
+        crate::scan::Screened::Relay(body) => body,
+        crate::scan::Screened::Block(verdict) => {
             return Ok(html_response(StatusCode::FORBIDDEN, &block_page_html(deps, host, &verdict.reason, &verdict.category)));
         }
-    }
+    };
+    Ok(relayed_response(&resp_parts, body))
+}
 
-    let mut builder = Response::builder().status(resp_parts.status);
-    for (name, value) in resp_parts.headers.iter() {
-        if name == hyper::header::CONTENT_LENGTH || name == hyper::header::TRANSFER_ENCODING {
-            continue; // recomputed by the body we're sending (may differ post-scan)
+/// The upstream response's status and headers around `body`.
+///
+/// Content-Length is kept: the body is the upstream's own bytes, buffered
+/// or streamed but never altered, so the length still holds — and it is
+/// what lets the browser show a download's size and progress. Only
+/// Transfer-Encoding goes, since hyper frames the body itself.
+pub(crate) fn relayed_response(parts: &hyper::http::response::Parts, body: BoxBody) -> Response<BoxBody> {
+    let mut builder = Response::builder().status(parts.status);
+    for (name, value) in parts.headers.iter() {
+        if name != hyper::header::TRANSFER_ENCODING {
+            builder = builder.header(name, value);
         }
-        builder = builder.header(name, value);
     }
-    Ok(builder.body(full_body(resp_bytes)).unwrap())
+    builder.body(body).unwrap()
 }
 
 pub fn status_response(status: StatusCode) -> Response<BoxBody> {

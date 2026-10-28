@@ -31,14 +31,6 @@ pub struct DlpVerdict {
     pub reason: String,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct MalwareVerdict {
-    #[serde(default)]
-    pub action: String,
-    #[serde(default)]
-    pub reason: String,
-}
-
 /// What a caller should do about an in-flight upload or download, and why
 /// — normalizes CASB/DLP/malware verdicts into one shape so proxy.rs and
 /// tls_proxy.rs render the exact same block page for any of the three.
@@ -192,22 +184,42 @@ pub async fn upload_verdict(
     ScanVerdict::allow()
 }
 
-/// Malware scan on a download — a port of the scan half of
-/// `_relay_scanned_spool`.
-/// `content_type`/`content_disposition` are the response's own headers
-/// (empty when absent): only a response that is a file being downloaded is
-/// scanned — see `is_file_download`.
-pub async fn download_verdict(
-    client: &AgentClient,
-    gate: &EnforcementGate,
-    host: &str,
-    path: &str,
-    content_type: &str,
-    content_disposition: &str,
-    body: &[u8],
-) -> ScanVerdict {
-    if !gate.scans_downloads() || body.is_empty() || !is_file_download(content_type, content_disposition, path) {
-        return ScanVerdict::allow();
+/// What the proxy sends back for one upstream response.
+pub enum Screened {
+    /// Relay this body to the browser.
+    Relay(crate::proxy::BoxBody),
+    /// Show the block page instead.
+    Block(ScanVerdict),
+}
+
+/// Download screening — whole files, of any size, without making the
+/// browser wait for the whole file first.
+///
+/// Every response used to be read completely into memory before the
+/// browser got its first byte, and only the first 20 MB of a file could be
+/// scanned at all. A 250 MB installer sat in the agent for minutes while
+/// the browser showed nothing — 4 MB from GitHub's CDN took 103 s to start
+/// through the agent against 0.2 s direct — and once it arrived it had not
+/// been scanned anyway.
+///
+/// Now a file download streams to the browser as it arrives, the way inline
+/// gateways (Palo Alto's stream scanning, Zscaler) handle it: everything
+/// but the final chunk is passed on immediately, while the agent hashes the
+/// bytes and keeps a copy on disk. When the download ends, the final chunk
+/// is held until there is a verdict (see `resolve_download`), so the browser
+/// cannot finish — and the file cannot be opened — before it is known to be
+/// safe. A block aborts the transfer and the browser marks it failed.
+///
+/// Page parts, non-2xx responses and devices not scanning downloads stream
+/// straight through untouched.
+pub async fn screen_download(deps: &Deps, host: &str, path: &str, parts: &hyper::http::response::Parts, body: hyper::body::Incoming) -> Screened {
+    use http_body_util::BodyExt;
+
+    let header = |name| parts.headers.get(name).and_then(|v: &hyper::header::HeaderValue| v.to_str().ok()).unwrap_or("");
+    let content_type = header(hyper::header::CONTENT_TYPE);
+    let content_disposition = header(hyper::header::CONTENT_DISPOSITION);
+    if !parts.status.is_success() || !deps.gate.scans_downloads() || !is_file_download(content_type, content_disposition, path) {
+        return Screened::Relay(body.map_err(Into::into).boxed());
     }
 
     // A VPN client being downloaded is stopped before it ever lands, the
@@ -216,23 +228,377 @@ pub async fn download_verdict(
     // leaves a window, and on a locked-down device there is no legitimate
     // reason to pull one down. Recognised by the download's own file name,
     // so it is caught even from a mirror or file-share the domain block
-    // (the vpn_proxy category) never sees. Checked before the malware round
-    // trip because it needs no network and gives a clearer reason.
+    // (the vpn_proxy category) never sees. Needs no body, so it is decided
+    // before a byte is relayed.
     let filename = upload_filename(Some(content_disposition), path);
     if let Some(product) = vpn_installer(&filename) {
         let reason = format!("{product} is blocked on this device. Contact your IT administrator if you need access.");
         tracing::info!(%host, %path, %product, "VPN download blocked");
-        return ScanVerdict { blocked: true, reason, category: "Application Control".to_string() };
+        return Screened::Block(ScanVerdict { blocked: true, reason, category: "Application Control".to_string() });
     }
 
-    if let Some(verdict) = scan_malware(client, host, path, body).await {
-        if verdict.action == "block" {
-            let reason = if verdict.reason.is_empty() { "Malicious file detected".to_string() } else { verdict.reason };
-            tracing::info!(%host, %path, %reason, "malware block");
-            return ScanVerdict { blocked: true, reason, category: "Malware Protection".to_string() };
+    let file = DownloadFile { host: host.to_string(), path: path.to_string(), filename, content_type: content_type.to_string() };
+    let client = deps.client.clone();
+    let resolve: Resolver = Box::new(move |done| Box::pin(resolve_download(client, file, done)));
+    Screened::Relay(ScannedDownload::new(body, Spool::create(), resolve).boxed())
+}
+
+/// The largest download kept for scanning — clamd's own StreamMaxLength in
+/// production. Past it the file is still hashed (a known-bad hash still
+/// blocks) and reported as unscanned.
+const MAX_SPOOL: u64 = 4000 << 20;
+
+/// How long a finished download may wait at its final chunk for a verdict.
+/// Past it the download is released — fail-open, like every scan path here
+/// — and the scan carries on; a late block becomes an alert instead.
+const VERDICT_WAIT: std::time::Duration = std::time::Duration::from_secs(60);
+
+pub enum Decision {
+    Allow,
+    Block(String),
+}
+
+/// What is known about a download once its last byte has arrived.
+pub struct Finished {
+    sha256: String,
+    size: u64,
+    /// The bytes on disk, or why there are none.
+    spool: Result<Spool, &'static str>,
+}
+
+type Resolver = Box<dyn FnOnce(Finished) -> std::pin::Pin<Box<dyn std::future::Future<Output = Decision> + Send>> + Send + Sync>;
+
+/// A download's copy on disk, deleted when dropped — whether the scan used
+/// it, the browser cancelled, or the scan was never needed.
+pub struct Spool {
+    path: std::path::PathBuf,
+    file: Option<std::fs::File>,
+}
+
+impl Spool {
+    fn create() -> Result<Spool, &'static str> {
+        let dir = std::env::temp_dir().join("aavishield-downloads");
+        std::fs::create_dir_all(&dir).map_err(|_| "spool_failed")?;
+        let path = dir.join(format!("{:032x}", rand::random::<u128>()));
+        let file = std::fs::File::create(&path).map_err(|_| "spool_failed")?;
+        Ok(Spool { path, file: Some(file) })
+    }
+}
+
+impl Drop for Spool {
+    fn drop(&mut self) {
+        self.file.take();
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+/// A download body that relays all but its final chunk as it arrives,
+/// hashing and spooling every byte, and releases that chunk only once the
+/// resolver has decided.
+pub struct ScannedDownload<B> {
+    inner: B,
+    held: Option<Bytes>,
+    hasher: sha2::Sha256,
+    size: u64,
+    spool: Result<Spool, &'static str>,
+    resolve: Option<Resolver>,
+    verdict: Option<tokio::sync::oneshot::Receiver<Decision>>,
+    done: bool,
+}
+
+impl<B> ScannedDownload<B> {
+    fn new(inner: B, spool: Result<Spool, &'static str>, resolve: Resolver) -> Self {
+        use sha2::Digest;
+        ScannedDownload { inner, held: None, hasher: sha2::Sha256::new(), size: 0, spool, resolve: Some(resolve), verdict: None, done: false }
+    }
+
+    /// Hash and spool one chunk. Writes are synchronous: they are chunk-sized
+    /// appends to a local file, far quicker than the network delivering them.
+    fn record(&mut self, data: &[u8]) {
+        use sha2::Digest;
+        use std::io::Write;
+        self.hasher.update(data);
+        self.size += data.len() as u64;
+        if let Ok(spool) = &mut self.spool {
+            let written = if self.size > MAX_SPOOL {
+                Err("too_large")
+            } else {
+                spool.file.as_mut().expect("open while spooling").write_all(data).map_err(|_| "spool_failed")
+            };
+            if let Err(why) = written {
+                self.spool = Err(why); // dropping the Spool deletes the partial copy
+            }
         }
     }
-    ScanVerdict::allow()
+}
+
+/// Aborts the browser's transfer; the message ends up only in hyper's log.
+#[derive(Debug)]
+struct DownloadBlocked;
+
+impl std::fmt::Display for DownloadBlocked {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("download blocked by malware scan")
+    }
+}
+
+impl std::error::Error for DownloadBlocked {}
+
+impl<B> hyper::body::Body for ScannedDownload<B>
+where
+    B: hyper::body::Body<Data = Bytes> + Unpin,
+    B::Error: Into<crate::proxy::BodyError>,
+{
+    type Data = Bytes;
+    type Error = crate::proxy::BodyError;
+
+    fn poll_frame(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Result<hyper::body::Frame<Bytes>, Self::Error>>> {
+        use hyper::body::Frame;
+        use std::future::Future;
+        use std::task::Poll;
+
+        let this = &mut *self;
+        loop {
+            if let Some(rx) = this.verdict.as_mut() {
+                let decision = std::task::ready!(std::pin::Pin::new(rx).poll(cx));
+                this.verdict = None;
+                this.done = true;
+                return match decision {
+                    Ok(Decision::Block(_)) => Poll::Ready(Some(Err(Box::new(DownloadBlocked)))),
+                    // A resolver that died without answering fails open.
+                    Ok(Decision::Allow) | Err(_) => Poll::Ready(this.held.take().map(|b| Ok(Frame::data(b)))),
+                };
+            }
+            if this.done {
+                return Poll::Ready(None);
+            }
+            match std::task::ready!(std::pin::Pin::new(&mut this.inner).poll_frame(cx)) {
+                Some(Err(e)) => {
+                    this.done = true;
+                    return Poll::Ready(Some(Err(e.into())));
+                }
+                Some(Ok(frame)) => {
+                    let Ok(data) = frame.into_data() else { continue }; // trailers are not relayed
+                    if data.is_empty() {
+                        continue;
+                    }
+                    this.record(&data);
+                    if let Some(previous) = this.held.replace(data) {
+                        return Poll::Ready(Some(Ok(Frame::data(previous))));
+                    }
+                }
+                None => {
+                    use sha2::Digest;
+                    let hasher = std::mem::replace(&mut this.hasher, sha2::Sha256::new());
+                    let spool = std::mem::replace(&mut this.spool, Err("taken"));
+                    let finished = Finished { sha256: hex::encode(hasher.finalize()), size: this.size, spool };
+                    let resolve = this.resolve.take().expect("resolved once");
+                    let (tx, rx) = tokio::sync::oneshot::channel();
+                    tokio::spawn(async move {
+                        let _ = tx.send(resolve(finished).await);
+                    });
+                    this.verdict = Some(rx);
+                }
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
+struct DownloadFile {
+    host: String,
+    path: String,
+    filename: String,
+    content_type: String,
+}
+
+impl DownloadFile {
+    fn query(&self) -> String {
+        format!(
+            "filename={}&destination={}&content_type={}",
+            urlencode(&self.filename),
+            urlencode(&self.host),
+            urlencode(&self.content_type)
+        )
+    }
+}
+
+/// The verdict for a finished download: hash reputation first, then the
+/// bytes themselves through a background scan job (see admin-api's
+/// download_scan.go), waiting at most `VERDICT_WAIT`. Fails open on every
+/// error, and never leaves a late malicious verdict unreported.
+async fn resolve_download(client: AgentClient, file: DownloadFile, done: Finished) -> Decision {
+    let unscanned = done.spool.as_ref().err().copied();
+    match scan_hash(&client, &file, &done, unscanned).await {
+        Some(HashAnswer::Known(decision)) => return notify_decision(&file, decision).await,
+        Some(HashAnswer::Unknown) => {}
+        None => {
+            tracing::warn!(host = %file.host, path = %file.path, "download scan unavailable — allowing");
+            return Decision::Allow;
+        }
+    }
+    let Ok(spool) = done.spool else { return Decision::Allow };
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let size = done.size;
+    let sha256 = done.sha256.clone();
+    let late_client = client.clone();
+    let late_file = file.clone();
+    tokio::spawn(async move {
+        let result = upload_and_scan(&late_client, &late_file, spool, size).await;
+        let decision = match result {
+            Some(decision) => decision,
+            None => {
+                tracing::warn!(host = %late_file.host, path = %late_file.path, "download could not be scanned — allowing");
+                let unscanned = Finished { sha256, size, spool: Err("scan_failed") };
+                let _ = scan_hash(&late_client, &late_file, &unscanned, Some("scan_failed")).await;
+                Decision::Allow
+            }
+        };
+        // Nobody is waiting any more: the download was already released.
+        if let Err(Decision::Block(reason)) = tx.send(decision) {
+            tracing::warn!(host = %late_file.host, path = %late_file.path, %reason, "malware found after the download was released");
+            crate::app_control::notify(
+                "Delete this download",
+                &notice_text(&format!("{} was found to be malicious after it finished downloading: {reason}", late_file.filename)),
+            )
+            .await;
+        }
+    });
+
+    match tokio::time::timeout(VERDICT_WAIT, rx).await {
+        Ok(Ok(decision)) => notify_decision(&file, decision).await,
+        _ => {
+            tracing::info!(host = %file.host, path = %file.path, "verdict still pending — releasing the download, scan continues");
+            Decision::Allow
+        }
+    }
+}
+
+async fn notify_decision(file: &DownloadFile, decision: Decision) -> Decision {
+    if let Decision::Block(reason) = &decision {
+        tracing::info!(host = %file.host, path = %file.path, %reason, "malware block");
+        crate::app_control::notify("Download blocked", &notice_text(&format!("{}: {reason}", file.filename))).await;
+    }
+    decision
+}
+
+/// Text safe to put inside the notification helper's script literal.
+fn notice_text(s: &str) -> String {
+    s.chars().filter(|c| !matches!(c, '"' | '\\' | '\'' | '\n' | '\r')).take(200).collect()
+}
+
+enum HashAnswer {
+    Known(Decision),
+    Unknown,
+}
+
+#[derive(Deserialize)]
+struct HashReply {
+    known: bool,
+    #[serde(default)]
+    action: String,
+    #[serde(default)]
+    reason: String,
+}
+
+fn decision_for(action: &str, reason: String) -> Decision {
+    if action == "block" {
+        Decision::Block(if reason.is_empty() { "Malicious file detected".to_string() } else { reason })
+    } else {
+        Decision::Allow
+    }
+}
+
+async fn scan_hash(client: &AgentClient, file: &DownloadFile, done: &Finished, unscanned: Option<&str>) -> Option<HashAnswer> {
+    let mut query = format!("sha256={}&size={}&{}", done.sha256, done.size, file.query());
+    if let Some(why) = unscanned {
+        query.push_str(&format!("&unscanned={why}"));
+    }
+    let resp = client.post_bytes(&format!("/internal/agent/scan-hash?{query}"), "application/octet-stream", Vec::new()).await.ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    let reply: HashReply = resp.json().await.ok()?;
+    Some(if reply.known { HashAnswer::Known(decision_for(&reply.action, reply.reason)) } else { HashAnswer::Unknown })
+}
+
+#[derive(Deserialize)]
+struct JobCreated {
+    id: String,
+    part_bytes: u64,
+}
+
+#[derive(Deserialize)]
+struct JobState {
+    #[serde(default)]
+    state: String,
+    #[serde(default)]
+    received: u64,
+    #[serde(default)]
+    action: String,
+    #[serde(default)]
+    reason: String,
+}
+
+/// Uploads the spooled file as a scan job and waits for its verdict.
+/// `None` means it could not be scanned.
+async fn upload_and_scan(client: &AgentClient, file: &DownloadFile, spool: Spool, size: u64) -> Option<Decision> {
+    use tokio::io::{AsyncReadExt, AsyncSeekExt};
+
+    let resp = client.post_bytes(&format!("/internal/agent/scan-jobs?size={size}&{}", file.query()), "application/octet-stream", Vec::new()).await.ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    let job: JobCreated = resp.json().await.ok()?;
+    let base = format!("/internal/agent/scan-jobs/{}", job.id);
+
+    let mut reader = tokio::fs::File::open(&spool.path).await.ok()?;
+    let mut offset = 0u64;
+    let mut failures = 0;
+    while offset < size {
+        let len = job.part_bytes.min(size - offset) as usize;
+        let mut part = vec![0u8; len];
+        reader.seek(std::io::SeekFrom::Start(offset)).await.ok()?;
+        reader.read_exact(&mut part).await.ok()?;
+        let answer = client.put_bytes(&format!("{base}/parts?offset={offset}"), part).await;
+        match answer {
+            // 200 is the new offset; 409 is the offset the server is really
+            // at — either way, carry on from there.
+            Ok(r) if r.status().is_success() || r.status() == reqwest::StatusCode::CONFLICT => {
+                let state: JobState = r.json().await.ok()?;
+                offset = state.received;
+            }
+            _ => {
+                failures += 1;
+                if failures > 3 {
+                    return None;
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            }
+        }
+    }
+    drop(reader);
+    drop(spool);
+
+    let r = client.post_bytes(&format!("{base}/complete"), "application/octet-stream", Vec::new()).await.ok()?;
+    if !r.status().is_success() {
+        return None;
+    }
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(20 * 60);
+    loop {
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        let state: JobState = client.get(&base).await.ok()?.json().await.ok()?;
+        if state.state == "done" {
+            return Some(decision_for(&state.action, state.reason));
+        }
+        if tokio::time::Instant::now() > deadline {
+            return None;
+        }
+    }
 }
 
 /// Names the VPN product a download is an installer for, if it is one.
@@ -360,15 +726,6 @@ async fn scan_dlp(client: &AgentClient, meta: &UploadMeta, body: &[u8]) -> Optio
     resp.json().await.ok()
 }
 
-async fn scan_malware(client: &AgentClient, destination: &str, path: &str, body: &[u8]) -> Option<MalwareVerdict> {
-    let query = format!("destination={}&path={}", urlencode(destination), urlencode(path));
-    let resp = client.post_bytes(&format!("/internal/agent/scan-file?{query}"), "application/octet-stream", body.to_vec()).await.ok()?;
-    if !resp.status().is_success() {
-        return None;
-    }
-    resp.json().await.ok()
-}
-
 fn urlencode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
@@ -384,6 +741,98 @@ fn urlencode(s: &str) -> String {
 mod tests {
     use super::*;
     use crate::casb_cache::Verdict;
+    use http_body_util::BodyExt;
+
+    /// An upstream body that arrives in the given chunks.
+    struct Chunks(std::collections::VecDeque<&'static [u8]>);
+
+    impl hyper::body::Body for Chunks {
+        type Data = Bytes;
+        type Error = std::convert::Infallible;
+        fn poll_frame(
+            mut self: std::pin::Pin<&mut Self>,
+            _: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<Option<Result<hyper::body::Frame<Bytes>, Self::Error>>> {
+            std::task::Poll::Ready(self.0.pop_front().map(|c| Ok(hyper::body::Frame::data(Bytes::from_static(c)))))
+        }
+    }
+
+    fn download(chunks: &[&'static [u8]], resolve: Resolver) -> ScannedDownload<Chunks> {
+        ScannedDownload::new(Chunks(chunks.iter().copied().collect()), Spool::create(), resolve)
+    }
+
+    fn deciding(decision: fn() -> Decision) -> Resolver {
+        Box::new(move |_| Box::pin(async move { decision() }))
+    }
+
+    async fn next(body: &mut ScannedDownload<Chunks>) -> Option<Result<Bytes, String>> {
+        body.frame().await.map(|f| f.map(|f| f.into_data().unwrap()).map_err(|e| e.to_string()))
+    }
+
+    #[tokio::test]
+    async fn test_scanned_download_sees_every_byte_and_relays_them_on_allow() {
+        let resolve: Resolver = Box::new(|done: Finished| {
+            Box::pin(async move {
+                use sha2::Digest;
+                assert_eq!(done.size, 9);
+                assert_eq!(done.sha256, hex::encode(sha2::Sha256::digest(b"abcdefghi")));
+                let spool = done.spool.expect("spooled");
+                assert_eq!(std::fs::read(&spool.path).unwrap(), b"abcdefghi");
+                Decision::Allow
+            })
+        });
+        let body = download(&[b"abc", b"def", b"ghi"], resolve);
+        assert_eq!(&body.collect().await.unwrap().to_bytes()[..], b"abcdefghi");
+    }
+
+    #[tokio::test]
+    async fn test_scanned_download_streams_early_chunks_and_holds_the_last() {
+        let (release, wait) = tokio::sync::oneshot::channel::<()>();
+        let wait = std::sync::Mutex::new(Some(wait));
+        let resolve: Resolver = Box::new(move |_| {
+            let wait = wait.lock().unwrap().take().unwrap();
+            Box::pin(async move {
+                let _ = wait.await;
+                Decision::Allow
+            })
+        });
+        let mut body = download(&[b"one", b"two", b"three"], resolve);
+        assert_eq!(next(&mut body).await, Some(Ok(Bytes::from_static(b"one"))));
+        assert_eq!(next(&mut body).await, Some(Ok(Bytes::from_static(b"two"))));
+        let held = tokio::time::timeout(std::time::Duration::from_millis(200), next(&mut body)).await;
+        assert!(held.is_err(), "the final chunk must wait for the verdict");
+        release.send(()).unwrap();
+        assert_eq!(next(&mut body).await, Some(Ok(Bytes::from_static(b"three"))));
+        assert_eq!(next(&mut body).await, None);
+    }
+
+    #[tokio::test]
+    async fn test_scanned_download_aborts_on_block() {
+        let mut body = download(&[b"evil", b"payload"], deciding(|| Decision::Block("Eicar".into())));
+        assert_eq!(next(&mut body).await, Some(Ok(Bytes::from_static(b"evil"))));
+        assert!(matches!(next(&mut body).await, Some(Err(_))), "a block must end the transfer in an error, never a clean finish");
+    }
+
+    #[tokio::test]
+    async fn test_spool_is_deleted_once_the_scan_is_done_with_it() {
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let seen2 = seen.clone();
+        let resolve: Resolver = Box::new(move |done: Finished| {
+            *seen2.lock().unwrap() = Some(done.spool.as_ref().unwrap().path.clone());
+            Box::pin(async move {
+                drop(done);
+                Decision::Allow
+            })
+        });
+        download(&[b"x"], resolve).collect().await.unwrap();
+        let path = seen.lock().unwrap().clone().unwrap();
+        assert!(!path.exists(), "spooled copy left behind at {}", path.display());
+    }
+
+    #[test]
+    fn test_notice_text_cannot_break_out_of_the_script_literal() {
+        assert_eq!(notice_text("a\"b\\c'd\ne"), "abcde");
+    }
 
     /// The parts of an ordinary page are never uploaded for scanning.
     #[test]

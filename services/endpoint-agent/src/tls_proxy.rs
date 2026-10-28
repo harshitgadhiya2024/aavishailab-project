@@ -34,7 +34,7 @@ fn full_body(data: impl Into<Bytes>) -> BoxBody {
     Full::new(data.into()).map_err(|never| match never {}).boxed()
 }
 
-use crate::scan::MAX_SCAN_BODY;
+use crate::scan::{Screened, MAX_SCAN_BODY};
 
 fn server_tls_config(leaf: &Leaf) -> std::io::Result<rustls::ServerConfig> {
     let certs: Vec<rustls_pki_types::CertificateDer<'static>> =
@@ -323,37 +323,16 @@ async fn relay_one(
         }
     };
 
+    // Downloads stream to the browser while they are scanned — see
+    // scan::screen_download.
     let (resp_parts, resp_body) = resp.into_parts();
-    let resp_bytes = match resp_body.collect().await {
-        Ok(c) => c.to_bytes(),
-        Err(_) => Bytes::new(),
-    };
-
-    // Download scanning (malware): same bounded-buffer, fail-open pattern.
-    if resp_parts.status.is_success() && resp_bytes.len() <= MAX_SCAN_BODY {
-        let verdict = crate::scan::download_verdict(
-            &deps.client,
-            &deps.gate,
-            &host,
-            &path,
-            resp_parts.headers.get(hyper::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or(""),
-            resp_parts.headers.get(hyper::header::CONTENT_DISPOSITION).and_then(|v| v.to_str().ok()).unwrap_or(""),
-            &resp_bytes,
-        )
-        .await;
-        if verdict.blocked {
+    let body = match crate::scan::screen_download(&deps, &host, &path, &resp_parts, resp_body).await {
+        Screened::Relay(body) => body,
+        Screened::Block(verdict) => {
             return Ok(crate::proxy::html_response(StatusCode::FORBIDDEN, &block_page_html(&deps, &host, &verdict.reason, &verdict.category)));
         }
-    }
-
-    let mut builder = Response::builder().status(resp_parts.status);
-    for (name, value) in resp_parts.headers.iter() {
-        if name == hyper::header::CONTENT_LENGTH || name == hyper::header::TRANSFER_ENCODING {
-            continue; // recomputed by the body we're sending (may differ post-scan/re-framing)
-        }
-        builder = builder.header(name, value);
-    }
-    Ok(builder.body(full_body(resp_bytes)).unwrap())
+    };
+    Ok(crate::proxy::relayed_response(&resp_parts, body))
 }
 
 #[cfg(test)]

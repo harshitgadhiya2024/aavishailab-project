@@ -377,6 +377,25 @@ type ThreatIntelDomain struct {
 	LastSeenAt time.Time `json:"last_seen_at"`
 }
 
+// ─── File Verdict ─────────────────────────────────────────────────────────────
+// The last malware verdict for one file, keyed by the SHA-256 the scanner
+// computed from the bytes it scanned — never a hash an agent merely claimed,
+// so a device cannot vouch for a file it did not upload. Platform-level, not
+// org data: a hash and a verdict say nothing about who downloaded it, and
+// sharing them is what lets the second device to fetch an installer get an
+// answer without uploading it again.
+
+type FileVerdict struct {
+	SHA256    string    `gorm:"primaryKey;size:64" json:"sha256"`
+	Action    string    `gorm:"not null" json:"action"` // block | alert | allow
+	Band      string    `json:"band"`
+	Verdict   string    `json:"verdict"`
+	Score     int       `json:"score"`
+	Signature string    `json:"signature"`
+	Reason    string    `json:"reason"`
+	ScannedAt time.Time `gorm:"not null" json:"scanned_at"`
+}
+
 // ─── Domain Risk Assessment ───────────────────────────────────────────────────
 // Caches the computed risk score + reasoning per domain so expensive checks
 // (WHOIS lookups) aren't repeated on every visit, and so there's an audit

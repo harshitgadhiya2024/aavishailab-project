@@ -92,6 +92,19 @@ impl AgentClient {
         Ok(resp)
     }
 
+    pub async fn put_bytes(&self, path: &str, body: Vec<u8>) -> reqwest::Result<reqwest::Response> {
+        let resp = self
+            .http
+            .put(self.url(path))
+            .header("Authorization", self.auth_header())
+            .header("Content-Type", "application/octet-stream")
+            .body(body)
+            .send()
+            .await?;
+        self.check_revoked(&resp);
+        Ok(resp)
+    }
+
     pub fn config(&self) -> &Config {
         &self.config
     }
