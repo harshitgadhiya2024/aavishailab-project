@@ -115,7 +115,7 @@ Invoke-Sign $AgentExe
 
 # ─── 3. WiX source ────────────────────────────────────────────────────────────
 # TOKEN and ADMINURL are optional MSI properties so an MDM push can enroll
-# silently: msiexec /i aavishield-agent-rust.msi /qn TOKEN=dse_... ADMINURL=https://...
+# silently: msiexec /i aavishield-agent.msi /qn TOKEN=dse_... ADMINURL=https://...
 # They are written to enroll.json at C:\ProgramData\Aavishield\enroll.json —
 # config::enroll_drop_paths() already checks that exact path (see config.rs),
 # so this needs no counterpart change on the connector side; the mechanism
@@ -236,7 +236,7 @@ Set-Content -Path $WxsPath -Value $Wxs -Encoding UTF8
 Write-Host "==> candle / light"
 & candle.exe -nologo -ext WixUtilExtension -out "$BuildDir\aavishield-rust.wixobj" $WxsPath
 if ($LASTEXITCODE -ne 0) { throw "candle.exe failed with exit code $LASTEXITCODE" }
-$MsiOut = Join-Path $OutDir "aavishield-agent-rust-$Version.msi"
+$MsiOut = Join-Path $OutDir "aavishield-agent-$Version.msi"
 & light.exe -nologo -sval -ext WixUtilExtension -out $MsiOut "$BuildDir\aavishield-rust.wixobj"
 if ($LASTEXITCODE -ne 0) { throw "light.exe failed with exit code $LASTEXITCODE" }
 

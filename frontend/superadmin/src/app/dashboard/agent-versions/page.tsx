@@ -13,6 +13,7 @@ import { Modal } from "@/components/ui/Modal";
 
 type WorkflowRun = {
   id: number;
+  platform: string;
   status: string;
   conclusion: string;
   ref: string;
@@ -85,6 +86,9 @@ export default function AgentVersionsPage() {
 
   const current = manifestData?.data?.current ?? {};
   const artifacts: Record<string, any> = current?.artifacts ?? {};
+  // Each platform is released on its own, so each has its own version.
+  const versions: Record<string, string> = current?.versions ?? {};
+  const currentVersions = new Set(Object.values(versions));
   const fleet = manifestData?.data?.fleet ?? {};
   const byVersion: { agent_version: string; count: number }[] = fleet.by_version ?? [];
   const byPlatform: { os_type: string; count: number }[] = fleet.by_platform ?? [];
@@ -130,7 +134,10 @@ export default function AgentVersionsPage() {
                 <div key={r.id} className="flex items-center justify-between text-sm py-2 border-b border-border last:border-0">
                   <div className="flex items-center gap-2 min-w-0">
                     <RunStatusIcon status={r.status} conclusion={r.conclusion} />
-                    <span className="text-foreground truncate">{r.title || "Agent packages"}</span>
+                    <span className="px-1.5 py-0.5 rounded-[4px] text-[11px] font-medium bg-muted text-muted-foreground flex-shrink-0">
+                      {PLATFORM_META[r.platform]?.label ?? r.platform}
+                    </span>
+                    <span className="text-foreground truncate">{r.title || "Agent release"}</span>
                     <span className="text-xs text-subtle font-mono flex-shrink-0">{r.ref}</span>
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0">
@@ -167,7 +174,12 @@ export default function AgentVersionsPage() {
                 {upToDate}
                 {totalDevices > 0 && <span className="text-sm text-muted-foreground font-normal"> / {totalDevices}</span>}
               </p>
-              <p className="text-xs text-subtle mt-1">v{current?.version ?? "—"}</p>
+              <p className="text-xs text-subtle mt-1">
+                {(["macos", "windows", "linux"] as const)
+                  .filter((p) => versions[p])
+                  .map((p) => `${PLATFORM_META[p].label} v${versions[p]}`)
+                  .join(" · ") || "—"}
+              </p>
             </div>
             <div className="p-2.5 rounded-lg bg-green-500/10 text-green-700">
               <CheckCircle2 className="w-5 h-5" />
@@ -197,7 +209,7 @@ export default function AgentVersionsPage() {
           <div className="space-y-2">
             {byVersion.map((v) => {
               const pct = totalDevices > 0 ? (v.count / totalDevices) * 100 : 0;
-              const isCurrent = v.agent_version === current?.version;
+              const isCurrent = currentVersions.has(v.agent_version);
               return (
                 <div key={v.agent_version} className="flex items-center gap-3 text-sm">
                   <span className={cn("w-24 flex-shrink-0 font-mono text-xs", isCurrent ? "text-green-700" : "text-muted-foreground")}>
@@ -243,7 +255,7 @@ export default function AgentVersionsPage() {
                 <div className="h-16 bg-muted rounded-lg animate-pulse" />
               ) : artifact ? (
                 <div className="space-y-1 mb-4">
-                  <p className="[font-family:Satoshi,var(--font-inter),sans-serif] text-[1.6rem] font-medium leading-tight tracking-[-0.02em] tabular-nums text-foreground">v{current.version}</p>
+                  <p className="[font-family:Satoshi,var(--font-inter),sans-serif] text-[1.6rem] font-medium leading-tight tracking-[-0.02em] tabular-nums text-foreground">v{artifact.version ?? versions[platform] ?? current.version}</p>
                   <p className="text-xs text-muted-foreground font-mono truncate" title={artifact.filename}>{artifact.filename}</p>
                   <p className="text-xs text-subtle">{formatBytes(artifact.size)} · published {formatWhen(artifact.published_at)}</p>
                   <p className="text-xs text-subtle font-mono truncate" title={artifact.sha256}>sha256: {artifact.sha256?.slice(0, 16)}…</p>
@@ -281,8 +293,8 @@ export default function AgentVersionsPage() {
         <div className="bg-card rounded-xl border border-border shadow-sm p-8 text-center">
           <Download className="w-8 h-8 mx-auto mb-2 text-subtle opacity-30" />
           <p className="text-sm text-muted-foreground">
-            No agent packages published yet. Push a tag matching <code className="text-xs bg-muted px-1.5 py-0.5 rounded">agent-v*</code>{" "}
-            or run the &quot;Agent packages&quot; GitHub Actions workflow, or upload one directly here.
+            No agent packages published yet. Trigger a build for a platform above, push a tag like{" "}
+            <code className="text-xs bg-muted px-1.5 py-0.5 rounded">agent-macos-v2.9.6</code>, or upload one directly here.
           </p>
         </div>
       )}
@@ -305,8 +317,8 @@ export default function AgentVersionsPage() {
             <h3 className="text-lg font-semibold text-foreground mb-2">Roll back {PLATFORM_META[rollbackTarget.platform]?.label}?</h3>
             <p className="text-sm text-muted-foreground mb-6">
               Devices polling <code className="text-xs bg-muted px-1 py-0.5 rounded">/internal/agent/version</code> will be offered{" "}
-              <span className="font-mono text-foreground">v{rollbackTarget.version}</span> instead, and self-update to it within their
-              next 6-hour check.
+              <span className="font-mono text-foreground">v{rollbackTarget.version}</span> for{" "}
+              {PLATFORM_META[rollbackTarget.platform]?.label} only. Other platforms are not affected.
             </p>
             <div className="flex justify-end gap-2">
               <button
@@ -330,6 +342,7 @@ export default function AgentVersionsPage() {
 
       {triggerOpen && (
         <TriggerBuildModal
+          versions={versions}
           onClose={() => setTriggerOpen(false)}
           onDone={() => {
             setTriggerOpen(false);
@@ -419,14 +432,22 @@ function UploadModal({ platform, onClose, onDone }: { platform: string; onClose:
   );
 }
 
-function TriggerBuildModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+// "2.9.5" -> "2.9.6": the usual next release, as a starting point.
+function nextPatch(v?: string): string {
+  const m = v?.match(/^(\d+)\.(\d+)\.(\d+)$/);
+  return m ? `${m[1]}.${m[2]}.${Number(m[3]) + 1}` : "";
+}
+
+function TriggerBuildModal({ versions, onClose, onDone }: { versions: Record<string, string>; onClose: () => void; onDone: () => void }) {
+  const [platform, setPlatform] = useState<string>("");
   const [version, setVersion] = useState("");
   const [ref, setRef] = useState("main");
+  const meta = platform ? PLATFORM_META[platform] : null;
 
   const triggerMut = useMutation({
-    mutationFn: () => agentPackageApi.triggerBuild(version, ref || undefined),
+    mutationFn: () => agentPackageApi.triggerBuild(platform, version, ref || undefined),
     onSuccess: () => {
-      toast.success(`Build triggered for v${version} — check status below in a few seconds`);
+      toast.success(`${meta?.label} v${version} build triggered — check status below in a few seconds`);
       onDone();
     },
     onError: (e: any) => toast.error(e.response?.data?.error ?? "Could not trigger the build"),
@@ -442,18 +463,46 @@ function TriggerBuildModal({ onClose, onDone }: { onClose: () => void; onDone: (
           </button>
         </div>
         <p className="text-xs text-muted-foreground mb-4">
-          Fires the same <code className="text-xs bg-muted px-1 py-0.5 rounded">workflow_dispatch</code> event the &quot;Run
-          workflow&quot; button on the Actions tab does — builds all three platforms in parallel and auto-publishes here when
-          CI publishing secrets are set.
+          Builds and releases one platform. The others keep their current version and are not rebuilt or re-signed.
         </p>
         <div className="space-y-3">
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">Platform</label>
+            <div className="grid grid-cols-3 gap-2">
+              {(["macos", "windows", "linux"] as const).map((p) => {
+                const Icon = PLATFORM_META[p].icon;
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => {
+                      setPlatform(p);
+                      setVersion(nextPatch(versions[p]));
+                    }}
+                    className={cn(
+                      "flex flex-col items-center gap-1 px-3 py-2.5 rounded-lg border text-sm transition-colors",
+                      platform === p ? "border-brand-500 bg-brand-500/10 text-foreground" : "border-border text-muted-foreground hover:bg-muted",
+                    )}
+                  >
+                    <Icon className="w-4 h-4" />
+                    {PLATFORM_META[p].label}
+                    <span className="text-[11px] font-mono text-subtle">{versions[p] ? `now v${versions[p]}` : "none yet"}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {platform === "macos" && (
+              <p className="text-xs text-amber-700 mt-2">Every Mac auto-updates to a new macOS release within about an hour.</p>
+            )}
+          </div>
           <div>
             <label className="text-xs font-medium text-muted-foreground mb-1 block">Version</label>
             <input
               value={version}
               onChange={(e) => setVersion(e.target.value)}
-              placeholder="1.6.0"
-              className="w-full px-3 py-2 border border-border bg-background rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+              placeholder={platform ? nextPatch(versions[platform]) || "1.0.0" : "Pick a platform first"}
+              disabled={!platform}
+              className="w-full px-3 py-2 border border-border bg-background rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50"
             />
           </div>
           <div>
@@ -472,11 +521,11 @@ function TriggerBuildModal({ onClose, onDone }: { onClose: () => void; onDone: (
           </button>
           <button
             onClick={() => triggerMut.mutate()}
-            disabled={!version || triggerMut.isPending}
+            disabled={!platform || !version || triggerMut.isPending}
             className="px-4 py-2 rounded-lg font-mono text-[12px] font-medium uppercase tracking-[0.06em] bg-brand-500 text-white hover:bg-brand-600 transition-colors disabled:opacity-50 flex items-center gap-2"
           >
             {triggerMut.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-            <Play className="w-4 h-4" /> Trigger build
+            <Play className="w-4 h-4" /> Build {meta?.label ?? ""}
           </button>
         </div>
       </div>

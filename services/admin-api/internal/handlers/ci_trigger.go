@@ -7,20 +7,27 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
-// Lets a superadmin kick off the "Agent packages" GitHub Actions workflow
-// (.github/workflows/agent-packages.yml — builds and publishes native
-// installers for all three platforms) straight from the dashboard, instead
-// of the repo's Actions tab. Same workflow_dispatch trigger the "Run
-// workflow" button fires, called over GitHub's REST API with a repo-scoped
-// PAT that never leaves this server or reaches the browser.
+// Lets a superadmin kick off an agent release workflow straight from the
+// dashboard, instead of the repo's Actions tab. Each platform has its own
+// workflow (.github/workflows/agent-macos.yml / agent-windows.yml /
+// agent-linux.yml) and its own version, so a build is always for exactly
+// one platform — a macOS fix never rebuilds or re-signs Windows. Same
+// workflow_dispatch trigger the "Run workflow" button fires, called over
+// GitHub's REST API with a repo-scoped PAT that never leaves this server or
+// reaches the browser.
 
-const agentPackagesWorkflowFile = "agent-packages.yml"
+var agentWorkflowFiles = map[string]string{
+	"macos":   "agent-macos.yml",
+	"windows": "agent-windows.yml",
+	"linux":   "agent-linux.yml",
+}
 
 type CITriggerHandler struct {
 	http *http.Client
@@ -75,14 +82,15 @@ func (h *CITriggerHandler) githubRequest(method, path string, body any) (*http.R
 }
 
 // TriggerBuild handles POST /superadmin/agent-packages/trigger-build —
-// dispatches the workflow with the version the operator wants built. CI
-// itself decides what "1.6.0" means for each platform's filename; this
-// endpoint only starts the run and hands back its acceptance, not a
+// dispatches the chosen platform's workflow with the version the operator
+// wants built. CI checks that version against that platform's releases;
+// this endpoint only starts the run and hands back its acceptance, not a
 // finished build — see BuildStatus for polling progress.
 func (h *CITriggerHandler) TriggerBuild(c *gin.Context) {
 	var in struct {
-		Version string `json:"version" binding:"required"`
-		Ref     string `json:"ref"`
+		Platform string `json:"platform" binding:"required"`
+		Version  string `json:"version" binding:"required"`
+		Ref      string `json:"ref"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -91,6 +99,11 @@ func (h *CITriggerHandler) TriggerBuild(c *gin.Context) {
 	version := strings.TrimSpace(in.Version)
 	if version == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "version is required"})
+		return
+	}
+	workflow, ok := agentWorkflowFiles[in.Platform]
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "platform must be macos, windows or linux"})
 		return
 	}
 	ref := strings.TrimSpace(in.Ref)
@@ -103,7 +116,7 @@ func (h *CITriggerHandler) TriggerBuild(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.githubRequest(http.MethodPost, "/actions/workflows/"+agentPackagesWorkflowFile+"/dispatches", gin.H{
+	resp, err := h.githubRequest(http.MethodPost, "/actions/workflows/"+workflow+"/dispatches", gin.H{
 		"ref":    ref,
 		"inputs": gin.H{"version": version},
 	})
@@ -122,11 +135,12 @@ func (h *CITriggerHandler) TriggerBuild(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"status": "triggered", "version": version, "ref": ref})
+	c.JSON(http.StatusOK, gin.H{"status": "triggered", "platform": in.Platform, "version": version, "ref": ref})
 }
 
 type workflowRunOut struct {
 	ID         int64  `json:"id"`
+	Platform   string `json:"platform"`
 	Status     string `json:"status"`     // queued | in_progress | completed
 	Conclusion string `json:"conclusion"` // success | failure | cancelled | "" while running
 	Ref        string `json:"ref"`
@@ -146,17 +160,40 @@ func (h *CITriggerHandler) BuildStatus(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.githubRequest(http.MethodGet, "/actions/workflows/"+agentPackagesWorkflowFile+"/runs?per_page=5", nil)
+	runs := []workflowRunOut{}
+	for platform, workflow := range agentWorkflowFiles {
+		got, err := h.workflowRuns(workflow)
+		if err != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+			return
+		}
+		for _, r := range got {
+			r.Platform = platform
+			runs = append(runs, r)
+		}
+	}
+	sort.Slice(runs, func(i, j int) bool { return runs[i].CreatedAt > runs[j].CreatedAt })
+	if len(runs) > 8 {
+		runs = runs[:8]
+	}
+	c.JSON(http.StatusOK, gin.H{"configured": true, "runs": runs})
+}
+
+// workflowRuns is one workflow's most recent runs. A workflow GitHub does
+// not know yet (404 — e.g. before its file reaches the default branch) has
+// no runs rather than being an error.
+func (h *CITriggerHandler) workflowRuns(workflow string) ([]workflowRunOut, error) {
+	resp, err := h.githubRequest(http.MethodGet, "/actions/workflows/"+workflow+"/runs?per_page=5", nil)
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "could not reach GitHub"})
-		return
+		return nil, fmt.Errorf("could not reach GitHub")
 	}
 	defer resp.Body.Close()
-
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		c.JSON(http.StatusBadGateway, gin.H{"error": "GitHub rejected the request", "detail": string(body)})
-		return
+		return nil, fmt.Errorf("GitHub rejected the request: %s", body)
 	}
 
 	var parsed struct {
@@ -172,10 +209,8 @@ func (h *CITriggerHandler) BuildStatus(c *gin.Context) {
 		} `json:"workflow_runs"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "could not parse GitHub response"})
-		return
+		return nil, fmt.Errorf("could not parse GitHub response")
 	}
-
 	runs := make([]workflowRunOut, 0, len(parsed.WorkflowRuns))
 	for _, r := range parsed.WorkflowRuns {
 		runs = append(runs, workflowRunOut{
@@ -184,5 +219,5 @@ func (h *CITriggerHandler) BuildStatus(c *gin.Context) {
 			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, URL: r.HTMLURL,
 		})
 	}
-	c.JSON(http.StatusOK, gin.H{"configured": true, "runs": runs})
+	return runs, nil
 }

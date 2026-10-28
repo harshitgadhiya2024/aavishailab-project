@@ -173,8 +173,8 @@ export const agentPackageApi = {
   },
   rollback: (platform: string, filename: string) =>
     api.post("/superadmin/agent-packages/rollback", { platform, filename }),
-  triggerBuild: (version: string, ref?: string) =>
-    api.post("/superadmin/agent-packages/trigger-build", { version, ref }),
+  triggerBuild: (platform: string, version: string, ref?: string) =>
+    api.post("/superadmin/agent-packages/trigger-build", { platform, version, ref }),
   buildStatus: () => api.get("/superadmin/agent-packages/build-status"),
 };
 

@@ -202,9 +202,11 @@ func (h *SuperadminOverviewHandler) fleet(now time.Time) gin.H {
 	h.db.Model(&models.Device{}).Where("status <> ?", "revoked").
 		Select("status, agent_version, os_type, last_seen_at").Scan(&devices)
 
-	latest := ""
-	if m, err := readManifest(); err == nil {
-		latest = m.Version
+	manifest, _ := readManifest()
+	latest := manifest.Version
+	latestFor := map[string]string{}
+	for platform := range manifest.Artifacts {
+		latestFor[platform] = manifest.versionFor(platform)
 	}
 
 	var online, seen24h, outdated int64
@@ -222,7 +224,8 @@ func (h *SuperadminOverviewHandler) fleet(now time.Time) gin.H {
 			v = "unknown"
 		}
 		versions[v]++
-		if latest != "" && d.AgentVersion != latest {
+		// Measured against the release for the device's own platform.
+		if want := latestFor[platformForOS(d.OSType)]; want != "" && d.AgentVersion != want {
 			outdated++
 		}
 		byOS[normalizeOS(d.OSType)]++
@@ -235,7 +238,11 @@ func (h *SuperadminOverviewHandler) fleet(now time.Time) gin.H {
 	}
 	vs := make([]vc, 0, len(versions))
 	for v, n := range versions {
-		vs = append(vs, vc{Version: v, Count: n, Latest: v == latest})
+		isLatest := false
+		for _, want := range latestFor {
+			isLatest = isLatest || v == want
+		}
+		vs = append(vs, vc{Version: v, Count: n, Latest: isLatest})
 	}
 	sort.Slice(vs, func(i, j int) bool {
 		if vs[i].Count != vs[j].Count {
@@ -245,13 +252,14 @@ func (h *SuperadminOverviewHandler) fleet(now time.Time) gin.H {
 	})
 
 	return gin.H{
-		"devices":        len(devices),
-		"online":         online,
-		"seen_24h":       seen24h,
-		"latest_version": latest,
-		"outdated":       outdated,
-		"versions":       vs,
-		"by_os":          byOS,
+		"devices":         len(devices),
+		"online":          online,
+		"seen_24h":        seen24h,
+		"latest_version":  latest,
+		"latest_versions": latestFor,
+		"outdated":        outdated,
+		"versions":        vs,
+		"by_os":           byOS,
 	}
 }
 

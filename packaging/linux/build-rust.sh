@@ -130,12 +130,12 @@ SHLIBS_SCRATCH="$BUILD_DIR/shlibdeps-scratch"
 mkdir -p "$SHLIBS_SCRATCH/debian"
 cp "$ROOT_DIR$INSTALL_PREFIX/aavishield-agent" "$SHLIBS_SCRATCH/aavishield-agent"
 cat > "$SHLIBS_SCRATCH/debian/control" <<'SCRATCH_CONTROL'
-Source: aavishield-agent-rust
+Source: aavishield-agent
 Section: net
 Priority: optional
 Maintainer: Aavishield <support@aavishield.com>
 
-Package: aavishield-agent-rust
+Package: aavishield-agent
 Architecture: any
 Depends: ${shlibs:Depends}
 Description: scratch control file — dpkg-shlibdeps needs one to run at all
@@ -151,7 +151,7 @@ echo "    Depends: $RUNTIME_DEPENDS"
 
 INSTALLED_SIZE=$(du -sk "$ROOT_DIR$INSTALL_PREFIX" | cut -f1)
 cat > "$ROOT_DIR/DEBIAN/control" <<CONTROL
-Package: aavishield-agent-rust
+Package: aavishield-agent
 Version: $VERSION
 Section: net
 Priority: optional
@@ -160,8 +160,8 @@ Maintainer: Aavishield <info@aavishailab.com>
 Homepage: https://website.aavishield.com
 Installed-Size: $INSTALLED_SIZE
 Depends: $RUNTIME_DEPENDS
-Conflicts: aavishield-agent
-Replaces: aavishield-agent
+Conflicts: aavishield-agent-rust
+Replaces: aavishield-agent-rust
 Description: Aavishield security agent. Secure today. Enable tomorrow.
  Local enforcement proxy that applies your organisation's web, DLP and
  malware policy to this device. Native binary, no bundled runtime.
@@ -171,7 +171,7 @@ CONTROL
 # an existing MDM/provisioning script that already sets these two env vars
 # before `dpkg -i` works unchanged against either package:
 #   sudo AAVISHIELD_ENROLL_TOKEN=dse_... AAVISHIELD_ADMIN_URL=https://... \
-#        dpkg -i aavishield-agent-rust.deb
+#        dpkg -i aavishield-agent.deb
 cat > "$ROOT_DIR/DEBIAN/postinst" <<'POSTINST'
 #!/bin/bash
 set -e
@@ -230,8 +230,8 @@ POSTRM
 chmod 755 "$ROOT_DIR/DEBIAN/postrm"
 
 # ─── 4. Build ─────────────────────────────────────────────────────────────────
-DEB_OUT="$OUT_DIR/aavishield-agent-rust-$VERSION-$ARCH.deb"
-TGZ_OUT="$OUT_DIR/aavishield-agent-rust-$VERSION-$ARCH.tar.gz"
+DEB_OUT="$OUT_DIR/aavishield-agent-$VERSION-$ARCH.deb"
+TGZ_OUT="$OUT_DIR/aavishield-agent-$VERSION-$ARCH.tar.gz"
 
 if command -v dpkg-deb >/dev/null 2>&1; then
     echo "==> dpkg-deb"

@@ -56,7 +56,7 @@ func TestTriggerBuildNotConfigured(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/x", strings.NewReader(`{"version":"1.6.0"}`))
+	c.Request = httptest.NewRequest(http.MethodPost, "/x", strings.NewReader(`{"platform":"windows","version":"1.6.0"}`))
 	c.Request.Header.Set("Content-Type", "application/json")
 	h.TriggerBuild(c)
 
@@ -75,7 +75,7 @@ func TestTriggerBuildSendsCorrectDispatch(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/x", strings.NewReader(`{"version":"1.6.0"}`))
+	c.Request = httptest.NewRequest(http.MethodPost, "/x", strings.NewReader(`{"platform":"windows","version":"1.6.0"}`))
 	c.Request.Header.Set("Content-Type", "application/json")
 	h.TriggerBuild(c)
 
@@ -85,8 +85,8 @@ func TestTriggerBuildSendsCorrectDispatch(t *testing.T) {
 	if cap.method != http.MethodPost {
 		t.Errorf("method = %q, want POST", cap.method)
 	}
-	if !strings.Contains(cap.path, "/repos/aavishield/aavishield/actions/workflows/agent-packages.yml/dispatches") {
-		t.Errorf("path = %q, doesn't hit the agent-packages workflow's dispatches endpoint", cap.path)
+	if !strings.Contains(cap.path, "/repos/aavishield/aavishield/actions/workflows/agent-windows.yml/dispatches") {
+		t.Errorf("path = %q, doesn't hit only the Windows workflow's dispatches endpoint", cap.path)
 	}
 	if cap.auth != "Bearer ghp_test_token" {
 		t.Errorf("auth header = %q, want Bearer ghp_test_token", cap.auth)
@@ -129,7 +129,7 @@ func TestTriggerBuildSurfacesGithubRejection(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/x", strings.NewReader(`{"version":"1.6.0"}`))
+	c.Request = httptest.NewRequest(http.MethodPost, "/x", strings.NewReader(`{"platform":"windows","version":"1.6.0"}`))
 	c.Request.Header.Set("Content-Type", "application/json")
 	h.TriggerBuild(c)
 
@@ -181,10 +181,27 @@ func TestBuildStatusParsesRuns(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
-	if !resp.Configured || len(resp.Runs) != 1 {
-		t.Fatalf("unexpected response: %+v", resp)
+	if !resp.Configured || len(resp.Runs) != 3 {
+		t.Fatalf("expected the run from each of the three platform workflows: %+v", resp)
 	}
-	if resp.Runs[0].Conclusion != "success" || resp.Runs[0].ID != 123 {
+	if resp.Runs[0].Platform == "" || resp.Runs[0].Conclusion != "success" || resp.Runs[0].ID != 123 {
 		t.Errorf("run parsed incorrectly: %+v", resp.Runs[0])
+	}
+}
+
+// A build is always for exactly one platform: no platform, or one that
+// isn't real, must never fall back to building something.
+func TestTriggerBuildRequiresAKnownPlatform(t *testing.T) {
+	for _, body := range []string{`{"version":"1.6.0"}`, `{"platform":"all","version":"1.6.0"}`} {
+		stubGitHub(t, http.StatusNoContent, "", nil)
+		h := NewCITriggerHandler()
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodPost, "/x", strings.NewReader(body))
+		c.Request.Header.Set("Content-Type", "application/json")
+		h.TriggerBuild(c)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("%s: status = %d, want 400", body, w.Code)
+		}
 	}
 }
