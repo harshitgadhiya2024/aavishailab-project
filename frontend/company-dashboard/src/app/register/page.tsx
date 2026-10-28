@@ -7,15 +7,11 @@ import { ArrowRight, Building2, Loader2, Mail } from "lucide-react";
 import { otpApi } from "@/lib/api";
 import { toast } from "sonner";
 import {
-  AUTH_ARROW, AUTH_BUTTON, AUTH_CHECK, AUTH_HINT, AUTH_LABEL, AUTH_LINK, AUTH_SOCIAL,
-  AppleIcon, AuthDivider, AuthError, AuthHeading, AuthShell, GoogleIcon, PasswordInput,
+  AUTH_ARROW, AUTH_BUTTON, AUTH_CHECK, AUTH_HINT, AUTH_LABEL, AUTH_LINK,
+  AuthError, AuthHeading, AuthShell, PasswordInput,
   authCodeInput, authInput,
 } from "@/components/brand/AuthShell";
 
-const SOCIAL_ERRORS: Record<string, string> = {
-  NoAccountFound: "No account found for that email. Please complete registration below first.",
-  NoEmailFromProvider: "Your Google/Apple account didn't share an email address.",
-};
 
 export default function RegisterPage() {
   const [companyName, setCompanyName] = useState("");
@@ -26,7 +22,7 @@ export default function RegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
-  const [loading, setLoading] = useState<"" | "credentials" | "google" | "apple">("");
+  const [loading, setLoading] = useState<"" | "credentials">("");
   const [error, setError] = useState("");
   // Confirmation step: nothing exists server-side until this code is accepted.
   const [codeSent, setCodeSent] = useState(false);
@@ -37,7 +33,7 @@ export default function RegisterPage() {
   useEffect(() => {
     const err = new URLSearchParams(window.location.search).get("error");
     if (err) {
-      const message = SOCIAL_ERRORS[err] || err;
+      const message = err;
       setError(message);
       toast.error(message);
     }
@@ -139,17 +135,6 @@ export default function RegisterPage() {
     setCode("");
     setResendIn(0);
     setError("");
-  };
-
-  const handleSocial = (provider: "google" | "apple") => {
-    if (!acceptedPrivacy) {
-      const message = "Please accept the Privacy Policy to continue.";
-      setError(message);
-      toast.error(message);
-      return;
-    }
-    setLoading(provider);
-    signIn(provider, { callbackUrl: "/dashboard" });
   };
 
   return (
@@ -320,18 +305,6 @@ export default function RegisterPage() {
               {loading !== "credentials" && <ArrowRight className={AUTH_ARROW} />}
             </button>
           </form>
-
-          <AuthDivider />
-          <div className="grid grid-cols-2 gap-3">
-            <button type="button" onClick={() => handleSocial("google")} disabled={loading !== ""} className={AUTH_SOCIAL}>
-              {loading === "google" ? <Loader2 className="h-4 w-4 animate-spin" /> : <GoogleIcon className="h-4 w-4" />}
-              Google
-            </button>
-            <button type="button" onClick={() => handleSocial("apple")} disabled={loading !== ""} className={AUTH_SOCIAL}>
-              {loading === "apple" ? <Loader2 className="h-4 w-4 animate-spin" /> : <AppleIcon className="h-4 w-4" />}
-              Apple
-            </button>
-          </div>
         </>
       )}
     </AuthShell>

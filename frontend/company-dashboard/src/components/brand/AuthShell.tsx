@@ -137,43 +137,11 @@ export const AUTH_BUTTON =
   "group flex h-12 w-full [@media(max-height:800px)]:h-11 items-center justify-center gap-2.5 rounded-[6px] bg-[#ff7000] font-mono text-[13px] font-medium uppercase tracking-[0.06em] text-white transition-[background-color,transform,opacity] duration-200 hover:bg-[#e56400] active:scale-[0.98] disabled:opacity-50";
 export const AUTH_ARROW = "h-4 w-4 transition-transform duration-300 group-hover:translate-x-0.5 group-disabled:translate-x-0";
 
-export const AUTH_SOCIAL =
-  "flex h-11 items-center justify-center gap-2 rounded-[6px] border border-[rgb(11_11_13/0.18)] bg-white text-sm font-medium text-[#0b0b0d] transition-[background-color,transform] duration-200 hover:bg-[#f1f1f2] active:scale-[0.98] disabled:opacity-60";
 
-/** "or continue with" between the form and the social buttons. */
-export function AuthDivider() {
-  return (
-    <div className="my-5 flex items-center gap-3 [@media(max-height:800px)]:my-3">
-      <div className="h-px flex-1 bg-[rgb(11_11_13/0.09)]" />
-      <span className="font-mono text-[10.5px] uppercase tracking-[0.12em] text-[#71717a]">or continue with</span>
-      <div className="h-px flex-1 bg-[rgb(11_11_13/0.09)]" />
-    </div>
-  );
-}
 
 /** Round icon above a confirmation message (email sent, password reset). */
 export function AuthDoneIcon({ children }: { children: React.ReactNode }) {
   return <div className="mb-6 grid size-12 place-items-center rounded-[6px] border border-[#ff7000]/20 bg-[#fff1e5] text-[#ff7000]">{children}</div>;
 }
 
-export function GoogleIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24">
-      <path fill="#4285F4" d="M23.52 12.27c0-.85-.08-1.67-.22-2.45H12v4.64h6.47a5.54 5.54 0 0 1-2.4 3.63v3h3.88c2.27-2.09 3.57-5.17 3.57-8.82Z" />
-      <path fill="#34A853" d="M12 24c3.24 0 5.96-1.07 7.95-2.91l-3.88-3c-1.08.72-2.46 1.15-4.07 1.15-3.13 0-5.78-2.11-6.73-4.96H1.27v3.11A11.99 11.99 0 0 0 12 24Z" />
-      <path fill="#FBBC05" d="M5.27 14.28a7.2 7.2 0 0 1 0-4.56V6.61H1.27a12 12 0 0 0 0 10.78l4-3.11Z" />
-      <path fill="#EA4335" d="M12 4.75c1.76 0 3.34.6 4.58 1.79l3.44-3.44C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.69 1.27 6.61l4 3.11C6.22 6.86 8.87 4.75 12 4.75Z" />
-    </svg>
-  );
-}
 
-export function AppleIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zm3.378-3.066c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.56-1.702z"
-      />
-    </svg>
-  );
-}

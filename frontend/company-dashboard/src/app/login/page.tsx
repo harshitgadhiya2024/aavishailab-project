@@ -7,22 +7,18 @@ import { ArrowRight, Loader2, Mail } from "lucide-react";
 import { toast } from "sonner";
 import { otpApi } from "@/lib/api";
 import {
-  AUTH_ARROW, AUTH_BUTTON, AUTH_CHECK, AUTH_HINT, AUTH_LABEL, AUTH_LINK, AUTH_SOCIAL,
-  AppleIcon, AuthDivider, AuthError, AuthHeading, AuthShell, GoogleIcon, PasswordInput,
+  AUTH_ARROW, AUTH_BUTTON, AUTH_CHECK, AUTH_HINT, AUTH_LABEL, AUTH_LINK,
+  AuthError, AuthHeading, AuthShell, PasswordInput,
   authCodeInput, authInput,
 } from "@/components/brand/AuthShell";
 
-const SOCIAL_ERRORS: Record<string, string> = {
-  NoAccountFound: "No account found for that email. Please register first.",
-  NoEmailFromProvider: "Your Google/Apple account didn't share an email address.",
-};
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
-  const [loading, setLoading] = useState<"" | "credentials" | "google" | "apple">("");
+  const [loading, setLoading] = useState<"" | "credentials">("");
   const [error, setError] = useState("");
   // Second-factor step: set once the password has been accepted.
   const [mfaToken, setMfaToken] = useState("");
@@ -38,7 +34,7 @@ export default function LoginPage() {
   useEffect(() => {
     const err = new URLSearchParams(window.location.search).get("error");
     if (err) {
-      const message = SOCIAL_ERRORS[err] || err;
+      const message = err;
       setError(message);
       toast.error(message);
     }
@@ -159,17 +155,6 @@ export default function LoginPage() {
     } finally {
       setResending(false);
     }
-  };
-
-  const handleSocial = (provider: "google" | "apple") => {
-    if (!acceptedPrivacy) {
-      const message = "Please accept the Privacy Policy to continue.";
-      setError(message);
-      toast.error(message);
-      return;
-    }
-    setLoading(provider);
-    signIn(provider, { callbackUrl: "/dashboard" });
   };
 
   const verifying = !!mfaToken || !!otpToken;
@@ -332,22 +317,6 @@ export default function LoginPage() {
           </button>
         )}
       </form>
-
-      {!verifying && (
-        <>
-          <AuthDivider />
-          <div className="grid grid-cols-2 gap-3">
-            <button type="button" onClick={() => handleSocial("google")} disabled={loading !== ""} className={AUTH_SOCIAL}>
-              {loading === "google" ? <Loader2 className="h-4 w-4 animate-spin" /> : <GoogleIcon className="h-4 w-4" />}
-              Google
-            </button>
-            <button type="button" onClick={() => handleSocial("apple")} disabled={loading !== ""} className={AUTH_SOCIAL}>
-              {loading === "apple" ? <Loader2 className="h-4 w-4 animate-spin" /> : <AppleIcon className="h-4 w-4" />}
-              Apple
-            </button>
-          </div>
-        </>
-      )}
     </AuthShell>
   );
 }

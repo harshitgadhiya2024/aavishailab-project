@@ -1,7 +1,5 @@
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import GoogleProvider from "next-auth/providers/google";
-import AppleProvider from "next-auth/providers/apple";
 import axios from "axios";
 
 const API_URL =
@@ -196,25 +194,6 @@ const providers: NextAuthOptions["providers"] = [
   }),
 ];
 
-// Only registered when credentials are configured — buttons still render in
-// the UI, but clicking them will error until GOOGLE_CLIENT_ID/SECRET (and the
-// Apple equivalents) are set in .env.
-if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
-  providers.push(
-    GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    })
-  );
-}
-if (process.env.APPLE_CLIENT_ID && process.env.APPLE_CLIENT_SECRET) {
-  providers.push(
-    AppleProvider({
-      clientId: process.env.APPLE_CLIENT_ID,
-      clientSecret: process.env.APPLE_CLIENT_SECRET,
-    })
-  );
-}
 
 type RefreshResult = {
   accessToken: string;
@@ -252,30 +231,6 @@ export const authOptions: NextAuthOptions = {
   providers,
   session: { strategy: "jwt", maxAge: 7 * 24 * 60 * 60 },
   callbacks: {
-    // For Google/Apple, exchange the verified email for our own JWT via the
-    // internal-secret-gated backend endpoint. Only logs in an *existing*
-    // user — social sign-in never creates an organization on its own.
-    async signIn({ user, account }) {
-      if (account?.provider === "google" || account?.provider === "apple") {
-        if (!user.email) return "/login?error=NoEmailFromProvider";
-        try {
-          const res = await axios.post(
-            `${API_URL}/api/v1/auth/social`,
-            { email: user.email },
-            { headers: { "X-Internal-Secret": INTERNAL_API_SECRET } }
-          );
-          const data = res.data;
-          (user as any).accessToken = data.access_token;
-          (user as any).refreshToken = data.refresh_token;
-          (user as any).accessTokenExpires = Date.now() + data.expires_in * 1000;
-          Object.assign(user as any, data.user);
-          return true;
-        } catch {
-          return "/login?error=NoAccountFound";
-        }
-      }
-      return true;
-    },
     async jwt({ token, user }) {
       if (user) {
         return {
