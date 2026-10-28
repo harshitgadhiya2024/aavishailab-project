@@ -1,0 +1,163 @@
+name: Agent — Windows
+
+# Builds, signs and releases the Windows connector (.msi) — and nothing else.
+# Each platform has its own workflow and its own version line
+# (agent-macos.yml, agent-windows.yml, agent-linux.yml), so a change for one
+# platform never rebuilds or re-signs the other two. admin-api keeps one
+# version per platform and offers each device the release for its own OS.
+#
+# The connector is one shared Rust codebase (services/endpoint-agent): a
+# change outside platform-specific code reaches Windows devices only when
+# this workflow is run.
+#
+# Each run signs with SSL.com eSigner, which is metered per month — so run
+# it only when Windows actually needs a new build.
+#
+# Packages move between jobs through Cloudflare R2, not GitHub artifacts
+# (the account's artifact storage quota blocked every upload):
+#
+#   <root>/staging/windows/<version>/<run id>/   the build job stages here
+#   <root>/releases/windows/<version>/           publish copies here once live
+#
+# packaging/ci/check-release.sh and publish-release.sh hold the logic the
+# three workflows share.
+#
+# Triggers: "Run workflow" with a version, or pushing a tag
+# agent-windows-v<version>.
+
+on:
+  push:
+    tags: ["agent-windows-v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Windows version (e.g. 2.9.6) — must be newer than the current Windows release"
+        required: true
+
+# Two releases of the same platform must not race each other's version check.
+concurrency:
+  group: agent-windows-release
+  cancel-in-progress: false
+
+# R2 is S3-compatible; every job talks to it with the runner's AWS CLI.
+env:
+  AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+  AWS_DEFAULT_REGION: auto
+  # Newer AWS CLIs send checksum headers on every request by default;
+  # only send them when the API requires it, which is all R2 accepts.
+  AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+  AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+  R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
+  R2_BUCKET: ${{ secrets.R2_BUCKET_NAME }}
+  # The bucket is shared with another application; everything this
+  # workflow writes stays under this prefix.
+  R2_ROOT: ${{ vars.R2_PREFIX || 'aavishield' }}/agent-packages
+
+jobs:
+  # Resolves the version once, from the input or the tag, and fails before
+  # any build time is spent on a version that is malformed, already
+  # released, or older than the latest Windows release.
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve version
+        id: resolve
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#agent-windows-v}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Check version against published releases
+        run: bash packaging/ci/check-release.sh windows "${{ steps.resolve.outputs.version }}"
+
+  build:
+    needs: resolve
+    runs-on: windows-latest
+    env:
+      ESIGNER_USERNAME: ${{ secrets.ESIGNER_USERNAME }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: choco install wixtoolset --no-progress -y
+      - run: echo "C:\Program Files (x86)\WiX Toolset v3.14\bin" >> $env:GITHUB_PATH
+
+      - name: Decode signing certificate
+        if: env.SIGNING_CERT_PFX_B64 != ''
+        env:
+          SIGNING_CERT_PFX_B64: ${{ secrets.SIGNING_CERT_PFX_B64 }}
+        run: |
+          $bytes = [Convert]::FromBase64String($env:SIGNING_CERT_PFX_B64)
+          [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\aavishield-signing.pfx", $bytes)
+
+      # SSL.com eSigner: the signing key lives in SSL.com's cloud, so there
+      # is no .pfx — CodeSignTool signs remotely. Pinned by hash so a
+      # changed download can't end up signing our binaries.
+      - uses: actions/setup-java@v4
+        if: env.ESIGNER_USERNAME != ''
+        with: { distribution: temurin, java-version: "17" }
+      - name: Fetch CodeSignTool
+        if: env.ESIGNER_USERNAME != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -sSfL -o "$RUNNER_TEMP/cst.zip" \
+            https://github.com/SSLcom/CodeSignTool/releases/download/v1.3.2/CodeSignTool-v1.3.2.zip
+          echo "f14b1e1ef14bfa1fd00279c363aab0debbf5dcfba0e4bcdce5d22bb771de0e3a  $RUNNER_TEMP/cst.zip" | sha256sum --check --strict
+          unzip -q "$RUNNER_TEMP/cst.zip" -d "$RUNNER_TEMP/CodeSignTool"
+          echo "CODESIGNTOOL_DIR=$RUNNER_TEMP\\CodeSignTool" >> "$GITHUB_ENV"
+
+      - name: Build .msi
+        env:
+          ESIGNER_PASSWORD: ${{ secrets.ESIGNER_PASSWORD }}
+          ESIGNER_CREDENTIAL_ID: ${{ secrets.ESIGNER_CREDENTIAL_ID }}
+          ESIGNER_TOTP_SECRET: ${{ secrets.ESIGNER_TOTP_SECRET }}
+          SIGNING_CERT_PASSWORD: ${{ secrets.SIGNING_CERT_PASSWORD }}
+          SIGNING_CERT_THUMBPRINT: ${{ secrets.SIGNING_CERT_THUMBPRINT }}
+          AAVISHIELD_ADMIN_URL: ${{ vars.AAVISHIELD_ADMIN_URL }}
+          AAVISHIELD_PORTAL_URL: ${{ vars.AAVISHIELD_PORTAL_URL }}
+        # This is the first time build-rust.ps1 has ever actually run — see
+        # its own header comment. A real Windows runner is exactly the
+        # verification this repo couldn't produce any other way; a failure
+        # here is genuine signal, not noise to route around.
+        #
+        # Invoked with `&`, not build.ps1's nested `powershell -File ...` —
+        # that first real run hit a genuine, reproducible bug in the nested
+        # form: this step already runs under pwsh (PowerShell 7), but
+        # `powershell.exe` is legacy Windows PowerShell 5.1, a different
+        # parser, and it threw "Missing closing '}'" against code that
+        # parses cleanly everywhere else (verified independently against a
+        # real PowerShell 7 parser). Calling the script directly keeps
+        # everything on the one engine already running this step, and
+        # sidesteps whatever legacy-parser incompatibility that was —
+        # never conclusively isolated, since there is no PS 5.1 anywhere
+        # this could be reproduced outside the runner itself.
+        run: |
+          if (Test-Path "$env:RUNNER_TEMP\aavishield-signing.pfx") {
+            $env:SIGNING_CERT_PFX = "$env:RUNNER_TEMP\aavishield-signing.pfx"
+          }
+          & .\packaging\windows\build-rust.ps1 -Version "${{ needs.resolve.outputs.version }}"
+
+      - name: Stage to R2
+        shell: bash # Git Bash — same script as the other two platforms
+        env:
+          STAGE_URI: s3://${{ env.R2_BUCKET }}/${{ env.R2_ROOT }}/staging/windows/${{ needs.resolve.outputs.version }}/${{ github.run_id }}
+        run: bash packaging/ci/stage-to-r2.sh dist/aavishield-agent-*.msi
+
+  # Only after the build succeeded: verifies the staged package, releases it
+  # to R2 and publishes it to admin-api, which moves only the Windows version.
+  publish:
+    needs: [resolve, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish
+        env:
+          AAVISHIELD_ADMIN_URL: ${{ secrets.AAVISHIELD_ADMIN_URL }}
+          AGENT_PACKAGE_UPLOAD_TOKEN: ${{ secrets.AGENT_PACKAGE_UPLOAD_TOKEN }}
+        run: bash packaging/ci/publish-release.sh windows "${{ needs.resolve.outputs.version }}" "${{ github.run_id }}"

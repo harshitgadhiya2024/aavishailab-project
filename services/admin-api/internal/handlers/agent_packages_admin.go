@@ -35,9 +35,13 @@ var packageFilenamePatterns = []struct {
 	platform string
 	re       *regexp.Regexp
 }{
-	{"macos", regexp.MustCompile(`^aavishield-agent-(.+)\.pkg$`)},
-	{"windows", regexp.MustCompile(`^aavishield-agent-(.+)\.msi$`)},
-	{"linux", regexp.MustCompile(`^aavishield-agent-(.+)-(?:amd64|arm64)\.deb$`)},
+	// The build scripts name packages aavishield-agent-<version>.<ext>.
+	// Releases up to 2.9.5 were named aavishield-agent-rust-<version>; that
+	// "rust-" is accepted so they still parse (and roll back to), and is
+	// never part of the version (it used to show up as "vrust-2.9.5").
+	{"macos", regexp.MustCompile(`^aavishield-agent-(?:rust-)?(.+)\.pkg$`)},
+	{"windows", regexp.MustCompile(`^aavishield-agent-(?:rust-)?(.+)\.msi$`)},
+	{"linux", regexp.MustCompile(`^aavishield-agent-(?:rust-)?(.+)-(?:amd64|arm64)\.deb$`)},
 }
 
 func filenamePlatformVersion(name string) (platform, version string, ok bool) {
@@ -75,13 +79,19 @@ func (h *AgentPackageAdminHandler) Manifest(c *gin.Context) {
 			}
 			artifacts[platform] = gin.H{
 				"filename":     name,
+				"version":      manifest.versionFor(platform),
 				"url":          base + "/agent/packages/" + name,
 				"sha256":       sum,
 				"size":         size,
 				"published_at": modTime,
 			}
 		}
+		versions := map[string]string{}
+		for platform := range manifest.Artifacts {
+			versions[platform] = manifest.versionFor(platform)
+		}
 		current["version"] = manifest.Version
+		current["versions"] = versions
 		current["artifacts"] = artifacts
 	}
 
@@ -110,9 +120,21 @@ func (h *AgentPackageAdminHandler) Manifest(c *gin.Context) {
 	var totalDevices int64
 	h.db.Table("devices").Count(&totalDevices)
 
+	// Up to date means on the version published for the device's own
+	// platform — a Windows device on 2.9.5 is current while macOS is on 2.9.6.
 	var upToDate int64
-	if v, ok := current["version"].(string); ok && v != "" {
-		h.db.Table("devices").Where("agent_version = ?", v).Count(&upToDate)
+	if manifest.Version != "" {
+		type deviceVersion struct {
+			OSType       string
+			AgentVersion string
+		}
+		var devs []deviceVersion
+		h.db.Table("devices").Select("os_type, agent_version").Scan(&devs)
+		for _, d := range devs {
+			if v := manifest.versionFor(platformForOS(d.OSType)); v != "" && d.AgentVersion == v {
+				upToDate++
+			}
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -261,11 +283,7 @@ func (h *AgentPackageAdminHandler) Rollback(c *gin.Context) {
 	defer manifestMu.Unlock()
 
 	manifest, _ := readManifest()
-	if manifest.Artifacts == nil {
-		manifest.Artifacts = map[string]string{}
-	}
-	manifest.Artifacts[req.Platform] = req.Filename
-	manifest.Version = version
+	manifest.setPlatform(req.Platform, version, req.Filename)
 	if err := writeManifest(manifest); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not write manifest"})
 		return

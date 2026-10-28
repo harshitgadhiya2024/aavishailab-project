@@ -2,12 +2,12 @@
 #
 # Uploads built packages to this run's R2 staging folder, each with a
 # `<file>.sha256` sidecar the publish job re-verifies after downloading.
-# Called by every platform job in agent-packages.yml; nothing reaches
-# production from here — the publish job does that, and only once all
-# three platforms have staged.
+# Called by the build job of agent-macos.yml / agent-windows.yml /
+# agent-linux.yml; nothing reaches production from here — that workflow's
+# publish job does that (publish-release.sh), only once the build passed.
 #
-#   STAGE_URI=s3://bucket/prefix/staging/<version>/<run id> \
-#     packaging/ci/stage-to-r2.sh dist/aavishield-agent-rust-*.pkg
+#   STAGE_URI=s3://bucket/prefix/staging/<platform>/<version>/<run id> \
+#     packaging/ci/stage-to-r2.sh dist/aavishield-agent-*.pkg
 #
 # Needs R2_ENDPOINT_URL and the AWS_* credentials in the environment.
 set -euo pipefail

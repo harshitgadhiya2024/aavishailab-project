@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aavishield/admin-api/internal/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -22,7 +23,17 @@ import (
 // Native agent packages (.pkg / .msi / .deb) are built in CI and dropped into
 // AGENT_PACKAGE_DIR alongside a manifest.json written by the build scripts:
 //
-//	{"version": "1.2.0", "artifacts": {"macos": "aavishield-agent-1.2.0.pkg", ...}}
+//	{"version": "1.3.0",
+//	 "versions":  {"macos": "1.3.0", "windows": "1.2.0", "linux": "1.2.0"},
+//	 "artifacts": {"macos": "aavishield-agent-1.3.0.pkg", ...}}
+//
+// Each platform is released on its own: a macOS-only fix ships a macOS build
+// without rebuilding (and re-signing — Windows signatures are metered) the
+// other two, so the platforms' versions drift apart. "versions" is the
+// truth; "version" is kept as the highest of them for anything still
+// reading the old single-version shape. A manifest written before
+// "versions" existed carries one release for every platform, which is
+// what versionFor falls back to.
 //
 // The manifest supplies the version and filenames; checksums are always
 // computed from the bytes on disk rather than trusted from the manifest, so a
@@ -33,7 +44,56 @@ const defaultPackageDir = "/app/agent-packages"
 
 type packageManifest struct {
 	Version   string            `json:"version"`
+	Versions  map[string]string `json:"versions,omitempty"`
 	Artifacts map[string]string `json:"artifacts"`
+}
+
+// versionFor is the published version for one platform key ("macos" /
+// "windows" / "linux"), or "" when that platform has nothing published.
+func (m packageManifest) versionFor(platform string) string {
+	if m.Artifacts[platform] == "" {
+		return ""
+	}
+	if v := m.Versions[platform]; v != "" {
+		return v
+	}
+	return m.Version
+}
+
+// setPlatform points one platform at a package and keeps the legacy
+// top-level version equal to the highest platform version.
+func (m *packageManifest) setPlatform(platform, version, filename string) {
+	if m.Artifacts == nil {
+		m.Artifacts = map[string]string{}
+	}
+	if m.Versions == nil {
+		m.Versions = map[string]string{}
+	}
+	// Pin the platforms that were riding on the old single version before
+	// it moves, so they keep reporting what they actually have.
+	for p := range m.Artifacts {
+		if m.Versions[p] == "" && m.Version != "" {
+			m.Versions[p] = m.Version
+		}
+	}
+	m.Artifacts[platform] = filename
+	m.Versions[platform] = version
+	highest := ""
+	for _, v := range m.Versions {
+		if highest == "" || versionLess(highest, v) {
+			highest = v
+		}
+	}
+	m.Version = highest
+}
+
+// platformForOS maps a device's reported os_type to a manifest platform key.
+func platformForOS(osType string) string {
+	switch p := normalizeOS(osType); p {
+	case "macos", "windows", "linux":
+		return p
+	}
+	return ""
 }
 
 type artifactInfo struct {
@@ -138,11 +198,7 @@ func publishPackageFile(c *gin.Context, fileHeader *multipart.FileHeader, platfo
 	}
 
 	manifest, _ := readManifest() // a missing/corrupt manifest just starts fresh
-	if manifest.Artifacts == nil {
-		manifest.Artifacts = map[string]string{}
-	}
-	manifest.Version = version
-	manifest.Artifacts[platform] = name
+	manifest.setPlatform(platform, version, name)
 
 	if err := writeManifest(manifest); err != nil {
 		return errors.New("could not write manifest")
@@ -204,6 +260,14 @@ func UploadAgentPackage(c *gin.Context) {
 // AgentVersion handles GET /internal/agent/version — the auto-updater's poll.
 // Returns 204 when no packages are published, which the agent treats as
 // "nothing to do" rather than an error.
+//
+// "version" is the version published for *this device's* platform, from
+// the os_type its heartbeats report. The agent compares that one number
+// against its own and then installs artifacts[its platform] — and on macOS
+// refuses a package whose inner version differs from it — so answering a
+// Mac with the Windows release's version would offer it an update that
+// can never install. A device that has not reported its OS yet gets the
+// legacy answer.
 func (h *AgentHandler) AgentVersion(c *gin.Context) {
 	deviceID, _, _ := h.authAgent(c)
 	if deviceID == uuid.Nil {
@@ -216,11 +280,19 @@ func (h *AgentHandler) AgentVersion(c *gin.Context) {
 		return
 	}
 
+	var osType string
+	h.db.Model(&models.Device{}).Select("os_type").Where("id = ?", deviceID).Scan(&osType)
+	version := manifest.Version
+	only := platformForOS(osType)
+	if only != "" {
+		version = manifest.versionFor(only)
+	}
+
 	base := strings.TrimRight(adminAPIURL(c), "/")
 	artifacts := map[string]artifactInfo{}
 	for platform, name := range manifest.Artifacts {
 		// Reject anything that would escape the package directory.
-		if name == "" || name != filepath.Base(name) {
+		if name == "" || name != filepath.Base(name) || (only != "" && platform != only) {
 			continue
 		}
 		sum, size, err := fileSHA256(filepath.Join(agentPackageDir(), name))
@@ -240,7 +312,7 @@ func (h *AgentHandler) AgentVersion(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"version":   manifest.Version,
+		"version":   version,
 		"artifacts": artifacts,
 	})
 }
@@ -263,7 +335,7 @@ func NativePackageFor(c *gin.Context, platform string) (name, url, version, sha2
 		return "", "", "", "", 0, false
 	}
 	url = strings.TrimRight(adminAPIURL(c), "/") + "/agent/packages/" + name
-	return name, url, manifest.Version, sha256sum, size, true
+	return name, url, manifest.versionFor(platform), sha256sum, size, true
 }
 
 // ServeAgentPackage handles GET /agent/packages/:file — public, because the

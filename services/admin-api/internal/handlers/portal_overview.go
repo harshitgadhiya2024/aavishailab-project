@@ -154,10 +154,7 @@ func (h *PortalHandler) overviewDevices(emp *models.Employee, now time.Time) []o
 	var devices []models.Device
 	h.db.Where("employee_id = ? AND org_id = ?", emp.ID, emp.OrgID).Order("last_seen_at DESC NULLS LAST").Find(&devices)
 
-	latest := ""
-	if m, err := readManifest(); err == nil {
-		latest = m.Version
-	}
+	manifest, _ := readManifest()
 	out := make([]overviewDevice, 0, len(devices))
 	for i := range devices {
 		dv := &devices[i]
@@ -171,7 +168,9 @@ func (h *PortalHandler) overviewDevices(emp *models.Employee, now time.Time) []o
 			od.Ownership = models.OwnershipCompany
 		}
 		od.Stale = dv.LastSeenAt == nil || now.Sub(*dv.LastSeenAt) > staleAfter
-		if latest != "" && dv.AgentVersion != "" && versionLess(dv.AgentVersion, latest) {
+		// Compared with the release for this device's own platform: a Windows
+		// release must never tell a Mac it is out of date.
+		if latest := manifest.versionFor(platformForOS(dv.OSType)); latest != "" && dv.AgentVersion != "" && versionLess(dv.AgentVersion, latest) {
 			od.LatestVersion, od.UpdateAvailable = latest, true
 		}
 		if list, ok := dv.Metadata["posture_failed"].([]any); ok {

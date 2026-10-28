@@ -39,7 +39,7 @@ ADMIN_URL="${AAVISHIELD_ADMIN_URL:-https://api.aavishield.com}"
 PORTAL_URL="${AAVISHIELD_PORTAL_URL:-https://employee.aavishield.com}"
 
 # Apple Silicon only, same known gap build.sh's own comments document for
-# the Python build (and the same one agent-packages.yml's macos job carries
+# the Python build (and the same one agent-macos.yml's build job carries
 # for the exact same reason: cross-compiling universal2 from this toolchain
 # needs Apple's SDK for the other slice, which this environment can't fetch
 # from an unofficial source). A universal2 build is a separate piece of
@@ -217,7 +217,7 @@ chmod +x "$BUILD_DIR/scripts/postinstall"
 
 # ─── 6. Build the package ──────────────────────────────────────────────────────
 PKG_RAW="$BUILD_DIR/$IDENTIFIER-raw.pkg"
-PKG_OUT="$OUT_DIR/aavishield-agent-rust-$VERSION.pkg"
+PKG_OUT="$OUT_DIR/aavishield-agent-$VERSION.pkg"
 
 echo "==> pkgbuild"
 pkgbuild --root "$ROOT_DIR" --scripts "$BUILD_DIR/scripts" \

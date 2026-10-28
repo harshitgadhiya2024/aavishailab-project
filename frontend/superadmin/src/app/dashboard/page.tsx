@@ -154,7 +154,17 @@ export default function CommandCenter() {
           <div className="mt-5 border-t border-border pt-4">
             <div className="mb-2 flex items-center justify-between text-xs">
               <span className="font-medium text-muted-foreground">Agent versions in the field</span>
-              {fl.latest_version && <span className="text-subtle">latest {fl.latest_version}</span>}
+              {fl.latest_versions && Object.keys(fl.latest_versions).length > 0 ? (
+                <span className="text-subtle">
+                  latest{" "}
+                  {(["macos", "windows", "linux"] as const)
+                    .filter((p) => fl.latest_versions[p])
+                    .map((p) => `${{ macos: "macOS", windows: "Windows", linux: "Linux" }[p]} ${fl.latest_versions[p]}`)
+                    .join(" · ")}
+                </span>
+              ) : (
+                fl.latest_version && <span className="text-subtle">latest {fl.latest_version}</span>
+              )}
             </div>
             {(fl.versions ?? []).length === 0 ? (
               <p className="text-xs text-muted-foreground">No devices yet.</p>
