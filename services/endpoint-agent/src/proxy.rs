@@ -264,7 +264,7 @@ async fn forward_plain_http(req: Request<Incoming>, host: &str, port: u16, path_
     let resp = sender.send_request(upstream_req).await.map_err(std::io::Error::other)?;
     let (resp_parts, resp_body) = resp.into_parts();
 
-    let body = match crate::scan::screen_download(deps, host, &path, &resp_parts, resp_body).await {
+    let body = match crate::scan::screen_download(deps, host, &path, &parts, &resp_parts, resp_body).await {
         crate::scan::Screened::Relay(body) => body,
         crate::scan::Screened::Block(verdict) => {
             return Ok(html_response(StatusCode::FORBIDDEN, &block_page_html(deps, host, &verdict.reason, &verdict.category)));
