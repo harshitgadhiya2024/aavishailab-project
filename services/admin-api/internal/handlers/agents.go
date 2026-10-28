@@ -830,7 +830,26 @@ func (h *AgentHandler) ScanFile(c *gin.Context) {
 	destination := c.Query("destination")
 
 	v := scanFileStream(c.Request.Context(), orgID.String(), filename, contentType, destination, spool, size)
+	h.rememberFileVerdict(v)
+	v = h.settleFileVerdict(c.Request.Context(), deviceID, orgID, empID, filename, destination, v)
 
+	c.JSON(http.StatusOK, gin.H{
+		"scanned":   v.scanned,
+		"infected":  v.infected,
+		"signature": v.signature,
+		"action":    v.action,
+		"score":     v.score,
+		"band":      v.band,
+		"verdict":   v.verdict,
+		"reason":    fileVerdictReason(v),
+	})
+}
+
+// settleFileVerdict is everything that follows a verdict for one employee's
+// download, however it was reached — a scan just now, or a cached verdict
+// for the same bytes: the employee's approved exceptions, then the incident
+// and admin alert for anything still blocked or alerted.
+func (h *AgentHandler) settleFileVerdict(ctx context.Context, deviceID, orgID uuid.UUID, empID *uuid.UUID, filename, destination string, v fileVerdict) fileVerdict {
 	// The company approved this exact file for this employee (an access
 	// request raised from the block). Matched on the file's hash, so a
 	// different file with the same name is still scanned and blocked.
@@ -870,22 +889,12 @@ func (h *AgentHandler) ScanFile(c *gin.Context) {
 			},
 			Timestamp: time.Now(),
 		}
-		if err := recordAndBroadcast(c.Request.Context(), h.db, h.hub, &event); err != nil {
+		if err := recordAndBroadcast(ctx, h.db, h.hub, &event); err != nil {
 			log.Printf("activity event not stored: %v", err)
 		}
 		h.alertAdmins(orgID, empID, "Malware blocked in a download", filename, v.signature, v.score, v.action)
 	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"scanned":   v.scanned,
-		"infected":  v.infected,
-		"signature": v.signature,
-		"action":    v.action,
-		"score":     v.score,
-		"band":      v.band,
-		"verdict":   v.verdict,
-		"reason":    fileVerdictReason(v),
-	})
+	return v
 }
 
 // fileVerdict unifies a malware scan result from either malware-service (0-100
