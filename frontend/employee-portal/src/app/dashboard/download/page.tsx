@@ -22,9 +22,6 @@ type Step = {
   title: string;
   detail: string;
   note?: string;
-  // Clears the "downloaded from the internet" mark so the OS doesn't block
-  // the installer — built from the real file name.
-  allow?: { where: string; why: string; build: (filename: string) => string };
 };
 
 const PLATFORMS: Record<OSType, {
@@ -60,15 +57,13 @@ const PLATFORMS: Record<OSType, {
     format: "Windows installer (.msi)",
     deviceOs: ["windows", "win32"],
     steps: [
+      // The .msi and the agent inside it are code-signed, so there is nothing
+      // to unblock first. A publisher new to SmartScreen can still be warned
+      // about until it builds reputation, hence the note.
       {
-        title: "Allow the installer, then open it",
-        detail: "Then double-click the downloaded .msi file in your Downloads folder.",
-        allow: {
-          where: "PowerShell",
-          why: "First, so Windows doesn't block it, open PowerShell (Start → PowerShell) and run:",
-          build: (f) => `Unblock-File "$env:USERPROFILE\\Downloads\\${f}"`,
-        },
-        note: "Skipped this and Windows showed “Windows protected your PC”? Click More info, then Run anyway.",
+        title: "Open the installer",
+        detail: "Double-click the downloaded .msi file in your Downloads folder.",
+        note: "If Windows shows “Windows protected your PC”, click More info, then Run anyway.",
       },
       { title: "Follow the setup wizard", detail: "Click Next, then Install, and choose Yes when Windows asks for permission." },
       { title: "Your device connects automatically", detail: "A browser tab opens and links this PC to your account. You don't need to do anything there." },
@@ -266,8 +261,7 @@ export default function DownloadPage() {
                       </span>
                       <div className="min-w-0 pt-1">
                         <p className="text-sm font-medium text-foreground">{step.title}</p>
-                        {step.allow && <AllowCommand why={step.allow.why} command={step.allow.build(pkg.filename)} />}
-                        <p className={cn("text-sm text-muted-foreground", step.allow ? "mt-2" : "mt-0.5")}>{step.detail}</p>
+                        <p className="mt-0.5 text-sm text-muted-foreground">{step.detail}</p>
                         {step.note && (
                           <p className="mt-2 rounded-lg border border-border bg-muted/60 px-3 py-2 text-xs text-muted-foreground">{step.note}</p>
                         )}
@@ -322,27 +316,6 @@ export default function DownloadPage() {
   );
 }
 
-function AllowCommand({ why, command }: { why: string; command: string }) {
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(command);
-      toast.success("Command copied");
-    } catch {
-      toast.error("Couldn't copy. Select it and copy manually.");
-    }
-  };
-  return (
-    <div className="mt-1">
-      <p className="mb-1.5 text-sm text-muted-foreground">{why}</p>
-      <div className="flex items-start gap-2">
-        <code className="min-w-0 flex-1 break-all rounded-lg bg-zinc-950 px-3 py-2 font-mono text-xs leading-relaxed text-green-400">{command}</code>
-        <button onClick={copy} aria-label="Copy command" className="rounded-md border border-border p-2 text-muted-foreground hover:bg-muted hover:text-foreground">
-          <Copy className="h-3.5 w-3.5" />
-        </button>
-      </div>
-    </div>
-  );
-}
 
 function Checksum({ sha256 }: { sha256: string }) {
   const [open, setOpen] = useState(false);

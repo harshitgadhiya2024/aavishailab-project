@@ -40,19 +40,17 @@ export default function Page() {
         <Step n={1} title="Download the installer">
           Employee Portal → Download Agent → Windows → download the <code>.msi</code>.
         </Step>
-        <Step n={2} title="If SmartScreen appears">
-          The installer is code-signed, but while its publisher is still new to Microsoft, Windows may show
-          "Windows protected your PC" on first run. Click <strong>More info</strong>, then <strong>Run anyway</strong>.
+        <Step n={2} title="Run the installer">
+          Double-click the downloaded <code>.msi</code> and follow the setup wizard. It's code-signed, so
+          there's nothing to unblock first. The agent installs under Program Files and starts at your next
+          login (or immediately, via the Run key). If Windows shows "Windows protected your PC", click
+          <strong> More info</strong>, then <strong>Run anyway</strong>.
         </Step>
-        <Step n={3} title="Run the installer">
-          Follow the setup wizard. The agent installs under Program Files and starts at your next login
-          (or immediately, via the Run key).
-        </Step>
-        <Step n={4} title="Finish enrolling in the browser">
+        <Step n={3} title="Finish enrolling in the browser">
           A browser tab opens automatically to connect this device to your account. Stay signed in and it
           finishes on its own.
         </Step>
-        <Step n={5} title="Check it's running">
+        <Step n={4} title="Check it's running">
           Look for the Aavishield icon in the system tray (bottom-right, click the ^ to show hidden icons).
           It also appears in <strong>Settings → Apps → Installed apps</strong> as "Aavishield Agent". Check
           the portal's My Devices page to confirm it's reporting in.
