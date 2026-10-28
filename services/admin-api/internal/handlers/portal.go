@@ -670,6 +670,14 @@ func (h *PortalHandler) ActivityStats(c *gin.Context) {
 		return
 	}
 
+	// "All" is its own count: an event can match more than one tab, so the
+	// tabs don't add up to it.
+	total, err := st.CountEvents(ctx, scope)
+	if err != nil {
+		respondStoreError(c, err)
+		return
+	}
+
 	// One count per tab, so the employee sees where their activity is.
 	bySource := map[string]int64{}
 	for _, src := range []string{"web_gateway", "dlp", "application", "malware", "device_posture", "device"} {
@@ -763,6 +771,7 @@ func (h *PortalHandler) ActivityStats(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"blocked":     blockedCount,
 		"alerted":     alertedCount,
+		"total":       total,
 		"by_source":   bySource,
 		"requests":    requests,
 		"top_blocked": topBlocked,

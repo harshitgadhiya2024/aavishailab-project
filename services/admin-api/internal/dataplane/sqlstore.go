@@ -166,7 +166,7 @@ func (s *sqlStore) eventScope(ctx context.Context, q EventQuery) *gorm.DB {
 			}
 		}
 		if len(alts) > 0 {
-			conds = append(conds, clause.Or(alts...))
+			conds = append(conds, anyOf(alts))
 		}
 	}
 	if !q.Since.IsZero() {
@@ -186,7 +186,7 @@ func (s *sqlStore) eventScope(ctx context.Context, q EventQuery) *gorm.DB {
 			}
 		}
 		if len(alts) > 0 {
-			conds = append(conds, clause.Or(alts...))
+			conds = append(conds, anyOf(alts))
 		}
 	}
 	if len(q.DomainContainsAny) > 0 {
@@ -194,7 +194,7 @@ func (s *sqlStore) eventScope(ctx context.Context, q EventQuery) *gorm.DB {
 		for _, d := range q.DomainContainsAny {
 			alts = append(alts, lowerLike("target_domain", "%"+d+"%"))
 		}
-		conds = append(conds, clause.Or(alts...))
+		conds = append(conds, anyOf(alts))
 	}
 	if q.TargetDomain != "" {
 		conds = append(conds, clause.Eq{Column: col("target_domain"), Value: q.TargetDomain})
@@ -210,6 +210,17 @@ func (s *sqlStore) eventScope(ctx context.Context, q EventQuery) *gorm.DB {
 		db = db.Clauses(clause.Where{Exprs: conds})
 	}
 	return db
+}
+
+// anyOf ORs alternatives together as one condition. A single alternative is
+// returned as is, never wrapped: GORM renders a one-element clause.Or among
+// other WHERE conditions as "... OR x" rather than "... AND x", which would
+// drop every other filter — org and employee included — for that query.
+func anyOf(alts []clause.Expression) clause.Expression {
+	if len(alts) == 1 {
+		return alts[0]
+	}
+	return clause.Or(alts...)
 }
 
 func notCategories(cats []string) clause.Expression {

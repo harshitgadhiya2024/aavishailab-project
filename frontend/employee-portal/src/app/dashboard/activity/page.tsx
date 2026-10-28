@@ -250,7 +250,8 @@ function ActivityContent() {
   }, [(session as any)?.accessToken, (session as any)?.user?.id, qc]);
 
   const bySource: Record<string, number> = stats?.by_source ?? {};
-  const allCount = Object.values(bySource).reduce((a, b) => a + (b || 0), 0);
+  // The API's own total: one event can fall under more than one tab.
+  const allCount: number = stats?.total ?? Object.values(bySource).reduce((a, b) => a + (b || 0), 0);
 
   return (
     <div className="space-y-6">
