@@ -260,6 +260,8 @@ jobs:
   windows-rust:
     needs: resolve-version
     runs-on: windows-latest
+    env:
+      ESIGNER_USERNAME: ${{ secrets.ESIGNER_USERNAME }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -274,8 +276,28 @@ jobs:
           $bytes = [Convert]::FromBase64String($env:SIGNING_CERT_PFX_B64)
           [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\aavishield-signing.pfx", $bytes)
 
+      # SSL.com eSigner: the signing key lives in SSL.com's cloud, so there
+      # is no .pfx — CodeSignTool signs remotely. Pinned by hash so a
+      # changed download can't end up signing our binaries.
+      - uses: actions/setup-java@v4
+        if: env.ESIGNER_USERNAME != ''
+        with: { distribution: temurin, java-version: "17" }
+      - name: Fetch CodeSignTool
+        if: env.ESIGNER_USERNAME != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -sSfL -o "$RUNNER_TEMP/cst.zip" \
+            https://github.com/SSLcom/CodeSignTool/releases/download/v1.3.2/CodeSignTool-v1.3.2.zip
+          echo "f14b1e1ef14bfa1fd00279c363aab0debbf5dcfba0e4bcdce5d22bb771de0e3a  $RUNNER_TEMP/cst.zip" | sha256sum --check --strict
+          unzip -q "$RUNNER_TEMP/cst.zip" -d "$RUNNER_TEMP/CodeSignTool"
+          echo "CODESIGNTOOL_DIR=$RUNNER_TEMP\\CodeSignTool" >> "$GITHUB_ENV"
+
       - name: Build .msi
         env:
+          ESIGNER_PASSWORD: ${{ secrets.ESIGNER_PASSWORD }}
+          ESIGNER_CREDENTIAL_ID: ${{ secrets.ESIGNER_CREDENTIAL_ID }}
+          ESIGNER_TOTP_SECRET: ${{ secrets.ESIGNER_TOTP_SECRET }}
           SIGNING_CERT_PASSWORD: ${{ secrets.SIGNING_CERT_PASSWORD }}
           SIGNING_CERT_THUMBPRINT: ${{ secrets.SIGNING_CERT_THUMBPRINT }}
           AAVISHIELD_ADMIN_URL: ${{ vars.AAVISHIELD_ADMIN_URL }}

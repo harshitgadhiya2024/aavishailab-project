@@ -28,6 +28,15 @@ Signing is opt-in, identical contract to build.ps1:
     $env:SIGNING_CERT_THUMBPRINT = "abc123..."   # cert in the machine store, or
     $env:SIGNING_CERT_PFX        = "C:\certs\aavishield.pfx"
     $env:SIGNING_CERT_PASSWORD   = "..."
+
+or SSL.com eSigner cloud signing (the key never leaves SSL.com), via an
+unpacked CodeSignTool:
+
+    $env:CODESIGNTOOL_DIR        = "C:\tools\CodeSignTool"
+    $env:ESIGNER_USERNAME        = "..."
+    $env:ESIGNER_PASSWORD        = "..."
+    $env:ESIGNER_CREDENTIAL_ID   = "..."
+    $env:ESIGNER_TOTP_SECRET     = "..."
 #>
 param(
     [string]$Version = "1.0.0"
@@ -72,7 +81,25 @@ if (-not (Test-Path $AgentExe)) { throw "cargo build did not produce $AgentExe" 
 
 # ─── 2. Sign the binary ───────────────────────────────────────────────────────
 function Invoke-Sign([string]$Path) {
-    if ($env:SIGNING_CERT_THUMBPRINT) {
+    if ($env:ESIGNER_USERNAME) {
+        Write-Host "==> Signing $Path (SSL.com eSigner)"
+        # CodeSignTool reads conf\code_sign_tool.properties relative to the
+        # current directory, so it has to run from its own folder.
+        Push-Location $env:CODESIGNTOOL_DIR
+        try {
+            $out = & java -jar (Get-ChildItem jar\code_sign_tool-*.jar | Select-Object -First 1).FullName sign `
+                "-username=$env:ESIGNER_USERNAME" "-password=$env:ESIGNER_PASSWORD" `
+                "-credential_id=$env:ESIGNER_CREDENTIAL_ID" "-totp_secret=$env:ESIGNER_TOTP_SECRET" `
+                "-input_file_path=$Path" -override 2>&1 | Out-String
+        } finally {
+            Pop-Location
+        }
+        Write-Host $out
+        # Its exit code isn't reliable on failure; the success line is.
+        if ($LASTEXITCODE -ne 0 -or $out -notmatch "Code signed successfully") {
+            throw "eSigner signing failed for $Path"
+        }
+    } elseif ($env:SIGNING_CERT_THUMBPRINT) {
         Write-Host "==> Signing $Path (thumbprint)"
         & signtool sign /sha1 $env:SIGNING_CERT_THUMBPRINT /fd SHA256 `
             /tr http://timestamp.digicert.com /td SHA256 $Path
