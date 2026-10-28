@@ -63,6 +63,10 @@ export function PixelPanel({ children, className = "", ref }: { children: React.
   );
 }
 
+/** Shared landing-widget frame: even 40px padding. Landing tiles lock height so loops cannot grow the box. */
+export const WIDGET_PAD = "grid w-full place-items-center overflow-hidden px-10 py-10";
+export const WIDGET_STAGE = `${WIDGET_PAD} h-[420px]`;
+
 /** Floating label with a cursor, like a teammate's pointer. Drifts gently. */
 export function AgentTag({ children, tone = "brand", className = "" }: { children: React.ReactNode; tone?: "brand" | "tint" | "ink"; className?: string }) {
   const look = tone === "brand" ? "bg-brand text-on-brand" : tone === "tint" ? "bg-brand-tint text-[#2a1406]" : "bg-ink text-ink-fg";
@@ -147,14 +151,14 @@ export function WebGatewayVisual() {
   const cur = CHECKS[idx];
   const recent = [1, 2, 3].map((k) => CHECKS[(idx - k + CHECKS.length * 2) % CHECKS.length]);
   return (
-    <PixelPanel ref={ref} className="grid min-h-[360px] place-items-center p-6 md:p-10">
+    <PixelPanel ref={ref} className={WIDGET_STAGE}>
       <UiCard title="URL checker" meta={<span className="font-mono text-[10px] text-muted">Company policy</span>} className="w-full max-w-[380px]">
         <div className={`flex items-center gap-2 rounded-[4px] border bg-bg px-3 py-2 text-sm text-fg transition-colors duration-300 ${phase === "typing" ? "border-brand/60" : "border-line"}`}>
           <MagnifyingGlass size={14} className="text-muted" />
           <span>{cur.host.slice(0, typed)}</span>
           {phase === "typing" && <Caret />}
         </div>
-        <div className="mt-3 h-[42px]">
+        <div className="mt-3 h-[42px] overflow-hidden">
           <AnimatePresence mode="wait">
             {phase === "result" ? (
               <motion.div
@@ -179,29 +183,19 @@ export function WebGatewayVisual() {
             )}
           </AnimatePresence>
         </div>
-        <ul className="mt-4 grid gap-2 border-t border-dashed border-line-strong pt-3">
-          <AnimatePresence initial={false}>
-            {recent.map((r) => (
-              <motion.li
-                key={r.host}
-                layout
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.4, ease: EASE }}
-                className="flex items-center justify-between gap-3 text-[12.5px]"
-              >
-                <span className="min-w-0 truncate text-fg">{r.host}</span>
-                <span className="flex items-center gap-2">
-                  <span className="hidden text-[11px] text-muted sm:inline">{r.cat}</span>
-                  <StatePill state={r.state} />
-                </span>
-              </motion.li>
-            ))}
-          </AnimatePresence>
+        <ul className="mt-4 grid h-[78px] grid-rows-3 content-start gap-2 overflow-hidden border-t border-dashed border-line-strong pt-3">
+          {recent.map((r, slot) => (
+            <li key={slot} className="flex min-h-0 items-center justify-between gap-3 text-[12.5px]">
+              <span className="min-w-0 truncate text-fg">{r.host}</span>
+              <span className="flex items-center gap-2">
+                <span className="hidden text-[11px] text-muted sm:inline">{r.cat}</span>
+                <StatePill state={r.state} />
+              </span>
+            </li>
+          ))}
         </ul>
       </UiCard>
-      <AgentTag className="bottom-[7%] right-[6%]">On any network</AgentTag>
+      <AgentTag className="left-6 top-1">On any network</AgentTag>
     </PixelPanel>
   );
 }
@@ -213,8 +207,8 @@ export function DlpVisual() {
   const risk = Math.round(86 * easeOut((t - 30) / 14));
   const sending = t >= 4 && t < 16;
   return (
-    <PixelPanel ref={ref} className="grid min-h-[360px] place-items-center p-6 md:p-10">
-      <UiCard title="DLP finding" meta={t >= 46 ? <motion.span {...POP}><StatePill state="flagged" /></motion.span> : <span className="font-mono text-[10px] text-muted">Scanning…</span>} className="w-full min-w-0 max-w-[400px]">
+    <PixelPanel ref={ref} className={WIDGET_STAGE}>
+      <UiCard title="DLP finding" meta={t >= 46 ? <motion.span {...POP}><StatePill state="flagged" /></motion.span> : <span className="font-mono text-[10px] text-muted">Scanning…</span>} className="w-full min-w-0 max-w-[380px]">
         {/* Wraps on narrow screens: the destination drops to its own line. */}
         <div className="flex flex-wrap items-center gap-3">
           <span className="grid size-10 place-items-center rounded-[4px] bg-[#e8f5ec] text-[#1f7a3d]">
@@ -233,11 +227,11 @@ export function DlpVisual() {
             <OpenAiLogo size={14} weight="fill" /> chatgpt.com
           </span>
         </div>
-        <div className="mt-4 flex min-h-[26px] flex-wrap gap-1.5">
+        <div className="mt-4 flex h-[56px] flex-wrap content-start gap-1.5 overflow-hidden">
           <AnimatePresence>
             {detectors.map((d, i) =>
               t >= 16 + i * 4 ? (
-                <motion.span key={d} {...POP} className="rounded-[4px] bg-bg-2 px-2 py-1 font-mono text-[10.5px] text-fg-2">
+                <motion.span key={d} {...POP} className="h-fit rounded-[4px] bg-bg-2 px-2 py-1 font-mono text-[10.5px] text-fg-2">
                   {d}
                 </motion.span>
               ) : null,
@@ -263,7 +257,7 @@ export function DlpVisual() {
           </AnimatePresence>
         </div>
       </UiCard>
-      <AgentTag tone="tint" className="bottom-[7%] left-[6%]">Reads inside files</AgentTag>
+      <AgentTag tone="tint" className="left-6 top-1">Reads inside files</AgentTag>
     </PixelPanel>
   );
 }
@@ -283,7 +277,7 @@ export function AppControlVisual() {
     { app: "NordVPN", text: "Connection blocked on build-02" },
   ];
   return (
-    <PixelPanel ref={ref} className="grid min-h-[360px] place-items-center p-6 md:p-10">
+    <PixelPanel ref={ref} className={WIDGET_STAGE}>
       <div className="w-full max-w-[380px]">
         <UiCard title="Application control" meta={<span className="font-mono text-[10px] text-muted">48 devices</span>}>
           <ul className="grid gap-1">
@@ -348,8 +342,8 @@ export function PostureVisual() {
   const scan = clamp01((t - 22) / 20);
   const scanned = t >= 42;
   return (
-    <PixelPanel ref={ref} className="grid min-h-[360px] place-items-center p-6 md:p-10">
-      <div className="grid w-full max-w-[420px] gap-3">
+    <PixelPanel ref={ref} className={WIDGET_STAGE}>
+      <div className="grid w-full max-w-[380px] gap-3">
         <UiCard title="Device posture" meta={<span className="flex items-center gap-1.5 text-[11px] text-muted"><Laptop size={13} /> ThinkPad · Rohan</span>}>
           <div className="flex items-center gap-5">
             <svg viewBox="0 0 124 70" className="w-[124px] shrink-0" aria-hidden>
@@ -397,7 +391,7 @@ export function PostureVisual() {
           </div>
         </div>
       </div>
-      <AgentTag className="bottom-[5%] right-[6%]">Scanned before it lands</AgentTag>
+      <AgentTag className="left-6 top-1">Scanned before it lands</AgentTag>
     </PixelPanel>
   );
 }

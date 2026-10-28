@@ -109,7 +109,8 @@
 }
 
 html {
-  scroll-behavior: smooth;
+  /* Instant — smooth scroll-to-top on route change leaves the new hero clipped. */
+  scroll-behavior: auto;
   -webkit-tap-highlight-color: transparent;
 }
 

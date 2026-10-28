@@ -719,10 +719,10 @@ export const AppAttemptsPanel = () => (
     base={17}
     aside="Tied to the person and device"
     rows={[
-      { title: "AnyDesk", sub: "App block · ThinkPad · Rohan", state: "blocked" },
-      { title: "uTorrent", sub: "App block · HP EliteBook · Arjun", state: "blocked" },
-      { title: "Dropbox", sub: "Network block · MacBook · Priya", state: "blocked" },
-      { title: "AnyDesk", sub: "App block · ThinkPad · Rohan", state: "blocked" },
+      { title: "AnyDesk", sub: "App block · ThinkPad · Rohan · 14:22", state: "blocked" },
+      { title: "uTorrent", sub: "App block · HP EliteBook · Arjun · 15:03", state: "blocked" },
+      { title: "Dropbox", sub: "Network block · MacBook · Priya · 15:41", state: "blocked" },
+      { title: "AnyDesk", sub: "App block · ThinkPad · Rohan · 16:08", state: "blocked" },
     ]}
   />
 );

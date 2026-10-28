@@ -9,8 +9,8 @@ import { Enter, HeadlineRise } from "./motion/enter";
  * dashboard screenshots in heroes: `visual` is always a widget (see
  * landing/hero-widgets.tsx); the live decisions feed is the default.
  *
- * Height follows the landing hero: at least one screen on desktop, between
- * 600px and 820px.
+ * Height follows the widget (420px), not the viewport, so the orange stage
+ * does not stretch into a tall empty panel beside the copy.
  */
 export function PageHero({
   eyebrow,
@@ -35,9 +35,9 @@ export function PageHero({
 }) {
   return (
     <section className="grid-band">
-      <div className="grid grid-cols-1 lg:min-h-[clamp(600px,calc(100dvh-64px),820px)] lg:grid-cols-[1.1fr_1fr] [&>*]:min-w-0">
-        <div className="relative z-10 flex flex-col justify-center px-5 py-14 sm:px-8 md:px-12 md:py-20 xl:py-24">
-          {top && <Enter className="mb-10">{top}</Enter>}
+      <div className="grid grid-cols-1 items-center lg:grid-cols-[1.1fr_1fr] [&>*]:min-w-0">
+        <div className="relative z-10 flex flex-col justify-center px-5 py-12 sm:px-8 md:px-12 md:py-16">
+          {top && <Enter className="mb-8">{top}</Enter>}
           <h1 className="max-w-[17ch] text-[2.5rem] font-normal leading-[1.04] tracking-[-0.04em] text-fg sm:text-[3.5rem] lg:text-[3.6rem] xl:text-[4.25rem]">
             {eyebrow && <H1Kicker>{eyebrow}</H1Kicker>}
             <HeadlineRise text={title} accent={accent} />
@@ -47,7 +47,7 @@ export function PageHero({
           </Enter>
           {children && <Enter delay={0.25} className="mt-9 flex flex-wrap gap-3">{children}</Enter>}
         </div>
-        <Enter delay={0.3} className="flex border-t border-line p-4 sm:p-6 md:p-8 lg:border-l lg:border-t-0 [&>*]:w-full">
+        <Enter delay={0.3} className="flex items-center border-t border-line p-5 sm:p-6 md:p-8 lg:border-l lg:border-t-0 [&>*]:w-full [&>*]:shrink-0">
           {visual ?? <FeedHero />}
         </Enter>
       </div>

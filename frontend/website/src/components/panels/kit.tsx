@@ -208,7 +208,7 @@ export function FeedPanel({ context, label, base, aside, rows, unit }: { context
           <ul className="mt-5 border-t border-line">
             {rows.map((r, i) => (
               <li
-                key={r.title + r.sub}
+                key={`${i}-${r.title}-${r.sub}`}
                 className={`flex items-center gap-4 border-b border-line py-3 last:border-b-0 transition-opacity duration-500 ${i < shown ? "opacity-100" : "opacity-0"}`}
               >
                 <span className="min-w-0 flex-1">
