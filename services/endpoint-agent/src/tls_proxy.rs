@@ -326,7 +326,7 @@ async fn relay_one(
     // Downloads stream to the browser while they are scanned — see
     // scan::screen_download.
     let (resp_parts, resp_body) = resp.into_parts();
-    let body = match crate::scan::screen_download(&deps, &host, &path, &resp_parts, resp_body).await {
+    let body = match crate::scan::screen_download(&deps, &host, &path, &parts, &resp_parts, resp_body).await {
         Screened::Relay(body) => body,
         Screened::Block(verdict) => {
             return Ok(crate::proxy::html_response(StatusCode::FORBIDDEN, &block_page_html(&deps, &host, &verdict.reason, &verdict.category)));

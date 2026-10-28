@@ -212,13 +212,24 @@ pub enum Screened {
 ///
 /// Page parts, non-2xx responses and devices not scanning downloads stream
 /// straight through untouched.
-pub async fn screen_download(deps: &Deps, host: &str, path: &str, parts: &hyper::http::response::Parts, body: hyper::body::Incoming) -> Screened {
+pub async fn screen_download(
+    deps: &Deps,
+    host: &str,
+    path: &str,
+    request: &hyper::http::request::Parts,
+    parts: &hyper::http::response::Parts,
+    body: hyper::body::Incoming,
+) -> Screened {
     use http_body_util::BodyExt;
 
     let header = |name| parts.headers.get(name).and_then(|v: &hyper::header::HeaderValue| v.to_str().ok()).unwrap_or("");
     let content_type = header(hyper::header::CONTENT_TYPE);
     let content_disposition = header(hyper::header::CONTENT_DISPOSITION);
-    if !parts.status.is_success() || !deps.gate.scans_downloads() || !is_file_download(content_type, content_disposition, path) {
+    let sec_fetch_mode = request.headers.get("sec-fetch-mode").and_then(|v| v.to_str().ok()).unwrap_or("");
+    if !parts.status.is_success()
+        || !deps.gate.scans_downloads()
+        || !is_file_download(request.method.as_str(), sec_fetch_mode, content_type, content_disposition, path)
+    {
         return Screened::Relay(body.map_err(Into::into).boxed());
     }
 
@@ -431,6 +442,9 @@ impl DownloadFile {
 /// download_scan.go), waiting at most `VERDICT_WAIT`. Fails open on every
 /// error, and never leaves a late malicious verdict unreported.
 async fn resolve_download(client: AgentClient, file: DownloadFile, done: Finished) -> Decision {
+    if done.size == 0 {
+        return Decision::Allow; // nothing to scan
+    }
     let unscanned = done.spool.as_ref().err().copied();
     match scan_hash(&client, &file, &done, unscanned).await {
         Some(HashAnswer::Known(decision)) => return notify_decision(&file, decision).await,
@@ -642,8 +656,8 @@ fn vpn_installer(filename: &str) -> Option<&'static str> {
     None
 }
 
-/// Whether a response is a file being downloaded, rather than part of a
-/// web page. Only files are sent for malware scanning.
+/// Whether a response is a file someone is downloading, rather than part of
+/// a web page or an app's API traffic. Only files are scanned.
 ///
 /// Every successful response used to be: each page's HTML, stylesheets,
 /// scripts, images and API responses were uploaded to admin-api and the
@@ -651,12 +665,32 @@ fn vpn_installer(filename: &str) -> Option<&'static str> {
 /// GitHub page — dozens of those — took 10–12s to load or timed out, and
 /// under a busy scanner every open tab stalled together (found with 50
 /// connections stuck at once). It also meant every page anyone viewed was
-/// copied to the server. A file is identified the way browsers themselves
-/// decide to save rather than render: an `attachment` disposition, a
-/// file-type extension, or a content type that isn't a page part.
-pub fn is_file_download(content_type: &str, content_disposition: &str, path: &str) -> bool {
+/// copied to the server.
+///
+/// It then went wrong the other way: "anything that is not a page part"
+/// counted as a file, so apps' binary RPCs — Cursor's api2.cursor.sh
+/// (Connect, `application/proto`), Chrome's Safe Browsing and Optimization
+/// Guide updates — were all scanned. Since 2.9.6 holds a download's last
+/// chunk until its verdict, every one of those calls stalled behind a scan
+/// (up to `VERDICT_WAIT`), the device ran into the server's concurrent-scan
+/// limit, and the dashboard filled with "Download not scanned" for traffic
+/// nobody downloaded.
+///
+/// So a file now needs positive evidence, the way a browser decides to save
+/// rather than render:
+/// - an `attachment` disposition, whatever the method (a form POST can
+///   export a file);
+/// - otherwise only a GET, with a file-type extension or a content type
+///   that is itself a file format;
+/// - a bare `application/octet-stream` — what most APIs answer with too —
+///   only when the browser navigated to it (`Sec-Fetch-Mode: navigate`):
+///   the person clicked a download link.
+pub fn is_file_download(method: &str, sec_fetch_mode: &str, content_type: &str, content_disposition: &str, path: &str) -> bool {
     if content_disposition.trim_start().to_ascii_lowercase().starts_with("attachment") {
         return true;
+    }
+    if !method.eq_ignore_ascii_case("GET") {
+        return false;
     }
 
     const FILE_EXTENSIONS: &[&str] = &[
@@ -676,27 +710,23 @@ pub fn is_file_download(content_type: &str, content_disposition: &str, path: &st
     }
 
     let mime = content_type.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
-    if mime.is_empty() {
-        return false;
+    const FILE_MIMES: &[&str] = &[
+        "application/zip", "application/x-zip-compressed", "application/x-7z-compressed", "application/x-rar-compressed",
+        "application/vnd.rar", "application/x-tar", "application/gzip", "application/x-gzip", "application/x-bzip2",
+        "application/x-xz", "application/zstd", "application/vnd.ms-cab-compressed", "application/x-iso9660-image",
+        "application/x-msdownload", "application/x-msdos-program", "application/x-ms-installer", "application/x-msi",
+        "application/vnd.microsoft.portable-executable", "application/x-dosexec", "application/x-executable",
+        "application/x-mach-binary", "application/x-apple-diskimage", "application/vnd.apple.installer+xml",
+        "application/x-debian-package", "application/vnd.debian.binary-package", "application/x-rpm",
+        "application/x-redhat-package-manager", "application/vnd.android.package-archive", "application/java-archive",
+        "application/x-sh", "application/x-shellscript", "application/pdf", "application/msword", "application/rtf",
+        "application/vnd.ms-excel", "application/vnd.ms-powerpoint", "application/onenote",
+    ];
+    if FILE_MIMES.contains(&mime.as_str()) || mime.starts_with("application/vnd.openxmlformats-officedocument.") || mime.starts_with("application/vnd.ms-") {
+        return true;
     }
-    let page_part = ["text/", "image/", "font/", "audio/", "video/", "multipart/"].iter().any(|p| mime.starts_with(p))
-        || mime.ends_with("+json")
-        || mime.ends_with("+xml")
-        || matches!(
-            mime.as_str(),
-            "application/javascript"
-                | "application/x-javascript"
-                | "application/ecmascript"
-                | "application/json"
-                | "application/xml"
-                | "application/wasm"
-                | "application/x-protobuf"
-                | "application/protobuf"
-                | "application/grpc-web"
-                | "application/grpc-web+proto"
-                | "application/x-www-form-urlencoded"
-        );
-    !page_part
+    matches!(mime.as_str(), "application/octet-stream" | "binary/octet-stream" | "application/x-download" | "application/force-download")
+        && sec_fetch_mode.eq_ignore_ascii_case("navigate")
 }
 
 /// POSTs the upload body to admin-api's DLP scanner. Fail-open: any
@@ -847,19 +877,37 @@ mod tests {
             ("application/manifest+json", "/manifest.json"),
             ("", "/"),
         ] {
-            assert!(!is_file_download(ct, "", path), "{ct} {path} should not be scanned");
+            assert!(!is_file_download("GET", "no-cors", ct, "", path), "{ct} {path} should not be scanned");
         }
     }
 
-    /// Files are, however they are marked.
+    /// The traffic that filled the dashboard with "Download not scanned"
+    /// and stalled Cursor once 2.9.6 held responses for a verdict.
+    #[test]
+    fn test_app_api_traffic_is_not_a_download() {
+        for (method, mode, ct, path) in [
+            ("POST", "", "application/proto", "/aiserver.v1.AiService/ServerTime"),
+            ("POST", "", "application/connect+proto", "/aiserver.v1.ChatService/StreamChat"),
+            ("POST", "", "application/octet-stream", "/v4/threatListUpdates:fetch"),
+            ("POST", "", "application/x-protobuf", "/v1:GetHints"),
+            ("GET", "", "application/octet-stream", "/v1/blob/abc123"),
+            ("GET", "cors", "application/octet-stream", "/api/export"),
+            ("GET", "", "application/grpc", "/svc/Method"),
+        ] {
+            assert!(!is_file_download(method, mode, ct, "", path), "{method} {ct} {path} must not be scanned");
+        }
+    }
+
     #[test]
     fn test_files_are_file_downloads() {
-        assert!(is_file_download("text/plain", "attachment; filename=\"notes.txt\"", "/dl"));
-        assert!(is_file_download("", "", "/releases/setup.EXE"));
-        assert!(is_file_download("text/html", "", "/files/report.pdf"));
-        assert!(is_file_download("application/octet-stream", "", "/download"));
-        assert!(is_file_download("application/zip", "", "/archive"));
-        assert!(is_file_download("application/x-apple-diskimage", "", "/get"));
+        assert!(is_file_download("GET", "", "text/plain", "attachment; filename=\"notes.txt\"", "/dl"));
+        assert!(is_file_download("POST", "", "text/csv", "attachment; filename=\"statement.csv\"", "/export"));
+        assert!(is_file_download("GET", "", "", "", "/releases/setup.EXE"));
+        assert!(is_file_download("GET", "", "text/html", "", "/files/report.pdf"));
+        assert!(is_file_download("GET", "navigate", "application/octet-stream", "", "/download"));
+        assert!(is_file_download("GET", "", "application/zip", "", "/archive"));
+        assert!(is_file_download("GET", "", "application/x-apple-diskimage", "", "/get"));
+        assert!(is_file_download("GET", "", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "", "/d"));
     }
 
     #[test]
