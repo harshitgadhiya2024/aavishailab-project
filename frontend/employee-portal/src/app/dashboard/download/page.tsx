@@ -42,15 +42,11 @@ const PLATFORMS: Record<OSType, {
     format: "macOS installer (.pkg)",
     deviceOs: ["darwin", "macos", "mac"],
     steps: [
+      // The .pkg is Developer ID signed and notarized, so Gatekeeper opens it
+      // without any quarantine workaround.
       {
-        title: "Allow the installer, then open it",
-        detail: "Then double-click the downloaded .pkg file in your Downloads folder.",
-        allow: {
-          where: "Terminal",
-          why: "First, so macOS doesn't block it, open Terminal (Spotlight → Terminal) and run:",
-          build: (f) => `xattr -c ~/Downloads/${f}`,
-        },
-        note: "Skipped this and macOS blocked it? Open System Settings → Privacy & Security, scroll down and click “Open Anyway”.",
+        title: "Open the installer",
+        detail: "Double-click the downloaded .pkg file in your Downloads folder.",
       },
       { title: "Follow the installer", detail: "Click Continue, then Install, and enter your Mac password when asked." },
       { title: "Your device connects automatically", detail: "A browser tab opens and links this Mac to your account. You don't need to do anything there." },

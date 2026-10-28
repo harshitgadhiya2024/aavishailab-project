@@ -11,8 +11,8 @@ export default function Page() {
       <Callout type="note" title="No code to copy or type">
         The recommended installer (the <code>.pkg</code> / <code>.msi</code> / <code>.deb</code> button on the
         Download page) auto-enrolls your device through your browser the first time it runs — as long as
-        you're signed in to the portal, there's nothing to copy or paste. The steps below also cover the
-        one permission prompt each OS shows for a new installer, since our packages aren't code-signed yet.
+        you're signed in to the portal, there's nothing to copy or paste. The macOS and Windows installers
+        are code-signed, so there's nothing to unblock first.
       </Callout>
 
       <h2>macOS</h2>
@@ -20,21 +20,16 @@ export default function Page() {
         <Step n={1} title="Download the installer">
           Sign in to the Employee Portal → Download Agent → macOS → download the <code>.pkg</code>.
         </Step>
-        <Step n={2} title="Allow it past Gatekeeper">
-          Since the package isn't code-signed yet, macOS blocks it on first open. Control-click (or
-          right-click) the downloaded <code>.pkg</code> → <strong>Open</strong> → click <strong>Open</strong> again
-          in the dialog. If macOS still refuses, go to <strong>System Settings → Privacy &amp; Security</strong>,
-          scroll down, and click <strong>Open Anyway</strong> next to the Aavishield message.
+        <Step n={2} title="Run the installer">
+          Double-click the downloaded <code>.pkg</code> and follow the on-screen steps. It's signed and
+          notarized by Apple, so macOS opens it without a warning. It installs to
+          <code>/Applications/Aavishield.app</code> and starts automatically — no reboot needed.
         </Step>
-        <Step n={3} title="Run the installer">
-          Follow the on-screen steps. It installs to <code>/Applications/Aavishield.app</code> and starts
-          automatically — no reboot needed.
-        </Step>
-        <Step n={4} title="Finish enrolling in the browser">
+        <Step n={3} title="Finish enrolling in the browser">
           A browser tab opens on its own to connect this device to your account. Stay signed in and it
           completes by itself.
         </Step>
-        <Step n={5} title="Check it's running">
+        <Step n={4} title="Check it's running">
           Look for the Aavishield icon in the menu bar (top-right, near the clock) — green means it's
           monitoring. Click it for status, or check the portal's My Devices page for this device.
         </Step>
@@ -45,9 +40,9 @@ export default function Page() {
         <Step n={1} title="Download the installer">
           Employee Portal → Download Agent → Windows → download the <code>.msi</code>.
         </Step>
-        <Step n={2} title="Allow it past SmartScreen">
-          Since the package isn't code-signed yet, Windows shows "Windows protected your PC" on first run.
-          Click <strong>More info</strong>, then <strong>Run anyway</strong>.
+        <Step n={2} title="If SmartScreen appears">
+          The installer is code-signed, but while its publisher is still new to Microsoft, Windows may show
+          "Windows protected your PC" on first run. Click <strong>More info</strong>, then <strong>Run anyway</strong>.
         </Step>
         <Step n={3} title="Run the installer">
           Follow the setup wizard. The agent installs under Program Files and starts at your next login
