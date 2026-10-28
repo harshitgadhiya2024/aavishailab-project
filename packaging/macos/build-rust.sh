@@ -201,10 +201,11 @@ CONSOLE_UID=$(id -u "$CONSOLE_USER")
 PLIST="/Library/LaunchAgents/com.aavishield.agent.plist"
 
 # pkgbuild preserves the payload's build-time ownership; the agent runs as
-# the console user via the LaunchAgent above and update.rs's
-# download_and_swap() writes its own replacement binary in place — without
-# this chown that write fails silently on a real Mac the same way it did
-# for the Python build before build.sh's own postinstall gained this line.
+# the console user via the LaunchAgent above, and update.rs's auto-update
+# swaps the bundle's Contents in place as that user — without this chown
+# that write fails on a real Mac the same way it did for the Python build
+# before build.sh's own postinstall gained this line. Auto-update relies on
+# it: a standard (non-admin) user cannot write to /Applications itself.
 chown -R "$CONSOLE_USER" /Applications/Aavishield.app 2>/dev/null || true
 
 launchctl bootout   "gui/$CONSOLE_UID/com.aavishield.agent" 2>/dev/null || true

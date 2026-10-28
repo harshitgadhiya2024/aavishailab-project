@@ -30,25 +30,48 @@ use std::time::Duration;
 /// that uses firewalld instead) exits non-zero or fails to spawn at all;
 /// both are normal and silent here, exactly as they are in inventory.rs.
 pub fn run(cmd: &str, args: &[&str], timeout: Duration) -> Option<String> {
+    let (success, out) = capture(cmd, args, timeout, false)?;
+    success.then_some(out)
+}
+
+/// Like `run`, but returns stdout followed by stderr, and returns it
+/// whatever the exit status — the bool says whether it was zero.
+///
+/// For the macOS tools that answer on stderr rather than stdout:
+/// `sysadminctl -screenLock status` logs its whole answer there, and
+/// `codesign -dv` prints the signing details there too. Through `run`
+/// those read as an empty string, which is exactly how screen lock came to
+/// be reported as "could not determine" on every Mac. `spctl --status`
+/// needs the exit status too: it exits non-zero when Gatekeeper is off,
+/// which is an answer, not a failed probe.
+pub fn run_combined(cmd: &str, args: &[&str], timeout: Duration) -> Option<(bool, String)> {
+    capture(cmd, args, timeout, true)
+}
+
+fn capture(cmd: &str, args: &[&str], timeout: Duration, with_stderr: bool) -> Option<(bool, String)> {
     use std::io::Read;
     use std::process::{Command, Stdio};
 
     let mut child = Command::new(cmd)
         .args(args)
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(if with_stderr { Stdio::piped() } else { Stdio::null() })
         .stdin(Stdio::null())
         .spawn()
         .ok()?;
 
     // stdout MUST be drained on its own thread while we wait for the exit —
-    // see the module doc for why.
-    let mut stdout = child.stdout.take()?;
-    let reader = std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        let _ = stdout.read_to_end(&mut buf);
-        buf
-    });
+    // see the module doc for why. stderr is a second pipe with the same
+    // ~64KB limit, so it gets its own thread for the same reason.
+    let drain = |mut pipe: Box<dyn Read + Send>| {
+        std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            let _ = pipe.read_to_end(&mut buf);
+            buf
+        })
+    };
+    let reader = drain(Box::new(child.stdout.take()?));
+    let err_reader = child.stderr.take().map(|e| drain(Box::new(e)));
 
     // std::process has no built-in timeout; poll, then kill. Killing closes
     // the pipe, which is also what releases the reader thread.
@@ -61,6 +84,9 @@ pub fn run(cmd: &str, args: &[&str], timeout: Duration) -> Option<String> {
                     let _ = child.kill();
                     let _ = child.wait();
                     let _ = reader.join();
+                    if let Some(r) = err_reader {
+                        let _ = r.join();
+                    }
                     tracing::debug!(command = cmd, "subprocess timed out");
                     return None;
                 }
@@ -68,16 +94,19 @@ pub fn run(cmd: &str, args: &[&str], timeout: Duration) -> Option<String> {
             }
             Err(_) => {
                 let _ = reader.join();
+                if let Some(r) = err_reader {
+                    let _ = r.join();
+                }
                 return None;
             }
         }
     };
 
-    let buf = reader.join().ok()?;
-    if !status.success() {
-        return None;
+    let mut buf = reader.join().ok()?;
+    if let Some(r) = err_reader {
+        buf.extend(r.join().ok()?);
     }
-    Some(String::from_utf8_lossy(&buf).into_owned())
+    Some((status.success(), String::from_utf8_lossy(&buf).into_owned()))
 }
 
 #[cfg(test)]
@@ -107,6 +136,12 @@ mod tests {
         // process exits would previously hang until the timeout.
         let out = run("sh", &["-c", "head -c 200000 /dev/zero | tr '\\0' 'a'"], Duration::from_secs(5));
         assert_eq!(out.map(|s| s.len()), Some(200000));
+    }
+
+    #[test]
+    fn test_run_combined_captures_stderr_and_nonzero_exit() {
+        let out = run_combined("sh", &["-c", "echo out; echo err >&2; exit 3"], Duration::from_secs(5));
+        assert_eq!(out, Some((false, "out\nerr\n".to_string())));
     }
 
     #[test]
