@@ -60,6 +60,7 @@ const config: Config = {
       },
       fontFamily: {
         sans: ["Inter", "system-ui", "sans-serif"],
+        logo: ["var(--font-sora)", "Inter", "system-ui", "sans-serif"],
       },
     },
   },

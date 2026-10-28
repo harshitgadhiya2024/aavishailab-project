@@ -24,7 +24,7 @@ export function Sidebar() {
           <BrandMark className="h-8 w-8" />
         ) : (
           <div className="min-w-0">
-            <BrandLogo className="h-[72px]" priority />
+            <BrandLogo className="text-[24px]" />
             <p className="mt-1 text-xs text-muted-foreground">Documentation</p>
           </div>
         )}

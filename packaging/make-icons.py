@@ -17,6 +17,7 @@ Writes:
   packaging/icons/aavishield-<n>.png        Linux hicolor icons (48..512) + 1024
   services/endpoint-agent/assets/mark-256.png   tray + window icon
   services/endpoint-agent/assets/logo-dark.png  window header logo
+  frontend/company-dashboard/public/brand/logo-email.png  email header logo
 
 The outputs are committed so a build never depends on this running. ICNS is
 written by hand so this works on any OS (no iconutil).
@@ -35,6 +36,8 @@ MARK_SVG = os.path.join(ROOT, "frontend", "website", "public", "brand", "mark.sv
 SORA = os.path.join(ROOT, "packaging", "icons", "fonts", "Sora[wght].ttf")
 ICON_DIR = os.path.join(ROOT, "packaging", "icons")
 ASSET_DIR = os.path.join(ROOT, "services", "endpoint-agent", "assets")
+# Served at app.aavishield.com/brand/logo-email.png.
+EMAIL_LOGO = os.path.join(ROOT, "frontend", "company-dashboard", "public", "brand", "logo-email.png")
 
 
 def trim(img):
@@ -64,8 +67,14 @@ def render(size):
 
 def logo_dark(width=840, height=280):
     """The website lockup in white on transparent, on the original 3:1
-    canvas brand.rs's test pins. Proportions are wordmark.tsx's: the mark
-    1.22em tall and 0.28em from the word."""
+    canvas brand.rs's test pins."""
+    return lockup((255, 255, 255, 255), width, height, fill=0.84, inset=None)
+
+
+def lockup(ink, width, height, fill, inset):
+    """The website lockup — proportions are wordmark.tsx's: the mark 1.22em
+    tall and 0.28em from the word — with the word in `ink`, scaled to `fill`
+    of the canvas width and centred, or placed `inset` of the width in."""
     em = 300
     font = ImageFont.truetype(SORA, em)
     font.set_variation_by_axes([600])  # SemiBold
@@ -76,13 +85,13 @@ def logo_dark(width=840, height=280):
     canvas.paste(mark, (0, (canvas.height - mark.height) // 2), mark)
     # Centre the word's ink on the mark, as the flex `items-center` does.
     ImageDraw.Draw(canvas).text((mark.width + gap, (canvas.height - (top + bottom)) // 2),
-                                "Aavishield", font=font, fill=(255, 255, 255, 255))
-    lockup = trim(canvas)
-    # Same margin the brand canvas always had: the lockup fills ~84% of the width.
-    scale = min(width * 0.84 / lockup.width, height * 0.6 / lockup.height)
-    lockup = lockup.resize((round(lockup.width * scale), round(lockup.height * scale)), Image.LANCZOS)
+                                "Aavishield", font=font, fill=ink)
+    art = trim(canvas)
+    scale = min(width * fill / art.width, height * 0.6 / art.height)
+    art = art.resize((round(art.width * scale), round(art.height * scale)), Image.LANCZOS)
     out = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-    out.paste(lockup, ((width - lockup.width) // 2, (height - lockup.height) // 2), lockup)
+    x = (width - art.width) // 2 if inset is None else round(width * inset)
+    out.paste(art, (x, (height - art.height) // 2), art)
     return out
 
 
@@ -129,6 +138,13 @@ def main():
     # 840px wide covers a ~210pt header on a 4x display.
     p = os.path.join(ASSET_DIR, "logo-dark.png")
     logo_dark().save(p, optimize=True)
+    out.append(p)
+
+    # Email header (mailer/templates.go): dark word for the white card, 3x
+    # the template's 240x80 slot, left-aligned like the row it sits in.
+    # Email clients can't render the SVG logo the web apps use.
+    p = EMAIL_LOGO
+    lockup((0x0B, 0x0B, 0x0D, 255), 720, 240, fill=0.94, inset=0.02).save(p, optimize=True)
     out.append(p)
 
     for p in out:

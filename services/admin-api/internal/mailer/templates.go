@@ -9,7 +9,7 @@ import (
 // logoURL is the hosted Aavishield logo shown at the top of every email. The
 // company dashboard serves it from /brand; MAIL_LOGO_URL overrides it.
 func logoURL() string {
-	return envOr("MAIL_LOGO_URL", "https://app.aavishield.com/brand/logo-horizontal-tagline-light.png")
+	return envOr("MAIL_LOGO_URL", "https://app.aavishield.com/brand/logo-email.png")
 }
 
 // layout wraps content in the branded shell. Table-based and inline-styled on
