@@ -396,6 +396,23 @@ type FileVerdict struct {
 	ScannedAt time.Time `gorm:"not null" json:"scanned_at"`
 }
 
+// MITMRefusal is one device reporting that an app on it refused SSL
+// inspection for a host (see handlers/mitm_learning.go). The rows decide
+// which platforms are passed through for every device of an org.
+type MITMRefusal struct {
+	ID          uuid.UUID `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()" json:"id"`
+	OrgID       uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_mitm_refusal_device_host" json:"org_id"`
+	DeviceID    uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_mitm_refusal_device_host" json:"device_id"`
+	Host        string    `gorm:"not null;uniqueIndex:idx_mitm_refusal_device_host" json:"host"`
+	Domain      string    `gorm:"not null;index" json:"domain"`
+	Reason      string    `json:"reason"`
+	DLPRelevant bool      `gorm:"not null;default:false" json:"dlp_relevant"`
+	Categorised bool      `gorm:"not null;default:false" json:"categorised"`
+	Count       int       `gorm:"not null;default:1" json:"count"`
+	FirstSeen   time.Time `gorm:"not null" json:"first_seen"`
+	LastSeen    time.Time `gorm:"not null;index" json:"last_seen"`
+}
+
 // ─── Domain Risk Assessment ───────────────────────────────────────────────────
 // Caches the computed risk score + reasoning per domain so expensive checks
 // (WHOIS lookups) aren't repeated on every visit, and so there's an audit

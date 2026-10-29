@@ -1589,6 +1589,9 @@ func (h *AgentHandler) GetMITMConfig(c *gin.Context) {
 	enabled, orgBypass := mitmSettingsFromOrg(&org)
 	bypass := append(defaultMITMBypassDomains(), orgBypass...)
 	bypass = append(bypass, sensitiveMITMBypassDomains(h.db)...)
+	// Platforms whose apps refuse inspection on this org's devices and that
+	// are not places data can leave — see mitm_learning.go.
+	bypass = append(bypass, h.learnedBypassDomains(orgID)...)
 
 	c.JSON(http.StatusOK, gin.H{
 		"enabled":        enabled,

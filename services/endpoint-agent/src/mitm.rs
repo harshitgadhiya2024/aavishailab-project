@@ -192,14 +192,31 @@ impl MitmEngine {
     ///
     /// Returns true the first time for a host, so the caller reports it
     /// once rather than on every connection.
-    pub fn learn_refused(&self, host: &str) -> bool {
+    pub fn learn_refused(&self, host: &str, reason: &'static str) -> bool {
         let host = normalize(host);
-        let mut refused = self.refused.lock().unwrap();
-        refused.retain(|_, at| at.elapsed() < REFUSED_FOR);
-        if refused.len() >= 4096 {
-            return false; // bounded; something is badly wrong, keep inspecting
+        let first = {
+            let mut refused = self.refused.lock().unwrap();
+            refused.retain(|_, at| at.elapsed() < REFUSED_FOR);
+            if refused.len() >= 4096 {
+                return false; // bounded; something is badly wrong, keep inspecting
+            }
+            refused.insert(host.clone(), Instant::now()).is_none()
+        };
+        // Tell the server, which decides whether the whole platform should be
+        // passed through for every device (admin-api mitm_learning.go) — or,
+        // where data can leave the company, tells admins about the blind spot.
+        if first {
+            if let Ok(rt) = tokio::runtime::Handle::try_current() {
+                let client = self.client.clone();
+                rt.spawn(async move {
+                    let body = serde_json::json!({"host": host, "reason": reason});
+                    if let Err(e) = client.post_json("/internal/agent/mitm-refusal", &body).await {
+                        tracing::debug!(error = %e, "could not report an inspection refusal");
+                    }
+                });
+            }
         }
-        refused.insert(host, Instant::now()).is_none()
+        first
     }
 
     /// Called when an inspected connection ends. `served` is whether it
@@ -223,7 +240,7 @@ impl MitmEngine {
             entry.0 += 1;
             !entry.2 && entry.0 >= EMPTY_LIMIT
         };
-        pinned && self.learn_refused(&key)
+        pinned && self.learn_refused(&key, "unused_connections")
     }
 
     fn refused_recently(&self, host: &str) -> bool {
@@ -289,8 +306,8 @@ mod tests {
         let e = engine(true);
         e.state.write().await.enabled = true;
         assert!(e.should_intercept("my.parallels.com").await);
-        assert!(e.learn_refused("my.parallels.com"));
-        assert!(!e.learn_refused("MY.parallels.com"), "reported once");
+        assert!(e.learn_refused("my.parallels.com", "test"));
+        assert!(!e.learn_refused("MY.parallels.com", "test"), "reported once");
         assert!(!e.should_intercept("my.parallels.com").await);
         assert!(e.should_intercept("parallels.com").await, "only that host");
     }
