@@ -21,7 +21,7 @@ in one line so nobody spends time testing it.
 | Platform | Published | Notes |
 |---|---|---|
 | Windows | **2.9.9** | 2.9.8 is the first build with fix 7; 2.9.9 adds rows q–s |
-| macOS | 2.9.7 | |
+| macOS | 2.9.9 | 2.9.8: fix 8 (verified on this Mac) · 2.9.9: fix 9 + OS roots |
 | Linux | 2.9.7 | |
 
 Entries marked **Needs Windows ≥ 2.9.6** are agent changes, so they reach
@@ -107,7 +107,7 @@ file again.
 **Expected:** no pause at the end this time.
 
 ### 3. Each platform is released on its own
-- [ ] Tested on Windows — date / Windows version / result:
+- [x] Tested on Windows — 2026-10-29 / Windows 11 Pro 26H2 ARM64 (VM): the portal offered the Windows .msi with the Windows version (2.9.5, then 2.9.8) while macOS was 2.9.7; a 2.9.5 device was not offered an update.
 
 **Server-side and CI** · fixed 2026-10-28 · PR #14
 
@@ -130,7 +130,7 @@ Windows release also changed the version that Macs saw.
    available".
 
 ### 4. Installer renamed: `aavishield-agent-<version>.msi`
-- [ ] Tested on Windows — date / Windows version / result:
+- [x] Tested on Windows — 2026-10-29 / Windows 11 Pro 26H2 ARM64 (VM): 2.9.5 (`-rust-` name) upgraded in place to 2.9.7/2.9.8. One "Aavishield Agent" entry, still enrolled, agent restarted by the service.
 
 **Needs the next Windows build** · changed 2026-10-28 · PR #14
 
@@ -183,20 +183,20 @@ could not protect a Windows PC alone:
 | r | A browser retrying a download Windows Security had removed got it on the third try. | A vanished temp copy counts as removed by antivirus, and a hash flagged once on the device is blocked at once afterwards. | 2.9.9 |
 | s | `Stop-Service` reported that stopping the service failed (it stopped about 2s later). | StopPending is reported immediately. | 2.9.9 |
 
-- [ ] Clean Windows 10/11 PC **without** the Visual C++ runtime: install the
+- [ ] (Partly, 2026-10-29 / Windows 11 Pro 26H2 ARM64 (VM): install → browser → enrolled with no prompt, in 24s. The VM has the VC++ runtime from the first test; the exe was shown not to import VCRUNTIME. Still worth one run on a truly clean PC.) Clean Windows 10/11 PC **without** the Visual C++ runtime: install the
   `.msi` from the portal. **Expected:** the agent window and a browser tab
   open on their own, and the device enrolls without any prompt from Chrome
   or Edge.
-- [ ] Right after enrolling, open https://tinder.com (or any blocked site).
+- [x] 2026-10-29 / Windows 11 Pro 26H2 ARM64 (VM): tinder.com, bumble.com and hinge.co showed "Blocked by Aavishailab"; a card/PAN CSV uploaded through Chrome was flagged as DLP within seconds. Right after enrolling, open https://tinder.com (or any blocked site).
   **Expected:** the "Blocked by <company>" page. Upload a file with a card
   number to a webmail. **Expected:** a DLP incident.
-- [ ] Download https://secure.eicar.org/eicar.com and eicar_com.zip.
+- [x] 2026-10-29 / Windows 11 Pro 26H2 ARM64 (VM): eicar.com was blocked (0 bytes, known-bad-hash) with a toast; eicar_com.zip was blocked as "Blocked by Windows Security" from 2.9.9. Download https://secure.eicar.org/eicar.com and eicar_com.zip.
   **Expected:** both blocked, plus a "Download blocked" notification.
-- [ ] Kill `aavishield-agent.exe` in Task Manager. **Expected:** it is back
+- [x] 2026-10-29 / Windows 11 Pro 26H2 ARM64 (VM): back in 2s; after a reboot the service started it at sign-in. Kill `aavishield-agent.exe` in Task Manager. **Expected:** it is back
   within about 5 seconds.
-- [ ] Publish a newer Windows version. **Expected:** within about an hour
+- [x] 2026-10-29 / Windows 11 Pro 26H2 ARM64 (VM): 2.9.8 → 2.9.9 and 2.9.9 → 2.9.10 installed themselves (download, signature and version check, msiexec) and stayed enrolled. Publish a newer Windows version. **Expected:** within about an hour
   the device updates itself and stays enrolled, with no prompt.
-- [ ] Uninstall from Settings → Apps. **Expected:** the internet still works,
+- [x] 2026-10-29 / Windows 11 Pro 26H2 ARM64 (VM): proxy reset, CA, service, files and per-user state removed, device_disconnect reported. Uninstall from Settings → Apps. **Expected:** the internet still works,
   and certmgr.msc → Trusted Root has no "Aavishield SSL Inspection CA".
 
 **Known limitation:** `curl.exe` (schannel) refuses inspected HTTPS unless
@@ -242,7 +242,7 @@ login.microsoftonline.com and login.live.com showed their real certificates.
 - [ ] Mac, agent connected: sign in to Outlook for Mac with a Microsoft 365
   work account. **Expected:** it works.
 - [ ] Parallels Desktop: sign in to the Parallels account. **Expected:** it works.
-- [ ] Teams/Slack desktop chat stays live (WebSocket) with the agent on.
+- [ ] Teams/Slack desktop chat stays live (WebSocket) with the agent on. (A WebSocket echo through an inspected host was verified on Windows 2.9.10 and macOS 2.9.8; 2.9.7 failed it.)
 
 ### 9. SSL inspection learns which platforms to leave alone
 **Server: on deploy. Agent reporting: Windows ≥ 2.9.11, macOS ≥ 2.9.9** · added 2026-10-29
