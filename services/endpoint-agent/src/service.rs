@@ -54,6 +54,8 @@ fn data_dir() -> PathBuf {
 
 windows_service::define_windows_service!(ffi_service_main, service_main);
 
+static STATUS: std::sync::OnceLock<windows_service::service_control_handler::ServiceStatusHandle> = std::sync::OnceLock::new();
+
 /// Entry point for `--service`; returns once the service has stopped.
 pub fn run() {
     if let Err(e) = windows_service::service_dispatcher::start(SERVICE_NAME, ffi_service_main) {
@@ -74,6 +76,20 @@ fn service_main(_args: Vec<OsString>) {
     let (stop_tx, stop_rx) = mpsc::channel::<()>();
     let handler = move |event| match event {
         ServiceControl::Stop | ServiceControl::Shutdown => {
+            // Report StopPending at once: until something changes, the
+            // Service Control Manager keeps saying Running, and
+            // `Stop-Service` called that a failure.
+            if let Some(status) = STATUS.get() {
+                let _ = status.set_service_status(ServiceStatus {
+                    service_type: ServiceType::OWN_PROCESS,
+                    current_state: ServiceState::StopPending,
+                    controls_accepted: ServiceControlAccept::empty(),
+                    exit_code: ServiceExitCode::Win32(0),
+                    checkpoint: 1,
+                    wait_hint: Duration::from_secs(10),
+                    process_id: None,
+                });
+            }
             let _ = stop_tx.send(());
             ServiceControlHandlerResult::NoError
         }
@@ -81,6 +97,7 @@ fn service_main(_args: Vec<OsString>) {
         _ => ServiceControlHandlerResult::NotImplemented,
     };
     let Ok(status) = service_control_handler::register(SERVICE_NAME, handler) else { return };
+    let _ = STATUS.set(status);
     let set = |state: ServiceState, accept: ServiceControlAccept| {
         let _ = status.set_service_status(ServiceStatus {
             service_type: ServiceType::OWN_PROCESS,
@@ -145,7 +162,13 @@ async fn main_loop(stop: mpsc::Receiver<()>) {
             }
             next_update = Instant::now() + UPDATE_EVERY + Duration::from_secs(rand_secs(0, 900));
         }
-        tokio::time::sleep(TICK).await;
+        // Short steps, so a stop request is answered within a moment.
+        for _ in 0..(TICK.as_millis() / 250) {
+            if stop.try_recv().is_ok() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
     }
 }
 

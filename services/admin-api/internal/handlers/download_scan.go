@@ -50,6 +50,9 @@ const (
 	maxJobsPerDevice = 4
 	// An upload that stops arriving, or a verdict nobody collects.
 	scanJobIdleTTL = 30 * time.Minute
+	// An upload with no new part for this long no longer counts against
+	// the device's limit.
+	scanJobStallTTL = 2 * time.Minute
 	scanJobTimeout = 15 * time.Minute
 	// A clean verdict can go stale as signatures update; a malicious one
 	// does not become safe.
@@ -223,7 +226,15 @@ func (h *AgentHandler) CreateScanJob(c *gin.Context) {
 	scanJobs.Lock()
 	open := 0
 	for _, j := range scanJobs.m {
-		if j.deviceID == deviceID {
+		// Only scans actually in flight count. Finished jobs (kept for
+		// scanJobIdleTTL so the verdict can still be read) and uploads the
+		// agent abandoned — a download the device's own antivirus removed
+		// mid-way — used to count too, so after four downloads in half an
+		// hour every further one went through unscanned.
+		j.mu.Lock()
+		inFlight := j.state == "scanning" || (j.state == "uploading" && time.Since(j.touched) < scanJobStallTTL)
+		j.mu.Unlock()
+		if j.deviceID == deviceID && inFlight {
 			open++
 		}
 	}
