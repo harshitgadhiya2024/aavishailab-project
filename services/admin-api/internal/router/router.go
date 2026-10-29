@@ -669,6 +669,7 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 			// Downloads of any size: hash reputation, then a chunked
 			// upload scanned in the background — see download_scan.go.
 			agent.POST("/scan-hash", agentH.ScanHash)
+			agent.POST("/mitm-refusal", agentH.ReportMITMRefusal)
 			agent.POST("/scan-jobs", agentH.CreateScanJob)
 			agent.PUT("/scan-jobs/:id/parts", agentH.UploadScanJobPart)
 			agent.POST("/scan-jobs/:id/complete", agentH.CompleteScanJob)

@@ -244,6 +244,30 @@ login.microsoftonline.com and login.live.com showed their real certificates.
 - [ ] Parallels Desktop: sign in to the Parallels account. **Expected:** it works.
 - [ ] Teams/Slack desktop chat stays live (WebSocket) with the agent on.
 
+### 9. SSL inspection learns which platforms to leave alone
+**Server: on deploy. Agent reporting: Windows ≥ 2.9.11, macOS ≥ 2.9.9** · added 2026-10-29
+
+When an app refuses inspection, the device passes that host through for a
+day (fix 8) and now also reports it (`POST /internal/agent/mitm-refusal`).
+admin-api then decides for the whole company:
+
+- **A platform where data can leave** (mail, file sharing, cloud storage,
+  chat/collaboration, AI tools, code and paste hosting, social media): never
+  bypassed automatically. Admins get an "DLP blind spot" activity event; the
+  device itself still works.
+- **Anything else:** the whole platform (the registrable domain, e.g.
+  `parallels.com`) joins every device's bypass list. That happens right away
+  for a categorised platform; an uncategorised one needs reports from two
+  devices (or two organisations), so one device can never switch
+  inspection off for an unknown domain. An "SSL inspection bypassed
+  automatically" event is logged. Entries expire 30 days after the last
+  report.
+
+- [ ] Use a pinned app on two devices. **Expected:** the second device's
+  next start never sees the failure, and the dashboard shows the event.
+- [ ] A Slack/Teams/Drive host reported. **Expected:** not bypassed for
+  everyone, and a "DLP blind spot" event appears.
+
 ### Earlier fixes (2026-09-29 → 09-30)
 - [ ] Run the full Windows checklist in [platform-verification.md](platform-verification.md#windows--not-yet-tested):
   - Web Gateway;

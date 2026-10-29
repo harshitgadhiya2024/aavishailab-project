@@ -179,7 +179,7 @@ where
             // learned at once; a handshake that just stopped counts as one
             // request-less connection.
             let refused = client_refused(&e);
-            let learned = if refused { deps.mitm.learn_refused(&host) } else { deps.mitm.note_connection(&host, false) };
+            let learned = if refused { deps.mitm.learn_refused(&host, "refused_certificate") } else { deps.mitm.note_connection(&host, false) };
             if learned {
                 tracing::warn!(%host, error = %e, "this app does not accept SSL inspection — passing its traffic through uninspected for 24 hours");
             }
@@ -203,7 +203,7 @@ where
     let first = match connect_upstream(&host, port).await {
         Ok(sender) => sender,
         Err(e) => {
-            if deps.mitm.learn_refused(&host) {
+            if deps.mitm.learn_refused(&host, "upstream_unreachable") {
                 tracing::warn!(%host, error = %e, "could not inspect this server's TLS — passing its traffic through uninspected for 24 hours");
             }
             return Err(e);
