@@ -20,7 +20,7 @@ in one line so nobody spends time testing it.
 
 | Platform | Published | Notes |
 |---|---|---|
-| Windows | **2.9.5** | 2.9.8 is the first build with fix 7 below |
+| Windows | **2.9.9** | 2.9.8 is the first build with fix 7; 2.9.9 adds rows q–s |
 | macOS | 2.9.7 | |
 | Linux | 2.9.7 | |
 
@@ -205,6 +205,44 @@ point, and schannel's revocation check fails hard without one. Browsers,
 Teams and .NET apps are not affected. The fix is a CRL endpoint in admin-api
 plus a CDP in `mitm.IssueLeafCert`. That changes the certificates every Mac
 receives too, so it is left for a separate, Mac-tested change.
+
+### 8. SSL inspection broke sign-ins and apps (all platforms)
+**Server part applies now; agent part needs Windows ≥ 2.9.10 (and the next macOS release)** · fixed 2026-10-29
+
+**Problem:** with the agent connected, logins in apps failed (Outlook for Mac
+with a Microsoft 365 account, the Parallels account setup) until the agent
+was disconnected. SSL inspection itself got in the way:
+- apps that pin certificates or use their own CA list rejected ours, every time;
+- WebSockets were never relayed through an inspected connection;
+- servers needing a client certificate (mTLS device sign-in), or an HTTP/2-only client, could not be reached;
+- the bypass list covered only two Microsoft sign-in hosts.
+
+**Now (the same principle as Zscaler/Cisco: inspection must never break traffic, DLP only logs):**
+- **Universal auto-bypass (agent):** if a client refuses our certificate (TLS
+  alert or no common protocol), closes inspected connections without using
+  them twice in 2 minutes, or the real server cannot be reached through
+  inspection (mTLS, private CA, HTTP/2 only), that host is passed through
+  untouched for 24 hours. The app's next attempt works. This uses no app
+  list; browsers trust the CA, so their traffic stays inspected.
+- **WebSockets** are relayed through inspected connections.
+- **Bypass list (admin-api)** now includes Microsoft/Apple/Google/Okta/Duo/
+  Auth0/OneLogin/Ping sign-in and device-identity hosts, Office licensing,
+  Windows SmartScreen/Defender, Parallels and Zoom. Content hosts (Outlook
+  web, OneDrive, SharePoint, Gmail, Drive) stay inspected for DLP.
+- **QUIC (UDP 443) is blocked on Windows** by the service's firewall rule,
+  so HTTP/3 falls back to TCP. Measured: with the proxy set, Chrome already
+  sent 31 connections through the agent, none direct to :443, and opened no
+  QUIC socket.
+
+Verified in the VM: a certificate-pinning client (`curl --pinnedpubkey`)
+failed 3 times, then the agent passed the host through and it got 200 (the
+limit is now 2). A WebSocket echo worked through an inspected host.
+login.microsoftonline.com and login.live.com showed their real certificates.
+
+- [ ] Mac, agent connected: sign in to Outlook for Mac with a Microsoft 365
+  work account. **Expected:** it works.
+- [ ] Parallels Desktop: sign in to the Parallels account. **Expected:** it works.
+- [ ] Teams/Slack desktop chat stays live (WebSocket) with the agent on.
 
 ### Earlier fixes (2026-09-29 → 09-30)
 - [ ] Run the full Windows checklist in [platform-verification.md](platform-verification.md#windows--not-yet-tested):

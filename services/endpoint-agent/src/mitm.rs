@@ -61,11 +61,27 @@ pub struct MitmEngine {
     ca_trusted: Arc<dyn Fn() -> bool + Send + Sync>,
     state: RwLock<MitmState>,
     leaf_cache: RwLock<HashMap<String, CachedLeaf>>,
+    /// Hosts whose client refused our certificate, and when. See
+    /// `learn_refused`.
+    refused: std::sync::Mutex<HashMap<String, Instant>>,
+    /// Per host: connections that ended without a single request, since
+    /// when, and whether any connection to it ever carried one.
+    empty: std::sync::Mutex<HashMap<String, (u32, Instant, bool)>>,
 }
+
+/// Two request-less connections within this window, to a host that has
+/// never carried a request, is an app checking our certificate after the
+/// handshake and walking away (OkHttp, NSURLSession and most pinning
+/// libraries work that way) rather than a browser preconnecting.
+const EMPTY_WINDOW: Duration = Duration::from_secs(120);
+const EMPTY_LIMIT: u32 = 2;
+
+/// How long a host whose client refused inspection is passed through.
+const REFUSED_FOR: Duration = Duration::from_secs(24 * 3600);
 
 impl MitmEngine {
     pub fn new(client: AgentClient, ca_trusted: Arc<dyn Fn() -> bool + Send + Sync>) -> Self {
-        MitmEngine { client, ca_trusted, state: RwLock::new(MitmState { enabled: false, bypass: HashSet::new() }), leaf_cache: RwLock::new(HashMap::new()) }
+        MitmEngine { client, ca_trusted, state: RwLock::new(MitmState { enabled: false, bypass: HashSet::new() }), leaf_cache: RwLock::new(HashMap::new()), refused: std::sync::Mutex::new(HashMap::new()), empty: std::sync::Mutex::new(HashMap::new()) }
     }
 
     pub async fn refresh(&self) {
@@ -137,6 +153,9 @@ impl MitmEngine {
         if let Some(s) = host.strip_prefix("www.") {
             host = s.to_string();
         }
+        if self.refused_recently(&host) {
+            return false;
+        }
         let state = self.state.read().await;
         if !state.enabled {
             return false;
@@ -158,6 +177,57 @@ impl MitmEngine {
             }
         }
         true
+    }
+
+    /// Records that the client on this device refused our certificate for
+    /// `host` during the handshake. That is what an app does when it pins
+    /// its server's certificate (Parallels, banking and VPN clients, parts
+    /// of Office), keeps its own CA list instead of the system's (Python,
+    /// Java, Node and Electron tooling), or speaks only HTTP/2 (gRPC). Each
+    /// of those failed every connection, every time, for as long as
+    /// inspection was on, so sign-ins and setups broke until someone turned
+    /// the agent off. Now the host is passed through untouched for
+    /// `REFUSED_FOR` and the app's next attempt works. A browser trusts the
+    /// CA, so it never lands here and its traffic stays inspected.
+    ///
+    /// Returns true the first time for a host, so the caller reports it
+    /// once rather than on every connection.
+    pub fn learn_refused(&self, host: &str) -> bool {
+        let host = normalize(host);
+        let mut refused = self.refused.lock().unwrap();
+        refused.retain(|_, at| at.elapsed() < REFUSED_FOR);
+        if refused.len() >= 4096 {
+            return false; // bounded; something is badly wrong, keep inspecting
+        }
+        refused.insert(host, Instant::now()).is_none()
+    }
+
+    /// Called when an inspected connection ends. `served` is whether it
+    /// carried at least one request. Returns true when this makes the
+    /// host look pinned, after `learn_refused` has recorded it.
+    pub fn note_connection(&self, host: &str, served: bool) -> bool {
+        let key = normalize(host);
+        let pinned = {
+            let mut empty = self.empty.lock().unwrap();
+            if empty.len() > 4096 {
+                empty.clear();
+            }
+            let entry = empty.entry(key.clone()).or_insert((0, Instant::now(), false));
+            if served {
+                entry.2 = true;
+                return false;
+            }
+            if entry.1.elapsed() > EMPTY_WINDOW {
+                *entry = (0, Instant::now(), entry.2);
+            }
+            entry.0 += 1;
+            !entry.2 && entry.0 >= EMPTY_LIMIT
+        };
+        pinned && self.learn_refused(&key)
+    }
+
+    fn refused_recently(&self, host: &str) -> bool {
+        self.refused.lock().unwrap().get(&normalize(host)).is_some_and(|at| at.elapsed() < REFUSED_FOR)
     }
 
     /// Returns a cached or freshly-fetched leaf for `host`. None means
@@ -205,9 +275,41 @@ fn prune_locked(cache: &mut HashMap<String, CachedLeaf>, now: Instant) {
     }
 }
 
+fn normalize(host: &str) -> String {
+    let host = host.to_lowercase();
+    host.strip_prefix("www.").map(str::to_string).unwrap_or(host)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn test_refused_host_is_passed_through_and_reported_once() {
+        let e = engine(true);
+        e.state.write().await.enabled = true;
+        assert!(e.should_intercept("my.parallels.com").await);
+        assert!(e.learn_refused("my.parallels.com"));
+        assert!(!e.learn_refused("MY.parallels.com"), "reported once");
+        assert!(!e.should_intercept("my.parallels.com").await);
+        assert!(e.should_intercept("parallels.com").await, "only that host");
+    }
+
+    #[tokio::test]
+    async fn test_request_less_connections_mark_a_pinned_host_but_not_a_used_one() {
+        let e = engine(true);
+        e.state.write().await.enabled = true;
+        assert!(!e.note_connection("pinned.example", false));
+        assert!(e.note_connection("pinned.example", false), "second empty connection");
+        assert!(!e.should_intercept("pinned.example").await);
+
+        // A browser: preconnects that go unused, but the host is used.
+        assert!(!e.note_connection("site.example", true));
+        for _ in 0..5 {
+            assert!(!e.note_connection("site.example", false));
+        }
+        assert!(e.should_intercept("site.example").await);
+    }
 
     fn engine(ca_trusted: bool) -> MitmEngine {
         let client = AgentClient::new(crate::config::test_config(), Default::default());
