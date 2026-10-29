@@ -141,6 +141,7 @@ fn init_logging() {
 
 async fn main_loop(stop: mpsc::Receiver<()>) {
     note_failed_update();
+    block_quic();
 
     let mut supervisor = Supervisor::default();
     let mut ca = CaSync::default();
@@ -202,6 +203,28 @@ fn lock_down(dir: &Path, readable_by_users: bool) -> bool {
     let children = format!("{path}\\*");
     let _ = crate::procutil::run("icacls", &[&children, "/reset", "/T", "/C", "/Q"], Duration::from_secs(30));
     ok
+}
+
+/// Outbound UDP 443 (QUIC / HTTP/3) is blocked, as Zscaler and Cisco do.
+/// Every HTTP/3 client falls back to TCP, where the agent can see it.
+/// Browsers already avoid QUIC while a proxy is set; this covers apps that
+/// would otherwise use it directly. Call media (Teams 3478-3481, Zoom
+/// 8801) uses other UDP ports and is unaffected. Removed on uninstall.
+const QUIC_RULE: &str = "Aavishield: block QUIC (UDP 443)";
+
+fn block_quic() {
+    let name = format!("name={QUIC_RULE}");
+    if crate::procutil::run("netsh", &["advfirewall", "firewall", "show", "rule", &name], Duration::from_secs(15)).is_some() {
+        return;
+    }
+    match crate::procutil::run("netsh", &["advfirewall", "firewall", "add", "rule", &name, "dir=out", "action=block", "protocol=UDP", "remoteport=443"], Duration::from_secs(15)) {
+        Some(_) => tracing::info!("blocked outbound QUIC so HTTP/3 falls back to inspectable TCP"),
+        None => tracing::warn!("could not add the QUIC firewall rule"),
+    }
+}
+
+fn unblock_quic() {
+    let _ = crate::procutil::run("netsh", &["advfirewall", "firewall", "delete", "rule", &format!("name={QUIC_RULE}")], Duration::from_secs(15));
 }
 
 // ─── 1. Keeping the agent running ────────────────────────────────────────────
@@ -645,6 +668,7 @@ pub fn uninstall_cleanup() {
     for thumb in installed_cas() {
         remove_ca(&thumb);
     }
+    unblock_quic();
     let _ = RegKey::predef(HKEY_LOCAL_MACHINE).delete_subkey_all(STATE_KEY);
     for sub in ["ca", "updates", "enroll.json"] {
         let path = data_dir().join(sub);

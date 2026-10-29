@@ -1493,6 +1493,28 @@ func defaultMITMBypassDomains() []string {
 		// end-to-end encrypted before upload, so DLP would only ever see
 		// ciphertext. Blocking WhatsApp by host is unaffected.
 		"whatsapp.net",
+		// Sign-in, device identity and licensing. Never inspected by
+		// Zscaler/Cisco-style proxies either: they pin certificates, use
+		// client certificates (mTLS) for device-bound sign-in, or are
+		// brokered by OS components with their own trust rules. Inspecting
+		// them is why "Sign in to Outlook" and app activations failed with
+		// the agent connected. Content hosts (Outlook web, OneDrive,
+		// SharePoint, Gmail, Drive) are not here and stay inspected for DLP.
+		"login.microsoft.com", "login.windows.net", "microsoftonline-p.com",
+		"msauth.net", "msftauth.net", "msauthimages.net", "msftidentity.com", "msidentity.com",
+		"account.activedirectory.windowsazure.com", "enterpriseregistration.windows.net",
+		"autologon.microsoftazuread-sso.com", "manage.microsoft.com",
+		"ols.officeapps.live.com", "nexus.officeapps.live.com", "licensing.mp.microsoft.com",
+		"sls.microsoft.com", "config.office.com", "ecs.office.com",
+		"idmsa.apple.com", "gsa.apple.com", "identity.apple.com", "albert.apple.com",
+		"push.apple.com", "ess.apple.com", "setup.icloud.com",
+		"oauth2.googleapis.com",
+		"okta.com", "oktacdn.com", "okta-emea.com", "duosecurity.com", "auth0.com",
+		"onelogin.com", "pingone.com", "pingidentity.com",
+		// Windows security services that pin (SmartScreen, Defender cloud).
+		"smartscreen.microsoft.com", "wdcp.microsoft.com", "wd.microsoft.com",
+		// Desktop apps that pin their own servers.
+		"parallels.com", "zoom.us",
 	}
 }
 

@@ -171,7 +171,21 @@ where
 {
     let server_cfg = server_tls_config(&leaf)?;
     let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(server_cfg));
-    let client_tls = acceptor.accept(io).await?;
+    let client_tls = match acceptor.accept(io).await {
+        Ok(tls) => tls,
+        Err(e) => {
+            // An explicit refusal (a TLS alert about our certificate, or no
+            // protocol in common because the client speaks only HTTP/2) is
+            // learned at once; a handshake that just stopped counts as one
+            // request-less connection.
+            let refused = client_refused(&e);
+            let learned = if refused { deps.mitm.learn_refused(&host) } else { deps.mitm.note_connection(&host, false) };
+            if learned {
+                tracing::warn!(%host, error = %e, "this app does not accept SSL inspection — passing its traffic through uninspected for 24 hours");
+            }
+            return Err(e);
+        }
+    };
 
     // The upstream connection is opened here and reopened on demand by
     // `relay_one`: the browser keeps its side of this tunnel alive far
@@ -181,19 +195,114 @@ where
     // http1::SendRequest isn't Clone/Sync — a Mutex is safe and cheap here
     // since HTTP/1.1 keep-alive on one connection is inherently one
     // request in flight at a time anyway.
-    let sender = Arc::new(Mutex::new(Some(connect_upstream(&host, port).await?)));
+    // If we cannot reach the real server the way the client would (it
+    // wants a client certificate, its certificate chains to a CA only the
+    // client trusts, it speaks only HTTP/2), the fault is ours, not the
+    // server's: pass this host through from now on, so the client's next
+    // attempt talks to the server directly and decides for itself.
+    let first = match connect_upstream(&host, port).await {
+        Ok(sender) => sender,
+        Err(e) => {
+            if deps.mitm.learn_refused(&host) {
+                tracing::warn!(%host, error = %e, "could not inspect this server's TLS — passing its traffic through uninspected for 24 hours");
+            }
+            return Err(e);
+        }
+    };
+    let sender = Arc::new(Mutex::new(Some(first)));
 
+    let served = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let deps_for_svc = deps.clone();
     let host_for_svc = host.clone();
+    let served_for_svc = served.clone();
     let service = service_fn(move |req: Request<Incoming>| {
+        served_for_svc.store(true, std::sync::atomic::Ordering::Relaxed);
         let sender = sender.clone();
         let deps = deps_for_svc.clone();
         let host = host_for_svc.clone();
         async move { relay_one(req, sender, deps, host, port).await }
     });
 
-    server_http1::Builder::new().serve_connection(TokioIo::new(client_tls), service).await.map_err(std::io::Error::other)?;
-    Ok(())
+    // with_upgrades: WebSocket connections (Teams, Outlook, Slack, ChatGPT,
+    // many sign-in pages) switch protocols mid-connection; without it the
+    // 101 response was never completed and every one of them failed.
+    let result = server_http1::Builder::new().serve_connection(TokioIo::new(client_tls), service).with_upgrades().await.map_err(std::io::Error::other);
+    if deps.mitm.note_connection(&host, served.load(std::sync::atomic::Ordering::Relaxed)) {
+        tracing::warn!(%host, "this app closes inspected connections without using them — passing its traffic through uninspected for 24 hours");
+    }
+    result
+}
+
+/// Whether a failed handshake was the client saying no to us, rather than
+/// the connection just going away.
+fn client_refused(e: &std::io::Error) -> bool {
+    use rustls::{AlertDescription as A, Error as R};
+    match e.get_ref().and_then(|inner| inner.downcast_ref::<R>()) {
+        Some(R::AlertReceived(alert)) => matches!(
+            alert,
+            A::BadCertificate | A::UnsupportedCertificate | A::CertificateRevoked | A::CertificateExpired | A::CertificateUnknown | A::UnknownCA | A::AccessDenied | A::NoApplicationProtocol | A::HandshakeFailure
+        ),
+        Some(R::NoApplicationProtocol) => true,
+        _ => false,
+    }
+}
+
+/// Relays a WebSocket (or any HTTP/1.1 Upgrade) through the inspected
+/// connection: the request goes upstream on a connection of its own, and
+/// once both sides have switched protocols the two streams are joined.
+/// Frames are not inspected — WebSocket messages are not uploads.
+async fn relay_upgrade(mut req: Request<Incoming>, host: &str, port: u16) -> Response<BoxBody> {
+    let client_upgrade = hyper::upgrade::on(&mut req);
+    let (parts, _body) = req.into_parts();
+    let path_and_query = parts.uri.path_and_query().map(|pq| pq.as_str().to_string()).unwrap_or_else(|| "/".into());
+
+    let connect = async {
+        let tcp = TcpStream::connect((host, port)).await?;
+        let connector = tokio_rustls::TlsConnector::from(upstream_tls_config());
+        let name = rustls_pki_types::ServerName::try_from(host.to_string()).map_err(std::io::Error::other)?;
+        let tls = connector.connect(name, tcp).await?;
+        let (mut sender, conn) = hyper::client::conn::http1::handshake::<_, BoxBody>(TokioIo::new(tls)).await.map_err(std::io::Error::other)?;
+        tokio::spawn(conn.with_upgrades());
+        let mut b = Request::builder().method(parts.method.clone()).uri(&path_and_query);
+        for (name, value) in parts.headers.iter() {
+            b = b.header(name, value);
+        }
+        let upstream_req = b.body(full_body(Bytes::new())).map_err(std::io::Error::other)?;
+        sender.send_request(upstream_req).await.map_err(std::io::Error::other)
+    };
+    let mut upstream_resp = match connect.await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::debug!(error = %e, %host, "upgrade request failed upstream");
+            return crate::proxy::status_response(StatusCode::BAD_GATEWAY);
+        }
+    };
+
+    if upstream_resp.status() != StatusCode::SWITCHING_PROTOCOLS {
+        // Refused upstream: hand its answer back as an ordinary response.
+        let (resp_parts, body) = upstream_resp.into_parts();
+        let body = body.map_err(Into::into).boxed();
+        return crate::proxy::relayed_response(&resp_parts, body);
+    }
+
+    let upstream_upgrade = hyper::upgrade::on(&mut upstream_resp);
+    let mut builder = Response::builder().status(StatusCode::SWITCHING_PROTOCOLS);
+    for (name, value) in upstream_resp.headers().iter() {
+        builder = builder.header(name, value);
+    }
+    let host = host.to_string();
+    tokio::spawn(async move {
+        match (client_upgrade.await, upstream_upgrade.await) {
+            (Ok(client), Ok(upstream)) => {
+                let (mut a, mut b) = (TokioIo::new(client), TokioIo::new(upstream));
+                if let Err(e) = tokio::io::copy_bidirectional(&mut a, &mut b).await {
+                    tracing::debug!(error = %e, %host, "upgraded connection ended");
+                }
+            }
+            (Err(e), _) | (_, Err(e)) => tracing::debug!(error = %e, %host, "protocol switch failed"),
+        }
+    });
+    builder.body(full_body(Bytes::new())).unwrap_or_else(|_| crate::proxy::status_response(StatusCode::BAD_GATEWAY))
 }
 
 type UpstreamSender = hyper::client::conn::http1::SendRequest<BoxBody>;
@@ -265,6 +374,9 @@ async fn relay_one(
     host: String,
     port: u16,
 ) -> Result<Response<BoxBody>, hyper::Error> {
+    if req.headers().contains_key(hyper::header::UPGRADE) {
+        return Ok(relay_upgrade(req, &host, port).await);
+    }
     let (parts, body) = req.into_parts();
     let method = parts.method.clone();
     let path = parts.uri.path().to_string();
