@@ -48,12 +48,26 @@ fn server_tls_config(leaf: &Leaf) -> std::io::Result<rustls::ServerConfig> {
     Ok(cfg)
 }
 
+/// Built once. Trusts the Mozilla roots *and* the operating system's own:
+/// with Mozilla's alone, a server whose certificate chains to a root only
+/// the OS trusts — Microsoft's private PKI behind Windows Update delivery
+/// and telemetry, or a company's own CA on its intranet — could not be
+/// reached through inspection at all (fix 8 then passed it through; now it
+/// is inspected like anything else). The browser trusts the same OS roots.
 fn upstream_tls_config() -> Arc<rustls::ClientConfig> {
-    let mut roots = rustls::RootCertStore::empty();
-    roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-    let mut cfg = rustls::ClientConfig::builder().with_root_certificates(roots).with_no_client_auth();
-    cfg.alpn_protocols = vec![b"http/1.1".to_vec()];
-    Arc::new(cfg)
+    static CONFIG: std::sync::OnceLock<Arc<rustls::ClientConfig>> = std::sync::OnceLock::new();
+    CONFIG
+        .get_or_init(|| {
+            let mut roots = rustls::RootCertStore::empty();
+            roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+            let native = rustls_native_certs::load_native_certs();
+            let (added, _) = roots.add_parsable_certificates(native.certs);
+            tracing::info!(os_roots = added, "upstream TLS trusts the operating system's roots too");
+            let mut cfg = rustls::ClientConfig::builder().with_root_certificates(roots).with_no_client_auth();
+            cfg.alpn_protocols = vec![b"http/1.1".to_vec()];
+            Arc::new(cfg)
+        })
+        .clone()
 }
 
 /// Terminates TLS using a leaf for `host` and serves a branded 403 page as

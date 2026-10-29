@@ -32,6 +32,8 @@ rustls = "0.23"
 rustls-pemfile = "2"
 rustls-pki-types = "1"
 webpki-roots = "0.26"
+# The OS trust store, for upstream verification (see tls_proxy.rs).
+rustls-native-certs = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
