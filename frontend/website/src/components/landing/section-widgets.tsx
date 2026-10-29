@@ -3,7 +3,7 @@
 import { Cpu, Robot, ScanSmiley, UploadSimple } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "motion/react";
 import { modules as allModules, type ModuleSlug } from "@/lib/content";
-import { AgentTag, LiveDot, PixelPanel, POP, StatePill, UiCard, useTimeline, type EventState } from "./visuals";
+import { AgentTag, LiveDot, PixelPanel, POP, StatePill, UiCard, useTimeline, WIDGET_PAD, type EventState } from "./visuals";
 
 /*
  * In-section widgets that replace decorative photos. Each one shows what the
@@ -13,7 +13,7 @@ import { AgentTag, LiveDot, PixelPanel, POP, StatePill, UiCard, useTimeline, typ
 
 function Stage({ children, tag, className = "" }: { children: React.ReactNode; tag?: React.ReactNode; className?: string }) {
   return (
-    <PixelPanel className={`grid h-full min-h-[380px] place-items-center p-6 md:p-10 ${className}`}>
+    <PixelPanel className={`${WIDGET_PAD} h-full min-h-[420px] ${className}`}>
       {children}
       {tag}
     </PixelPanel>
@@ -33,7 +33,7 @@ export function ThreatQueueWidget({ items, modules }: { items: { title: string }
   const caught = rows.filter((_, i) => t >= 10 + i * STEP).length;
   return (
     <div ref={ref} className="h-full">
-      <Stage tag={<AgentTag className="bottom-[5%] right-[6%]">Caught on the device</AgentTag>}>
+      <Stage tag={<AgentTag className="left-6 top-1">Caught on the device</AgentTag>}>
         <UiCard title="One laptop, one day" meta={<span className="flex items-center gap-1.5 font-mono text-[10px] text-muted"><LiveDot /> live</span>} className="w-full max-w-[400px]">
           <ul className="grid min-h-[236px] content-start gap-2">
             <AnimatePresence initial={false}>
@@ -71,7 +71,7 @@ export function DataScanWidget({ items }: { items: string[] }) {
   const { ref, t } = useTimeline(end + 26, end + 25);
   return (
     <div ref={ref} className="h-full">
-      <Stage tag={<AgentTag tone="tint" className="bottom-[5%] left-[6%]">Recorded, never blocked</AgentTag>}>
+      <Stage tag={<AgentTag tone="tint" className="left-6 top-1">Recorded, never blocked</AgentTag>}>
         <UiCard
           title="DLP scan"
           meta={<span className="flex items-center gap-1.5 font-mono text-[10px] text-muted"><UploadSimple size={12} /> outgoing upload</span>}
@@ -112,7 +112,7 @@ export function ModesWidget() {
   const { ref, t } = useTimeline(60, 59);
   return (
     <div ref={ref} className="h-full">
-      <Stage tag={<AgentTag className="bottom-[5%] right-[6%]">Policy per control</AgentTag>}>
+      <Stage tag={<AgentTag className="left-6 top-1">Policy per control</AgentTag>}>
         <UiCard title="How each control acts" className="w-full max-w-[400px]">
           <ul className="grid gap-1">
             {MODES.map(({ slug, mode }, i) => {

@@ -20,7 +20,7 @@ import type { ModuleSlug } from "@/lib/content";
 import { LogoMark } from "../wordmark";
 import { LiveFeed } from "./live-feed";
 import { DataScanWidget, ModesWidget, ThreatQueueWidget } from "./section-widgets";
-import { AgentTag, AppControlVisual, DlpVisual, LiveDot, PixelPanel, POP, PostureVisual, StatePill, UiCard, useTimeline, WebGatewayVisual } from "./visuals";
+import { AgentTag, AppControlVisual, DlpVisual, LiveDot, PixelPanel, POP, PostureVisual, StatePill, UiCard, useTimeline, WebGatewayVisual, WIDGET_PAD } from "./visuals";
 import { IsolationWidget, PolicyWidget, VpnWidget } from "./why-grid";
 
 /*
@@ -31,7 +31,7 @@ import { IsolationWidget, PolicyWidget, VpnWidget } from "./why-grid";
 
 function Stage({ children, tag }: { children: React.ReactNode; tag?: React.ReactNode }) {
   return (
-    <PixelPanel className="grid h-full min-h-[360px] place-items-center p-6 md:p-10">
+    <PixelPanel className={`${WIDGET_PAD} h-full min-h-[420px]`}>
       {children}
       {tag}
     </PixelPanel>
@@ -53,7 +53,7 @@ export function ControlsHero() {
   const { ref, t } = useTimeline(70, 69);
   return (
     <div ref={ref} className="h-full">
-      <Stage tag={<AgentTag className="bottom-[5%] right-[6%]">One agent, one policy</AgentTag>}>
+      <Stage tag={<AgentTag className="left-6 top-1">One agent, one policy</AgentTag>}>
         <UiCard title="Controls" meta={<span className="flex items-center gap-1.5 font-mono text-[10px] text-muted"><Cpu size={12} /> aavishield-agent</span>} className="w-full max-w-[380px]">
           <ul className="grid gap-0.5">
             {CONTROLS.map(({ I, n }, i) => {
@@ -91,7 +91,7 @@ export function DataTypesHero() {
   const p = Math.min(1, t / 40);
   return (
     <div ref={ref} className="h-full">
-      <Stage tag={<AgentTag tone="tint" className="bottom-[5%] left-[6%]">Reads inside files</AgentTag>}>
+      <Stage tag={<AgentTag tone="tint" className="left-6 top-1">Reads inside files</AgentTag>}>
         <UiCard title="Sensitive data found" meta={<span className="flex items-center gap-1.5 font-mono text-[10px] text-muted"><LiveDot /> This week</span>} className="w-full max-w-[380px]">
           <ul className="grid gap-2">
             {DETECTORS.map((d, i) => {
@@ -123,7 +123,7 @@ export function PlanHero() {
   const items = ["Agent for macOS, Windows and Linux", "Admin console", "Employee self-enrollment", "Data Loss Prevention"];
   return (
     <div ref={ref} className="h-full">
-      <Stage tag={<AgentTag className="bottom-[5%] right-[6%]">Priced per device</AgentTag>}>
+      <Stage tag={<AgentTag className="left-6 top-1">Priced per device</AgentTag>}>
         <UiCard title="Your quote" meta={<span className="font-mono text-[10px] text-muted">Billed annually</span>} className="w-full max-w-[360px]">
           <div className="grid grid-cols-3 gap-1 rounded-[4px] bg-bg-2 p-1 text-center text-[12px]">
             {["Essentials", "Business", "Enterprise"].map((pl) => (
@@ -169,7 +169,7 @@ export function RolloutHero() {
   const done = Math.min(ROLLOUT.length, Math.floor(t / 8));
   return (
     <div ref={ref} className="h-full">
-      <Stage tag={<AgentTag className="bottom-[5%] right-[6%]">Live in an afternoon</AgentTag>}>
+      <Stage tag={<AgentTag className="left-6 top-1">Live in an afternoon</AgentTag>}>
         <UiCard title="Rollout" meta={<span className="font-mono text-[10px] tabular-nums text-muted">{done} / {ROLLOUT.length}</span>} className="w-full max-w-[360px]">
           <ol className="relative grid gap-3">
             <span aria-hidden className="absolute bottom-2 left-[9px] top-2 w-px bg-line" />
@@ -207,7 +207,7 @@ export function ConsolidateHero() {
   const { ref, t } = useTimeline(60, 59);
   return (
     <div ref={ref} className="h-full">
-      <Stage tag={<AgentTag className="bottom-[5%] right-[6%]">One console</AgentTag>}>
+      <Stage tag={<AgentTag className="left-6 top-1">One console</AgentTag>}>
         <div className="grid w-full max-w-[360px] gap-3">
           <UiCard title="Before" meta={<span className="font-mono text-[10px] text-muted">4 tools</span>}>
             <ul className="grid gap-1.5">
@@ -222,17 +222,19 @@ export function ConsolidateHero() {
               })}
             </ul>
           </UiCard>
-          <AnimatePresence>
-            {t >= 22 && (
-              <motion.div {...POP} className="flex items-center gap-3 rounded-[6px] bg-brand px-4 py-3.5 text-on-brand">
-                <Cpu size={22} />
-                <span>
-                  <span className="block text-sm">aavishield-agent</span>
-                  <span className="block font-mono text-[10.5px] uppercase tracking-[0.06em] opacity-80">Replaces all four</span>
-                </span>
-              </motion.div>
-            )}
-          </AnimatePresence>
+          <div className="h-[60px]">
+            <AnimatePresence>
+              {t >= 22 && (
+                <motion.div {...POP} className="flex h-full items-center gap-3 rounded-[6px] bg-brand px-4 py-3.5 text-on-brand">
+                  <Cpu size={22} />
+                  <span>
+                    <span className="block text-sm">aavishield-agent</span>
+                    <span className="block font-mono text-[10.5px] uppercase tracking-[0.06em] opacity-80">Replaces all four</span>
+                  </span>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
       </Stage>
     </div>
@@ -254,7 +256,7 @@ export function FaqHero() {
   const typed = q.slice(0, Math.min(q.length, local * 2));
   return (
     <div ref={ref} className="h-full">
-      <Stage tag={<AgentTag tone="tint" className="bottom-[5%] left-[6%]">Straight answers</AgentTag>}>
+      <Stage tag={<AgentTag tone="tint" className="left-6 top-1">Straight answers</AgentTag>}>
         <UiCard title="Ask Aavishield" meta={<span className="font-mono text-[10px] text-muted">{idx + 1} / {QA.length}</span>} className="w-full max-w-[380px]">
           <div className="ml-auto w-fit max-w-[90%] rounded-[6px] rounded-br-[2px] bg-brand px-3 py-2 text-[13px] text-on-brand">
             {typed}
@@ -294,7 +296,7 @@ export function ActivityVisual() {
   const shown = Math.min(BLOCKS.length, Math.floor(t / 5));
   return (
     <div ref={ref} className="h-full">
-      <Stage tag={<AgentTag tone="ink" className="bottom-[5%] right-[6%]">Only where you choose</AgentTag>}>
+      <Stage tag={<AgentTag tone="ink" className="left-6 top-1">Only where you choose</AgentTag>}>
         <UiCard title="Activity timeline" meta={<span className="flex items-center gap-1.5 text-[11px] text-muted"><Laptop size={13} /> MacBook · Ananya</span>} className="w-full max-w-[400px]">
           <div className="flex h-7 overflow-hidden rounded-[4px] bg-bg-2">
             {BLOCKS.map((b, i) => (
@@ -341,7 +343,7 @@ export function ModuleVisual({ slug }: { slug: ModuleSlug }) {
       return <AppControlVisual />;
     case "vpn-control":
       return (
-        <Stage tag={<AgentTag tone="ink" className="bottom-[5%] right-[6%]">Blocked by default</AgentTag>}>
+        <Stage tag={<AgentTag tone="ink" className="left-6 top-1">Blocked by default</AgentTag>}>
           <VpnWidget />
         </Stage>
       );
@@ -356,7 +358,7 @@ export function ModuleVisual({ slug }: { slug: ModuleSlug }) {
 /** Solutions overview: the landing page's live decisions feed. */
 export function FeedHero() {
   return (
-    <Stage tag={<AgentTag className="left-6 top-4">Aavishield agent</AgentTag>}>
+    <Stage tag={<AgentTag className="left-6 top-1">Aavishield agent</AgentTag>}>
       <LiveFeed className="w-full max-w-[400px]" />
     </Stage>
   );
@@ -373,7 +375,7 @@ function CategoryVisual() {
   const { ref, t } = useTimeline(50, 49);
   return (
     <div ref={ref} className="h-full">
-      <Stage tag={<AgentTag className="bottom-[5%] right-[6%]">Working hours</AgentTag>}>
+      <Stage tag={<AgentTag className="left-6 top-1">Working hours</AgentTag>}>
         <UiCard title="Web categories" meta={<span className="font-mono text-[10px] text-muted">Company policy</span>} className="w-full max-w-[380px]">
           <ul className="grid gap-0.5">
             {cats.map((c, i) => {
@@ -408,7 +410,7 @@ export function SolutionsFeedHero({ kind, slug }: { kind: "all" | "solution" | "
           "compliance-audit-readiness": <PostureVisual />,
           "shadow-it": <AppControlVisual />,
           "vpn-and-proxy-bypass": (
-            <Stage tag={<AgentTag tone="ink" className="bottom-[5%] right-[6%]">Blocked by default</AgentTag>}>
+            <Stage tag={<AgentTag tone="ink" className="left-6 top-1">Blocked by default</AgentTag>}>
               <VpnWidget />
             </Stage>
           ),
@@ -452,7 +454,7 @@ export function SolutionsFeedHero({ kind, slug }: { kind: "all" | "solution" | "
 /** Security: the signed policy bundle above company isolation. */
 export function TrustHero() {
   return (
-    <Stage tag={<AgentTag className="bottom-[5%] right-[6%]">Verified on the device</AgentTag>}>
+    <Stage tag={<AgentTag className="left-6 top-1">Verified on the device</AgentTag>}>
       <div className="grid w-full max-w-[300px] gap-4">
         <PolicyWidget />
         <IsolationWidget />
@@ -489,7 +491,7 @@ export function HubHero() {
   const done = typed.length === q.length;
   return (
     <div ref={ref} className="h-full">
-      <Stage tag={<AgentTag tone="tint" className="bottom-[5%] right-[6%]">Answers in one search</AgentTag>}>
+      <Stage tag={<AgentTag tone="tint" className="left-6 top-1">Answers in one search</AgentTag>}>
         <UiCard title="Knowledge hub" meta={<span className="font-mono text-[10px] text-muted">{idx + 1} / {SEARCHES.length}</span>} className="w-full max-w-[380px]">
           <div className="flex items-center gap-2 rounded-[4px] border border-line-strong bg-bg px-3 py-2 text-[13px] text-fg">
             <MagnifyingGlass size={14} className="text-muted" />
@@ -528,7 +530,7 @@ export function BlogHero() {
   const shown = Math.min(POSTS.length, Math.floor(t / 10) + 1);
   return (
     <div ref={ref} className="h-full">
-      <Stage tag={<AgentTag className="left-6 top-4">From the team</AgentTag>}>
+      <Stage tag={<AgentTag className="left-6 top-1">From the team</AgentTag>}>
         <UiCard title="Aavishield blog" meta={<LiveDot />} className="w-full max-w-[380px]">
           <ul className="grid min-h-[222px] content-start gap-2">
             <AnimatePresence initial={false}>

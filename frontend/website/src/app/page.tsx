@@ -309,7 +309,7 @@ export default function Home() {
               <GridHeading label="How it works" title="Three Steps To Protection, Zero Workflow Disruption" />
             </div>
             <Reveal className="mx-5 mt-10 sm:mx-8 md:mx-12">
-              <PixelPanel className="px-4 py-8 md:px-8">
+              <PixelPanel className="px-10 py-10">
                 <FlowDiagram />
               </PixelPanel>
             </Reveal>
