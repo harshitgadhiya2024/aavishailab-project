@@ -263,6 +263,13 @@ admin-api then decides for the whole company:
   automatically" event is logged. Entries expire 30 days after the last
   report.
 
+Also in the same agent release: upstream verification trusts the
+operating system's roots as well as Mozilla's. Before, servers behind a root
+only the OS trusts could not be inspected: Windows Update delivery
+optimisation (`*.do.dsp.mp.microsoft.com`), telemetry, and any company
+intranet on a private CA. In the VM, fix 8's auto-bypass had to step in for
+six such hosts in 40 minutes. They are now inspected and answer 200.
+
 - [ ] Use a pinned app on two devices. **Expected:** the second device's
   next start never sees the failure, and the dashboard shows the event.
 - [ ] A Slack/Teams/Drive host reported. **Expected:** not bypassed for
