@@ -1515,6 +1515,16 @@ func defaultMITMBypassDomains() []string {
 		"smartscreen.microsoft.com", "wdcp.microsoft.com", "wd.microsoft.com",
 		// Desktop apps that pin their own servers.
 		"parallels.com", "zoom.us",
+		// Apple, whole domains. Apple's own services pin certificates, and
+		// Apple documents that they fail behind TLS inspection. The App
+		// Store opens dozens of different hosts for one download; learning
+		// them one failed connection at a time (the agent's auto-bypass)
+		// still broke the download, because the store gives up on the
+		// first failure. Pinned, so DLP could never see this traffic anyway.
+		"apple.com", "icloud.com", "icloud-content.com", "mzstatic.com", "apple-cloudkit.com",
+		"aaplimg.com", "apple.news", "itunes.com", "apple-mapkit.com",
+		// The same for the Microsoft Store and Windows delivery/licensing.
+		"mp.microsoft.com",
 	}
 }
 
