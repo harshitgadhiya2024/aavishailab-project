@@ -150,13 +150,62 @@ pub async fn install_if_needed(client: &AgentClient) {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub async fn install_if_needed(_client: &AgentClient) {
-    // Linux/Windows: see this module's doc comment. mitm_ca_trusted()
-    // stays false forever on these platforms until they get their own
-    // implementation, and everything downstream already treats that as
-    // "stay in blind-tunnel mode" — the same fail-open this had before
-    // this file existed at all.
+    // Linux: see this module's doc comment. mitm_ca_trusted() stays false
+    // until it gets its own implementation, and everything downstream
+    // already treats that as "stay in blind-tunnel mode".
+}
+
+/// Windows: the agent runs as the signed-in person, who cannot add a root
+/// to the machine store, and the per-user store would ask them to click
+/// through a security warning. The Aavishield service (service.rs, running
+/// as SYSTEM) installs the org CA into LocalMachine\Root instead. All this
+/// side does is learn which certificate is this org's, so `windows_trusted`
+/// can tell whether the service has put it there yet.
+#[cfg(target_os = "windows")]
+pub async fn install_if_needed(client: &AgentClient) {
+    if windows_trusted() {
+        return;
+    }
+    let pem = match client.get("/internal/agent/ca-cert").await {
+        Ok(resp) if resp.status().is_success() => resp.text().await.unwrap_or_default(),
+        Ok(resp) => {
+            tracing::debug!(status = %resp.status(), "CA certificate not available yet");
+            return;
+        }
+        Err(e) => {
+            tracing::debug!(error = %e, "could not fetch the CA certificate");
+            return;
+        }
+    };
+    match thumbprint(&pem) {
+        Some(t) => *ORG_CA_THUMBPRINT.lock().unwrap() = Some(t),
+        None => tracing::warn!("the server's CA certificate could not be parsed"),
+    }
+}
+
+#[cfg(target_os = "windows")]
+static ORG_CA_THUMBPRINT: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// True once this org's CA is a trusted root for the whole machine. Read
+/// from HKLM, which only an administrator or SYSTEM can write, so nothing
+/// the signed-in person does can make this lie.
+#[cfg(target_os = "windows")]
+pub fn windows_trusted() -> bool {
+    let Some(thumb) = ORG_CA_THUMBPRINT.lock().unwrap().clone() else { return false };
+    winreg::RegKey::predef(winreg::enums::HKEY_LOCAL_MACHINE)
+        .open_subkey(format!("SOFTWARE\\Microsoft\\SystemCertificates\\ROOT\\Certificates\\{thumb}"))
+        .is_ok()
+}
+
+/// SHA-1 of the first certificate's DER, upper-case hex — the name Windows
+/// files a certificate under in its stores.
+#[cfg(target_os = "windows")]
+pub fn thumbprint(pem: &str) -> Option<String> {
+    use sha1::{Digest, Sha1};
+    let der = rustls_pemfile::certs(&mut pem.as_bytes()).next()?.ok()?;
+    Some(hex::encode_upper(Sha1::digest(der.as_ref())))
 }
 
 /// Adds the certificate as a trusted root to the current user's login

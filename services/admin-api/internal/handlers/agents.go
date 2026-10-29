@@ -396,6 +396,15 @@ func (h *AgentHandler) Heartbeat(c *gin.Context) {
 	if v := strings.TrimSpace(req.AgentVer); v != "" {
 		updates["agent_version"] = v
 	}
+	// Enrolment never carried the OS version, so every device row had it
+	// blank. Heartbeats do, top-level or inside posture; same rule as above.
+	osVersion := strings.TrimSpace(req.OSVersion)
+	if osVersion == "" && req.Posture != nil {
+		osVersion = strings.TrimSpace(req.Posture.OSVersion)
+	}
+	if osVersion != "" {
+		updates["os_version"] = osVersion
+	}
 
 	// Posture + GeoIP enrichment via posture-service (best-effort — a heartbeat
 	// must never fail because the enrichment service is briefly unavailable).

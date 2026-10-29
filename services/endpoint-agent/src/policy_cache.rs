@@ -102,9 +102,15 @@ impl PolicyCache {
             index.entry(domain).or_default().push(rule);
         }
         let n: usize = index.values().map(|v| v.len()).sum();
+        let before: usize = self.by_domain.read().unwrap().values().map(|v| v.len()).sum();
+        let first = !*self.loaded.read().unwrap();
         *self.by_domain.write().unwrap() = index;
         *self.loaded.write().unwrap() = true;
-        tracing::info!(rule_count = n, "policy cache loaded");
+        // This refreshes every few seconds; logging each one filled the
+        // log with thousands of identical lines a day.
+        if first || n != before {
+            tracing::info!(rule_count = n, "policy cache loaded");
+        }
     }
 
     /// Returns the matching rule, or None if no rule applies (allow).

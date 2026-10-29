@@ -20,6 +20,11 @@
 //! (written by the background thread) once per frame. Neither ever calls
 //! into the other directly.
 
+// A windowed app on Windows, not a console one: started as a console app it
+// opened a black terminal beside the agent, and closing that terminal
+// killed protection. Logs go to a file there instead (see `init_logging`).
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 // SIGUSR1 (a second launch asking this instance to show itself) reaches
 // the tray's ShowSignal through a self-pipe: the handler writes one byte,
 // and a plain thread blocked on the read end turns that into
@@ -94,6 +99,27 @@ fn forward_sigusr1_to(show: aavishield_agent::tray::ShowSignal) {
     }
 }
 
+/// Logs to stdout, which launchd and systemd capture. A Windows GUI app
+/// has no stdout, so there it is %USERPROFILE%\.aavishield\agent.log,
+/// restarted once it passes 5 MB.
+fn init_logging() {
+    let filter = || tracing_subscriber::EnvFilter::from_default_env().add_directive("aavishield_agent=info".parse().unwrap());
+    #[cfg(windows)]
+    {
+        let dir = aavishield_agent::config::state_dir();
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("agent.log");
+        if std::fs::metadata(&path).map(|m| m.len() > 5 * 1024 * 1024).unwrap_or(false) {
+            let _ = std::fs::rename(&path, dir.join("agent.old.log"));
+        }
+        if let Ok(file) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+            tracing_subscriber::fmt().with_ansi(false).with_writer(std::sync::Mutex::new(file)).with_env_filter(filter()).init();
+            return;
+        }
+    }
+    tracing_subscriber::fmt().with_env_filter(filter()).init();
+}
+
 /// Raises the open-file-descriptor limit to what a forward proxy actually
 /// needs.
 ///
@@ -137,9 +163,16 @@ fn raise_file_descriptor_limit() {
 }
 
 fn main() {
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env().add_directive("aavishield_agent=info".parse().unwrap()))
-        .init();
+    // The Windows service and the uninstaller's cleanup step are the same
+    // binary, started by the Service Control Manager and by msiexec.
+    #[cfg(windows)]
+    match std::env::args().nth(1).as_deref() {
+        Some("--service") => return aavishield_agent::service::run(),
+        Some("--uninstall-cleanup") => return aavishield_agent::service::uninstall_cleanup(),
+        _ => {}
+    }
+
+    init_logging();
 
     // Opening the app from Spotlight/Launchpad/the Dock while a
     // LaunchAgent-started instance is already running would otherwise

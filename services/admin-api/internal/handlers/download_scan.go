@@ -114,6 +114,22 @@ func (h *AgentHandler) ScanHash(c *gin.Context) {
 		return
 	}
 
+	// &detected=<engine>: the device's own antivirus refused the file
+	// before it could be uploaded (Windows Security quarantines the
+	// agent's temporary copy of a download it recognises). That is a
+	// verdict, so it is blocked and logged like one — but only for this
+	// device. It is not cached as the hash's reputation: one device's
+	// claim must not be able to block a file for every company.
+	if engine := c.Query("detected"); engine != "" {
+		v := fileVerdict{
+			scanned: true, infected: true, score: 100, band: "block", action: "block", verdict: "malware",
+			signature: "Blocked by " + sanitizeEngine(engine), sha256: sha,
+		}
+		v = h.settleFileVerdict(c.Request.Context(), deviceID, orgID, empID, filename, destination, v)
+		c.JSON(http.StatusOK, gin.H{"known": true, "action": v.action, "reason": fileVerdictReason(v)})
+		return
+	}
+
 	if why := c.Query("unscanned"); why != "" {
 		event := models.ActivityEvent{
 			OrgID: orgID, EmployeeID: empID, DeviceID: &deviceID,
@@ -352,4 +368,21 @@ func (h *AgentHandler) GetScanJob(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"state": j.state, "scanned": j.verdict.scanned, "action": j.verdict.action, "reason": fileVerdictReason(j.verdict)})
+}
+
+// sanitizeEngine keeps an agent-reported antivirus name printable and short.
+func sanitizeEngine(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if b.Len() >= 40 {
+			break
+		}
+		if r == ' ' || r == '-' || r == '.' || (r >= '0' && r <= '9') || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+			b.WriteRune(r)
+		}
+	}
+	if b.Len() == 0 {
+		return "device antivirus"
+	}
+	return b.String()
 }

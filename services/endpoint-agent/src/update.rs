@@ -299,7 +299,7 @@ fn platform_key() -> &'static str {
 /// leading digits of each chunk (so "1.0.0-rust" reads as [1, 0, 0], the
 /// trailing "-rust" contributing nothing), pad the shorter to the longer's
 /// length with zeros, compare lexicographically.
-fn version_gt(a: &str, b: &str) -> bool {
+pub(crate) fn version_gt(a: &str, b: &str) -> bool {
     fn parts(v: &str) -> Vec<u64> {
         v.split('.').map(|chunk| chunk.chars().take_while(|c| c.is_ascii_digit()).collect::<String>().parse().unwrap_or(0)).collect()
     }

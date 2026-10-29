@@ -10,18 +10,14 @@ Requires a Rust toolchain and WiX Toolset v3 (candle.exe / light.exe) on
 PATH. Unlike build.ps1 there is no PyInstaller freeze step — this compiles
 the connector directly.
 
-**UNVERIFIED.** This script, and the CA-trust-less WiX source it writes
-below, have never been run — there is no Windows machine, and no way to
-even dry-compile a .wxs with candle.exe, anywhere this was written. It is
-translated in good faith from build.ps1, which HAS been used to produce a
-real signed .msi, keeping every piece that still applies unchanged (the
-Run-key startup, the INSTALLFOLDER write-permission grant for self-update,
-the TOKEN/ADMINURL enrollment properties) and dropping only what the Rust
-connector genuinely doesn't do yet (installing the CA into the machine
-trust store — see uninstall.rs's and the top-level README's Scope notes).
-Treat every line here as "written, not proven" until it has actually built
-and installed on a real Windows box, the same standard this project holds
-every other never-tested Windows/macOS path to.
+Verified 2026-10-29 on Windows 11 (25H2, ARM64): this script built the
+.msi with WiX 3.14, and it installed fresh, upgraded 2.9.5 in place and
+uninstalled cleanly. See docs/windows-test-checklist.md, fix 7, for what
+the package sets up (the Aavishield service, ACLs, cleanup on removal).
+
+To package a cross-compiled exe on a Windows box without Rust:
+
+    build-rust.ps1 -Version 2.9.7 -PrebuiltExe path\to\aavishield-agent.exe
 
 Signing is opt-in, identical contract to build.ps1:
 
@@ -39,7 +35,10 @@ unpacked CodeSignTool:
     $env:ESIGNER_TOTP_SECRET     = "..."
 #>
 param(
-    [string]$Version = "1.0.0"
+    [string]$Version = "1.0.0",
+    # Package an already-built aavishield-agent.exe instead of running cargo
+    # (for testing a cross-compiled build on a Windows machine).
+    [string]$PrebuiltExe = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -65,6 +64,10 @@ New-Item -ItemType Directory -Force -Path $BuildDir, $OutDir | Out-Null
 # string that would make update.rs think an update is *always* available
 # and loop forever redownloading itself, since the fallback never equals
 # whatever version the manifest actually advertises.
+if ($PrebuiltExe) {
+    $AgentExe = (Resolve-Path $PrebuiltExe).Path
+    Write-Host "==> Using prebuilt $AgentExe"
+} else {
 Write-Host "==> cargo build --release"
 Push-Location $AgentDir
 $env:AAVISHIELD_VERSION = $Version
@@ -78,6 +81,7 @@ try {
 
 $AgentExe = "$AgentDir\target\release\aavishield-agent.exe"
 if (-not (Test-Path $AgentExe)) { throw "cargo build did not produce $AgentExe" }
+}
 
 # ─── 2. Sign the binary ───────────────────────────────────────────────────────
 function Invoke-Sign([string]$Path) {
@@ -126,9 +130,17 @@ $Wxs = @"
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi" xmlns:util="http://schemas.microsoft.com/wix/UtilExtension">
   <Product Id="*" Name="Aavishield Agent" Language="1033" Version="$Version"
            Manufacturer="Aavishield" UpgradeCode="9B3E5C2A-1F4B-4E52-8F1D-2C7A1B4D9F41">
-    <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine"
+    <!-- Platform x64: up to 2.9.5 this was a 32-bit package, so the 64-bit
+         agent landed in Program Files (x86) and its Run key under
+         WOW6432Node. MajorUpgrade still finds and removes those (same
+         UpgradeCode). -->
+    <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" Platform="x64"
              Description="Aavishield security agent" />
-    <MajorUpgrade DowngradeErrorMessage="A newer version of the Aavishield Agent is already installed." />
+    <!-- afterInstallInitialize: the old version is removed completely
+         (service, files) before the new one is laid down, so no file is
+         ever replaced while the old agent still holds it open. -->
+    <MajorUpgrade Schedule="afterInstallInitialize"
+                  DowngradeErrorMessage="A newer version of the Aavishield Agent is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
     <!-- The Aavishield mark (packaging/icons/aavishield.ico, generated from
@@ -151,33 +163,31 @@ $Wxs = @"
     </Directory>
 
     <DirectoryRef Id="INSTALLFOLDER">
-      <Component Id="AgentExe" Guid="*">
+      <Component Id="AgentExe" Guid="*" Win64="yes">
         <File Id="AavishieldAgentExe" Source="$AgentExe" KeyPath="yes" />
-        <!-- Runs at logon: the agent manages the current user's proxy settings,
-             so it belongs in the user session rather than as a SYSTEM service —
-             identical reasoning to build.ps1's Python build. -->
-        <RegistryValue Root="HKLM"
-                       Key="Software\Microsoft\Windows\CurrentVersion\Run"
-                       Name="AavishieldAgent" Type="string"
-                       Value="&quot;[INSTALLFOLDER]aavishield-agent.exe&quot;" />
+        <!-- The SYSTEM half of the agent (src/service.rs): starts the agent
+             in every signed-in session and restarts it if it stops (there
+             is no Run key any more; the service is the launcher), trusts
+             the organisation's inspection CA machine-wide once someone
+             enrolls, and installs updates. Program Files stays writable by
+             administrators only: the service runs this file as SYSTEM. -->
+        <ServiceInstall Id="AavishieldService" Name="AavishieldService" DisplayName="Aavishield"
+                        Description="Keeps Aavishield protection running for everyone who signs in to this PC, and installs its updates."
+                        Type="ownProcess" Start="auto" Account="LocalSystem" ErrorControl="normal"
+                        Arguments="--service" Vital="yes">
+          <util:ServiceConfig FirstFailureActionType="restart" SecondFailureActionType="restart"
+                              ThirdFailureActionType="restart" RestartServiceDelayInSeconds="10" ResetPeriodInDays="1" />
+        </ServiceInstall>
+        <ServiceControl Id="AavishieldServiceControl" Name="AavishieldService" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
       </Component>
-    </DirectoryRef>
-
-    <!-- Same self-update write-permission grant build.ps1's Python build
-         needs, for the identical reason: update.rs's download_and_swap()
-         replaces its own .exe in place, and Program Files is
-         Administrators/SYSTEM-write by default. -->
-    <DirectoryRef Id="INSTALLFOLDER">
-      <Component Id="AgentExePermissions" Guid="4F8A2D1C-9B3E-4A05-B6E7-3D8F5C2A1B90">
-        <CreateFolder>
-          <util:PermissionEx User="Users" GenericRead="yes" GenericExecute="yes"
-                              GenericWrite="yes" Delete="yes" />
-        </CreateFolder>
+      <!-- Shown on the agent's Windows notifications ("Download blocked"). -->
+      <Component Id="AgentIcon" Guid="*" Win64="yes">
+        <File Id="AavishieldIco" Source="$RepoRoot\packaging\icons\aavishield.ico" Name="aavishield.ico" KeyPath="yes" />
       </Component>
     </DirectoryRef>
 
     <DirectoryRef Id="DATAFOLDER">
-      <Component Id="EnrollDrop" Guid="*">
+      <Component Id="EnrollDrop" Guid="*" Win64="yes">
         <CreateFolder />
         <RemoveFile Id="RemoveEnrollJson" Name="enroll.json" On="uninstall" />
         <RegistryValue Root="HKLM" Key="Software\Aavishield" Name="Installed"
@@ -187,7 +197,7 @@ $Wxs = @"
 
     <Feature Id="Main" Title="Aavishield Agent" Level="1">
       <ComponentRef Id="AgentExe" />
-      <ComponentRef Id="AgentExePermissions" />
+      <ComponentRef Id="AgentIcon" />
       <ComponentRef Id="EnrollDrop" />
     </Feature>
 
@@ -196,34 +206,31 @@ $Wxs = @"
                   ExeCommand='cmd.exe /c echo {"token":"[TOKEN]","admin_url":"[ADMINURL]"} &gt; "[DATAFOLDER]enroll.json"'
                   Execute="deferred" Impersonate="no" Return="ignore" />
 
-    <!-- %USERPROFILE%\.aavishield holds config.json (this device's saved
-         enrollment) — RemoveFile above only clears enroll.json from the
-         machine-wide DATAFOLDER, not this per-user directory. Leaving it
-         behind is exactly why a reinstall on the same Windows profile
-         "automatically connects" again: config::load() finds the old
-         config.json before the GUI ever shows a Connect button. Impersonate
-         "yes" (unlike WriteEnrollJson above) so %USERPROFILE% resolves to
-         the person actually running the uninstall, not SYSTEM's own profile. -->
-    <CustomAction Id="RemoveUserState" Directory="INSTALLFOLDER"
-                  ExeCommand='cmd.exe /c rmdir /s /q "%USERPROFILE%\.aavishield"'
-                  Execute="deferred" Impersonate="yes" Return="ignore" />
+    <!-- Closes the agent in every user session so none of its files are in
+         use: on install, on uninstall, and inside an upgrade, where the
+         *old* package's copy of this action runs while it is being removed.
+         It comes right after StopServices, so the service has already
+         stopped and cannot start the agent again. Session 0 is skipped;
+         that is the service itself, which Windows Installer stops. -->
+    <CustomAction Id="StopAgents" Directory="TARGETDIR"
+                  ExeCommand='taskkill.exe /F /IM aavishield-agent.exe /FI "SESSION ne 0"'
+                  Execute="deferred" Impersonate="no" Return="ignore" />
 
-    <!-- No CA-trust scheduled task here, unlike build.ps1's Python build:
-         the Rust connector only checks whether the CA is trusted
-         (config::mitm_ca_trusted) — it doesn't install it into the machine
-         Root store yet. Shipping the SYSTEM task that build.ps1 creates
-         would silently do nothing but burn a scheduled-task slot, which is
-         worse than honestly omitting it. Restore this block (copy it from
-         build.ps1's CreateCaTrustTask/StartCaTrustTask/RemoveCaTrustTask/
-         RemoveCaCert custom actions) the moment CA installation is ported. -->
+    <!-- A real uninstall (not an upgrade): give every user a direct internet
+         connection back, remove the CA the service trusted, report the
+         removal to the company, and delete per-user enrollment so a
+         reinstall starts clean. See service::uninstall_cleanup. -->
+    <CustomAction Id="UninstallCleanup" FileKey="AavishieldAgentExe" ExeCommand="--uninstall-cleanup"
+                  Execute="deferred" Impersonate="no" Return="ignore" />
 
     <InstallExecuteSequence>
+      <Custom Action="StopAgents" After="StopServices" />
       <Custom Action="WriteEnrollJson" After="InstallFiles">TOKEN</Custom>
       <!-- REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE: a real uninstall only,
            never the remove-then-reinstall MajorUpgrade does internally when
            updating to a newer version — that must keep the existing
            enrollment, not silently disconnect the device on every update. -->
-      <Custom Action="RemoveUserState" After="InstallInitialize">REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE</Custom>
+      <Custom Action="UninstallCleanup" After="StopAgents">REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE</Custom>
     </InstallExecuteSequence>
   </Product>
 </Wix>
@@ -234,7 +241,7 @@ Set-Content -Path $WxsPath -Value $Wxs -Encoding UTF8
 
 # ─── 4. Build the MSI ─────────────────────────────────────────────────────────
 Write-Host "==> candle / light"
-& candle.exe -nologo -ext WixUtilExtension -out "$BuildDir\aavishield-rust.wixobj" $WxsPath
+& candle.exe -nologo -arch x64 -ext WixUtilExtension -out "$BuildDir\aavishield-rust.wixobj" $WxsPath
 if ($LASTEXITCODE -ne 0) { throw "candle.exe failed with exit code $LASTEXITCODE" }
 $MsiOut = Join-Path $OutDir "aavishield-agent-$Version.msi"
 & light.exe -nologo -sval -ext WixUtilExtension -out $MsiOut "$BuildDir\aavishield-rust.wixobj"

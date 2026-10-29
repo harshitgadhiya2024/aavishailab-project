@@ -303,5 +303,6 @@ fn windows_set_proxy(enabled: bool, server: &str) -> std::io::Result<()> {
         key.set_value("ProxyOverride", &"localhost;127.0.0.1;<local>")?;
     }
     key.set_value("ProxyEnable", &(enabled as u32))?;
+    crate::win::notify_proxy_changed();
     Ok(())
 }

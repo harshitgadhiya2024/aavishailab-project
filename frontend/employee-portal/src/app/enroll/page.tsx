@@ -51,6 +51,19 @@ function EnrollFlow() {
 
   const run = useCallback(async () => {
     const params = new URLSearchParams(window.location.search);
+
+    // Where an agent sends the browser back after a form-mode callback.
+    const result = params.get("result");
+    if (result === "done") {
+      setPhase("done");
+      return;
+    }
+    if (result === "error") {
+      setPhase("error");
+      setMessage(params.get("message") || "The agent could not complete setup.");
+      return;
+    }
+
     const state = params.get("state") || "";
     const callback = params.get("callback") || "";
 
@@ -78,6 +91,27 @@ function EnrollFlow() {
     } catch {
       setPhase("error");
       setMessage("Could not create an enrollment code. Please try again in a moment.");
+      return;
+    }
+
+    // Agents that say mode=form take the token as an ordinary form
+    // submission: a top-level navigation, which Chrome's "access other apps
+    // and services on this device" prompt does not cover, unlike fetch()
+    // to loopback. The agent then redirects back here with ?result=.
+    // The token travels in the POST body, never in a URL.
+    if (params.get("mode") === "form") {
+      const form = document.createElement("form");
+      form.method = "POST";
+      form.action = callback;
+      for (const [name, value] of Object.entries({ state, token, admin_url: adminUrl })) {
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = name;
+        input.value = value;
+        form.appendChild(input);
+      }
+      document.body.appendChild(form);
+      form.submit();
       return;
     }
 

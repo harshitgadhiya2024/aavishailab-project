@@ -79,9 +79,42 @@ fn run_platform_uninstaller(_portal_url: &str) {
 /// Windows/Linux removal is the OS package manager's job (MSI/dpkg
 /// already know how to remove what they installed); the portal serves a
 /// script/uninstaller for the rare manual-install case.
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn run_platform_uninstaller(portal_url: &str) {
     crate::enroll_interactive::open_in_browser(&format!("{}/dashboard/download", portal_url.trim_end_matches('/')));
+}
+
+/// Windows: removes the .msi through Windows Installer, which asks for
+/// administrator rights (UAC) — the administrator who just authorised this
+/// is the person at the keyboard. The installer's own cleanup step then
+/// restores the proxy and removes the trusted CA.
+#[cfg(target_os = "windows")]
+fn run_platform_uninstaller(portal_url: &str) {
+    match installed_product_code() {
+        Some(code) if crate::win::run_elevated("msiexec.exe", &format!("/x {code} /qb")) => {
+            tracing::info!(product = %code, "uninstall started");
+        }
+        found => {
+            tracing::warn!(?found, "could not start the Windows uninstaller — opening Settings > Apps instead");
+            if !crate::win::open_url("ms-settings:appsfeatures") {
+                crate::enroll_interactive::open_in_browser(&format!("{}/dashboard/download", portal_url.trim_end_matches('/')));
+            }
+        }
+    }
+}
+
+/// The {GUID} Windows Installer registered this agent under. It changes
+/// with every version (MajorUpgrade), so it is looked up, not hardcoded.
+#[cfg(target_os = "windows")]
+fn installed_product_code() -> Option<String> {
+    use winreg::enums::{HKEY_LOCAL_MACHINE, KEY_READ, KEY_WOW64_64KEY};
+    let root = winreg::RegKey::predef(HKEY_LOCAL_MACHINE)
+        .open_subkey_with_flags("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall", KEY_READ | KEY_WOW64_64KEY)
+        .ok()?;
+    root.enum_keys().flatten().find(|code| {
+        code.starts_with('{')
+            && root.open_subkey(code).ok().and_then(|k| k.get_value::<String, _>("DisplayName").ok()).is_some_and(|n| n == "Aavishield Agent")
+    })
 }
 
 /// Removes the connector from this Mac.

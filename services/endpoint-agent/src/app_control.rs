@@ -70,13 +70,13 @@ const DEFAULT_INTERVAL: Duration = Duration::from_secs(5);
 
 /// How often the launch guard looks for new PIDs. Short enough to beat a
 /// typical application's first window; each pass is one syscall.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
 const GUARD_INTERVAL: Duration = Duration::from_millis(300);
 
 /// A PID the guard has just seen is looked at again for this many passes:
 /// a process that forks and then execs keeps its PID but changes its
 /// executable, so the path seen on the first pass may not be the final one.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
 const GUARD_RECHECK_PASSES: u8 = 3;
 
 /// One notification per application per this long. The guard and the sweep
@@ -179,7 +179,7 @@ impl AppControlWatcher {
     }
 
     pub async fn run(self: Arc<Self>) {
-        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
         {
             let guard = Arc::clone(&self);
             if let Err(e) = std::thread::Builder::new()
@@ -281,7 +281,7 @@ impl AppControlWatcher {
     /// runtime, so nothing stands between noticing a blocked process and
     /// freezing it. Only reporting and notifying — which talk to the server
     /// and the desktop and can wait — are handed back to the runtime.
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
     fn guard_new_processes(self: Arc<Self>) {
         let own_pid = std::process::id() as i32;
         let mut known: HashSet<i32> = HashSet::new();
@@ -616,30 +616,17 @@ fn bundle_identifier(_exe_path: &str) -> Option<String> {
 /// Every process this user can see, with its parent — the parent is what
 /// lets `app_family` find an application's children.
 fn list_processes() -> Vec<Proc> {
+    // Native snapshot, not PowerShell: this runs every sweep, and
+    // `Get-CimInstance Win32_Process` cost about a second of CPU each time.
+    // A process this user may not open (elevated, another user's) has no
+    // path here, exactly as ExecutablePath was empty for it before.
     #[cfg(target_os = "windows")]
     {
-        let out = std::process::Command::new("powershell")
-            .args([
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                "Get-CimInstance Win32_Process | ForEach-Object { \"$($_.ProcessId)|$($_.ParentProcessId)|$($_.ExecutablePath)\" }",
-            ])
-            .output();
-        let Ok(out) = out else { return Vec::new() };
-        if !out.status.success() {
-            return Vec::new();
-        }
-        return String::from_utf8_lossy(&out.stdout)
-            .lines()
-            .filter_map(|line| {
-                let mut parts = line.trim().splitn(3, '|');
-                let pid: i32 = parts.next()?.parse().ok()?;
-                let ppid: i32 = parts.next()?.parse().ok()?;
-                let path = parts.next()?.trim();
-                if path.is_empty() { None } else { Some(Proc { pid, ppid, path: path.to_string() }) }
-            })
-            .collect();
+        crate::win::processes()
+            .into_iter()
+            .filter(|p| !p.path.is_empty())
+            .map(|p| Proc { pid: p.pid as i32, ppid: p.ppid as i32, path: p.path })
+            .collect()
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -705,6 +692,19 @@ mod native {
     }
 }
 
+/// Windows: one Toolhelp snapshot for the PIDs, and an image-path query only
+/// for the new ones — no subprocess, so it can run every 300 ms too.
+#[cfg(target_os = "windows")]
+mod native {
+    pub fn all_pids() -> Vec<i32> {
+        crate::win::pids().into_iter().map(|p| p as i32).collect()
+    }
+
+    pub fn pid_path(pid: i32) -> Option<String> {
+        crate::win::image_path(pid as u32)
+    }
+}
+
 #[cfg(target_os = "linux")]
 mod native {
     pub fn all_pids() -> Vec<i32> {
@@ -736,10 +736,9 @@ fn is_alive(pid: i32) -> bool {
         // SAFETY: signal 0 only checks that the process exists.
         unsafe { libc::kill(pid, 0) == 0 }
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
     {
-        let _ = pid;
-        true
+        crate::win::is_alive(pid as u32)
     }
 }
 
@@ -751,7 +750,7 @@ fn is_alive(pid: i32) -> bool {
 fn terminate(pid: i32) -> bool {
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new("taskkill")
+        crate::procutil::command("taskkill")
             .args(["/PID", &pid.to_string(), "/T", "/F"])
             .output()
             .map(|o| o.status.success())
@@ -876,7 +875,7 @@ fn polite_stop(pid: i32) {
     }
     #[cfg(windows)]
     {
-        let _ = std::process::Command::new("taskkill").args(["/PID", &pid.to_string()]).output();
+        let _ = crate::procutil::command("taskkill").args(["/PID", &pid.to_string()]).output();
     }
 }
 
@@ -914,23 +913,46 @@ pub(crate) async fn notify(title: &str, body: &str) {
         {
             let _ = std::process::Command::new("notify-send").args([title.as_str(), body.as_str()]).output();
         }
+        // The text travels in environment variables, never inside the
+        // script: a downloaded file's name is attacker-chosen, and pasting
+        // it into a PowerShell literal is code execution. The notifier id
+        // is the one `register_toast_app_id` registers; Windows drops
+        // toasts from an id it has never heard of without a word.
         #[cfg(target_os = "windows")]
         {
+            register_toast_app_id();
             let script = format!(
                 "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType=WindowsRuntime] > $null; \
                  $t=[Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent(2); \
-                 $x=$t.GetElementsByTagName('text'); $x[0].AppendChild($t.CreateTextNode('{title}')) > $null; \
-                 $x[1].AppendChild($t.CreateTextNode('{body}')) > $null; \
-                 [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Aavishield').Show([Windows.UI.Notifications.ToastNotification]::new($t))"
+                 $x=$t.GetElementsByTagName('text'); $x[0].AppendChild($t.CreateTextNode($env:AAVISHIELD_TOAST_TITLE)) > $null; \
+                 $x[1].AppendChild($t.CreateTextNode($env:AAVISHIELD_TOAST_BODY)) > $null; \
+                 [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('{TOAST_APP_ID}').Show([Windows.UI.Notifications.ToastNotification]::new($t))"
             );
-            let _ = std::process::Command::new("powershell")
-                .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+            let _ = crate::procutil::command("powershell")
+                .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", &script])
+                .env("AAVISHIELD_TOAST_TITLE", &title)
+                .env("AAVISHIELD_TOAST_BODY", &body)
                 .output();
         }
     })
     .await;
 }
 
+#[cfg(target_os = "windows")]
+const TOAST_APP_ID: &str = "Aavishield.Agent";
+
+/// Registers the toast sender for this user: an unpackaged app may send
+/// toasts only under an AppUserModelID that has a DisplayName registered,
+/// and the name and icon shown on the toast come from here.
+#[cfg(target_os = "windows")]
+fn register_toast_app_id() {
+    use winreg::enums::HKEY_CURRENT_USER;
+    let Ok((key, _)) = winreg::RegKey::predef(HKEY_CURRENT_USER).create_subkey(format!("Software\\Classes\\AppUserModelId\\{TOAST_APP_ID}")) else { return };
+    let _ = key.set_value("DisplayName", &"Aavishield");
+    if let Some(icon) = std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join("aavishield.ico"))).filter(|p| p.exists()) {
+        let _ = key.set_value("IconUri", &icon.to_string_lossy().to_string());
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -1093,6 +1115,7 @@ mod tests {
         assert_eq!(browser_name("/Applications/Slack.app/Contents/MacOS/Slack"), None);
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn test_parse_ps_line_keeps_spaces_in_the_executable_path() {
         assert_eq!(
@@ -1114,7 +1137,7 @@ mod tests {
         assert!(watcher.should_notify("telegram"), "a different app gets its own notification");
     }
 
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
     #[test]
     fn test_native_listing_sees_this_process_and_its_path() {
         let own = std::process::id() as i32;

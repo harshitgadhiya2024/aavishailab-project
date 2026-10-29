@@ -1,0 +1,9 @@
+# Link the C runtime into aavishield-agent.exe. Without this the agent needs
+# VCRUNTIME140.dll, which the .msi does not install and a clean Windows PC
+# does not have: the agent then exits before main() (0xC0000135) with no
+# window and no error, and the device is never protected.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
