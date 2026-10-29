@@ -20,9 +20,9 @@ in one line so nobody spends time testing it.
 
 | Platform | Published | Notes |
 |---|---|---|
-| Windows | **2.9.5** | Not rebuilt on purpose (eSigner signatures are limited each month) |
-| macOS | 2.9.6 | |
-| Linux | 2.9.6 | |
+| Windows | **2.9.5** | 2.9.8 is the first build with fix 7 below |
+| macOS | 2.9.7 | |
+| Linux | 2.9.7 | |
 
 Entries marked **Needs Windows ≥ 2.9.6** are agent changes, so they reach
 Windows only after a Windows build is released: superadmin → Agent Versions
@@ -154,6 +154,54 @@ installed, run the new `.msi`. **Expected:**
   2.9.4 → 2.9.5 → 2.9.6 on a real Mac). Windows has no auto-update; see
   gap B below.
 
+### 7. Windows end-to-end pass: nothing worked without manual steps
+**Needs Windows ≥ 2.9.8**, plus admin-api and employee-portal deployed · found and fixed 2026-10-29 on a Windows 11 25H2 ARM64 VM (x64 build under emulation)
+
+Tested 2.9.5 on Windows for the first time. Before these fixes, an employee
+could not protect a Windows PC alone:
+
+| # | What was broken | What changed | Tested in the VM (unsigned local 2.9.7) |
+|---|---|---|---|
+| a | The agent needed `VCRUNTIME140.dll`. On a PC without the Visual C++ runtime it exited before `main()` (0xC0000135): no window, no error. | The C runtime is linked statically (`services/endpoint-agent/.cargo/config.toml`). | The exe no longer imports VCRUNTIME (llvm-objdump) |
+| b | Connect opened the browser through `cmd /C start`, which cut the URL at `&`. The portal never got the callback, so enrollment could never finish. | The URL opens through ShellExecute. | Full URL opened ✅ |
+| c | The installer never started the agent. It ran only at the next sign-in, and never again after a crash or Disconnect. | A new **Aavishield service** (LocalSystem) starts the agent in every signed-in session within seconds and restarts it if it stops. It replaces the Run key. | ✅ |
+| d | The org's SSL-inspection CA was never trusted on Windows. HTTPS was a blind tunnel: no DLP, no download scanning, no block page. | The service fetches the org CA itself from the built-in admin API (with the device's credentials) and adds it to LocalMachine\Root. Uninstall or a change of org removes it. | CA trusted about 1s after start; DLP, malware block and HTTPS block page all work ✅ |
+| e | A black console window opened beside the agent, and closing it killed protection. | The agent is a windowed app and logs to `%USERPROFILE%\.aavishield\agent.log`. | ✅ |
+| f | First launch showed "Not connected" until someone clicked Connect, although the portal says the browser opens on its own. | First launch after install goes straight into Connect. | ✅ |
+| g | Chrome asked "employee.aavishield.com wants to access other apps and services on this device". | The portal submits the token as a form, a top-level navigation, instead of `fetch()` (needs the portal deploy). Older agents keep the old path. | Prompt gone once portal deployed |
+| h | No auto-update on Windows. | The service checks hourly. A new release must match the SHA-256, carry the same Authenticode publisher as the installed build, and contain the advertised version. It then installs with `msiexec /qn`. A failed package is never retried. | Needs two signed releases |
+| i | The installer was a 32-bit package: `Program Files (x86)`, a WOW6432Node Run key, and the folder writable by all Users. | x64 package in `Program Files`, writable only by administrators (the service runs it as SYSTEM). `ProgramData\Aavishield` is SYSTEM/Administrators-only, readable by Users. | Upgrade 2.9.5 → 2.9.7 left one entry, removed the x86 folder and Run key ✅ |
+| j | Uninstall left the proxy pointing at the dead agent, so the PC had no internet. | Uninstall resets the proxy for every user (signed in or not), removes the CA, deletes per-user state and reports the removal. | All verified, and a `device_disconnect` event arrived ✅ |
+| k | "Uninstall the connector", after an admin authorised it, only opened the download page. | It runs `msiexec /x` with a UAC prompt. | — |
+| l | App control listed processes with PowerShell every 5s, and blocked apps took 8–9s to close. | Native process list plus the 300 ms launch guard that macOS and Linux already had. | Blocked app closed in 0.24–0.32s ✅ |
+| m | Toast notifications never appeared: the app id was not registered. File names were pasted into PowerShell code, so a crafted download name could inject commands. | A registered `Aavishield.Agent` id; the text passes through environment variables. | "Download blocked" toast with the Aavishield name and icon ✅ |
+| n | Posture: only the firewall was checked. | BitLocker, Windows Update (≤30 days), screen lock (≤15 min), antivirus (Security Center) and firewall (all profiles), all as a standard user and cached for 10 min. | — |
+| o | `os_version` was empty for every device, Macs included. | Heartbeats now store it (admin-api). Windows reports e.g. "Windows 11 Pro 25H2 (26300.7019)". | — |
+| p | A zip containing EICAR got through. Windows Security quarantined the agent's temp copy, the read failed, and the agent allowed the file as "not scanned". | "Virus infected" (225/226) from Windows is treated as a block and reported (`&detected=`, logged per device, not cached as hash reputation). | — |
+
+- [ ] Clean Windows 10/11 PC **without** the Visual C++ runtime: install the
+  `.msi` from the portal. **Expected:** the agent window and a browser tab
+  open on their own, and the device enrolls without any prompt from Chrome
+  or Edge.
+- [ ] Right after enrolling, open https://tinder.com (or any blocked site).
+  **Expected:** the "Blocked by <company>" page. Upload a file with a card
+  number to a webmail. **Expected:** a DLP incident.
+- [ ] Download https://secure.eicar.org/eicar.com and eicar_com.zip.
+  **Expected:** both blocked, plus a "Download blocked" notification.
+- [ ] Kill `aavishield-agent.exe` in Task Manager. **Expected:** it is back
+  within about 5 seconds.
+- [ ] Publish a newer Windows version. **Expected:** within about an hour
+  the device updates itself and stays enrolled, with no prompt.
+- [ ] Uninstall from Settings → Apps. **Expected:** the internet still works,
+  and certmgr.msc → Trusted Root has no "Aavishield SSL Inspection CA".
+
+**Known limitation:** `curl.exe` (schannel) refuses inspected HTTPS unless
+given `--ssl-no-revoke`. Our leaf certificates have no CRL distribution
+point, and schannel's revocation check fails hard without one. Browsers,
+Teams and .NET apps are not affected. The fix is a CRL endpoint in admin-api
+plus a CDP in `mitm.IssueLeafCert`. That changes the certificates every Mac
+receives too, so it is left for a separate, Mac-tested change.
+
 ### Earlier fixes (2026-09-29 → 09-30)
 - [ ] Run the full Windows checklist in [platform-verification.md](platform-verification.md#windows--not-yet-tested):
   - Web Gateway;
@@ -167,18 +215,13 @@ installed, run the new `.msi`. **Expected:**
 
 ---
 
-## Known Windows gaps (not built yet)
+## Known Windows gaps
 
-These are missing on Windows and are not bugs in a fix, so testing them
-will just confirm the gap. Each needs its own change and a Windows release.
+Gaps A (posture), B (auto-update) and C (the `.msi` never tested) are
+closed by fix 7 above. What is left:
 
-- **A. Device posture is mostly unknown.** On Windows, only the firewall
-  check is implemented. Disk encryption (BitLocker), OS up to date, screen
-  lock and antivirus (Defender) are always reported as "could not
-  determine", which costs the device about half the weight of those
-  checks.
-- **B. No auto-update.** Windows devices stay on the version that was
-  installed until someone installs a new `.msi` manually. Self-update on
-  Windows would need an msiexec step that runs elevated.
-- **C. The `.msi` has never been click-tested** on a real Windows desktop:
-  install, enrollment from the portal, tray, and uninstall.
+- **Fast user switching / Remote Desktop with several people signed in at
+  once:** each session's agent wants port 6118, so only the first one
+  protects its user.
+- **The `.msi` is x64.** On Windows on ARM it runs under emulation, which
+  works (this is how it was tested). A native ARM64 build would be lighter.

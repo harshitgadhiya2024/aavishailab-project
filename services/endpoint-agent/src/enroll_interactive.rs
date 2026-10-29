@@ -62,8 +62,11 @@ pub async fn browser_enroll(portal_url: &str, admin_url: &str, cancel: Arc<Atomi
     let state = random_state();
     let portal_origin = origin_of(portal_url);
     let callback = format!("http://127.0.0.1:{port}/enroll");
+    // mode=form: this agent accepts the portal's form submission (see the
+    // POST handler), so the portal need not fetch() loopback and trip
+    // Chrome's local-network permission prompt.
     let enroll_url = format!(
-        "{}/enroll?state={}&callback={}",
+        "{}/enroll?mode=form&state={}&callback={}",
         portal_url.trim_end_matches('/'),
         state,
         urlencode(&callback)
@@ -188,71 +191,116 @@ async fn handle(req: Request<Incoming>, shared: Arc<Shared>) -> Result<Response<
             Ok(resp)
         }
         (Method::POST, _) => {
+            // Two callers. Older portals `fetch()` JSON from the page, which
+            // Chrome now holds behind a "wants to access other apps and
+            // services on this device" prompt. Current ones submit a plain
+            // HTML form instead (a top-level navigation, which that prompt
+            // does not cover) and expect to be sent back to the portal.
+            let is_form = req
+                .headers()
+                .get(hyper::header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+                .is_some_and(|v| v.starts_with("application/x-www-form-urlencoded"));
             let body = req.into_body().collect().await?.to_bytes();
-            let json: serde_json::Value = serde_json::from_slice(&body).unwrap_or(serde_json::Value::Null);
+            let fields: std::collections::HashMap<String, String> = if is_form {
+                parse_form(&body)
+            } else {
+                let json: serde_json::Value = serde_json::from_slice(&body).unwrap_or(serde_json::Value::Null);
+                ["state", "token", "admin_url"]
+                    .iter()
+                    .filter_map(|k| json.get(*k).and_then(|v| v.as_str()).map(|v| (k.to_string(), v.to_string())))
+                    .collect()
+            };
+            let field = |k: &str| fields.get(k).map(|s| s.trim().to_string()).unwrap_or_default();
 
-            let got_state = json.get("state").and_then(|v| v.as_str()).unwrap_or("");
-            if !constant_time_eq(got_state.as_bytes(), shared.state.as_bytes()) {
-                tracing::warn!("rejected an enrollment callback with a bad state");
-                let resp = cors(Response::builder().status(StatusCode::FORBIDDEN), origin_header.as_deref())
-                    .header("Content-Type", "application/json")
-                    .body(full_body(br#"{"error":"state mismatch"}"#.to_vec()))
-                    .unwrap();
-                return Ok(resp);
+            let (status, body) = callback_result(&shared, &field("state"), &field("token"), &field("admin_url")).await;
+            if is_form {
+                let ok = status.is_success();
+                let message = body.get("error").and_then(|v| v.as_str()).unwrap_or("");
+                let location = if ok {
+                    format!("{}/enroll?result=done", shared.portal_url.trim_end_matches('/'))
+                } else {
+                    format!("{}/enroll?result=error&message={}", shared.portal_url.trim_end_matches('/'), urlencode(message))
+                };
+                return Ok(Response::builder().status(StatusCode::SEE_OTHER).header("Location", location).body(empty_body()).unwrap());
             }
-
-            let token = json.get("token").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-            let admin_url = json.get("admin_url").and_then(|v| v.as_str())
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .unwrap_or_else(|| shared.admin_url_default.clone());
-
-            if token.is_empty() {
-                let resp = cors(Response::builder().status(StatusCode::BAD_REQUEST), origin_header.as_deref())
-                    .header("Content-Type", "application/json")
-                    .body(full_body(br#"{"error":"no token"}"#.to_vec()))
-                    .unwrap();
-                return Ok(resp);
-            }
-
-            match enroll_with_token(&token, &admin_url, &shared.portal_url).await {
-                Ok(config) => {
-                    *shared.outcome.lock().unwrap() = Some(EnrollOutcome::Enrolled(config));
-                    shared.done.notify_one();
-                    let resp = cors(Response::builder().status(StatusCode::OK), origin_header.as_deref())
-                        .header("Content-Type", "application/json")
-                        .body(full_body(br#"{"ok":true}"#.to_vec()))
-                        .unwrap();
-                    Ok(resp)
-                }
-                Err(EnrollError::AlreadyEnrolled(msg)) => {
-                    // Terminal: recorded so the caller can show the server's
-                    // wording, and signalled immediately since waiting
-                    // longer changes nothing — see the Python original's
-                    // identical reasoning on EnrollmentBlocked.
-                    tracing::error!(%msg, "enrollment refused");
-                    let body = serde_json::json!({"error": msg, "code": "device_already_enrolled"});
-                    *shared.outcome.lock().unwrap() = Some(EnrollOutcome::Blocked(msg));
-                    shared.done.notify_one();
-                    let resp = cors(Response::builder().status(StatusCode::FORBIDDEN), origin_header.as_deref())
-                        .header("Content-Type", "application/json")
-                        .body(full_body(serde_json::to_vec(&body).unwrap()))
-                        .unwrap();
-                    Ok(resp)
-                }
-                Err(EnrollError::Http(msg)) => {
-                    tracing::error!(%msg, "first-run enrollment failed");
-                    let body = serde_json::json!({"error": msg});
-                    let resp = cors(Response::builder().status(StatusCode::BAD_GATEWAY), origin_header.as_deref())
-                        .header("Content-Type", "application/json")
-                        .body(full_body(serde_json::to_vec(&body).unwrap()))
-                        .unwrap();
-                    Ok(resp)
-                }
-            }
+            let resp = cors(Response::builder().status(status), origin_header.as_deref())
+                .header("Content-Type", "application/json")
+                .body(full_body(serde_json::to_vec(&body).unwrap()))
+                .unwrap();
+            Ok(resp)
         }
         _ => Ok(Response::builder().status(StatusCode::NOT_FOUND).body(empty_body()).unwrap()),
     }
+}
+
+/// Checks the callback and enrolls. Returns the status and JSON body the
+/// portal's script reads; the form path turns the same answer into a
+/// redirect.
+async fn callback_result(shared: &Shared, state: &str, token: &str, admin_url: &str) -> (StatusCode, serde_json::Value) {
+    if !constant_time_eq(state.as_bytes(), shared.state.as_bytes()) {
+        tracing::warn!("rejected an enrollment callback with a bad state");
+        return (StatusCode::FORBIDDEN, serde_json::json!({"error": "state mismatch"}));
+    }
+    if token.is_empty() {
+        return (StatusCode::BAD_REQUEST, serde_json::json!({"error": "no token"}));
+    }
+    let admin_url = if admin_url.is_empty() { shared.admin_url_default.clone() } else { admin_url.to_string() };
+
+    match enroll_with_token(token, &admin_url, &shared.portal_url).await {
+        Ok(config) => {
+            *shared.outcome.lock().unwrap() = Some(EnrollOutcome::Enrolled(config));
+            shared.done.notify_one();
+            (StatusCode::OK, serde_json::json!({"ok": true}))
+        }
+        Err(EnrollError::AlreadyEnrolled(msg)) => {
+            // Terminal: recorded so the caller can show the server's
+            // wording, and signalled immediately since waiting longer
+            // changes nothing — see the Python original's identical
+            // reasoning on EnrollmentBlocked.
+            tracing::error!(%msg, "enrollment refused");
+            *shared.outcome.lock().unwrap() = Some(EnrollOutcome::Blocked(msg.clone()));
+            shared.done.notify_one();
+            (StatusCode::FORBIDDEN, serde_json::json!({"error": msg, "code": "device_already_enrolled"}))
+        }
+        Err(EnrollError::Http(msg)) => {
+            tracing::error!(%msg, "first-run enrollment failed");
+            (StatusCode::BAD_GATEWAY, serde_json::json!({"error": msg}))
+        }
+    }
+}
+
+/// `application/x-www-form-urlencoded`: `+` is a space, `%XX` a byte.
+fn parse_form(body: &[u8]) -> std::collections::HashMap<String, String> {
+    fn decode(s: &str) -> String {
+        let bytes = s.as_bytes();
+        let mut out = Vec::with_capacity(bytes.len());
+        let mut i = 0;
+        while i < bytes.len() {
+            match bytes[i] {
+                b'+' => out.push(b' '),
+                b'%' if i + 2 < bytes.len() => {
+                    match u8::from_str_radix(std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or(""), 16) {
+                        Ok(b) => {
+                            out.push(b);
+                            i += 2;
+                        }
+                        Err(_) => out.push(b'%'),
+                    }
+                }
+                b => out.push(b),
+            }
+            i += 1;
+        }
+        String::from_utf8_lossy(&out).into_owned()
+    }
+    String::from_utf8_lossy(body)
+        .split('&')
+        .filter_map(|pair| {
+            let (k, v) = pair.split_once('=').unwrap_or((pair, ""));
+            (!k.is_empty()).then(|| (decode(k), decode(v)))
+        })
+        .collect()
 }
 
 type BoxBody = http_body_util::combinators::BoxBody<Bytes, hyper::Error>;
@@ -325,15 +373,25 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 /// agent does is open the portal's download page, the same action this
 /// function already exists for on the enrollment side.
 pub(crate) fn open_in_browser(url: &str) {
-    let result = if cfg!(target_os = "macos") {
-        std::process::Command::new("/usr/bin/open").arg(url).status()
-    } else if cfg!(target_os = "windows") {
-        std::process::Command::new("cmd").args(["/C", "start", "", url]).status()
-    } else {
-        std::process::Command::new("xdg-open").arg(url).status()
-    };
-    if let Err(e) = result {
-        tracing::warn!(error = %e, "could not open a browser for enrollment");
+    // Not `cmd /C start`: cmd treats `&` as a command separator, so the
+    // enrollment URL arrived as `…/enroll?state=…` with its callback cut
+    // off, and Windows enrollment could never finish.
+    #[cfg(target_os = "windows")]
+    {
+        if !crate::win::open_url(url) {
+            tracing::warn!(error = %std::io::Error::last_os_error(), "could not open a browser for enrollment");
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let result = if cfg!(target_os = "macos") {
+            std::process::Command::new("/usr/bin/open").arg(url).status()
+        } else {
+            std::process::Command::new("xdg-open").arg(url).status()
+        };
+        if let Err(e) = result {
+            tracing::warn!(error = %e, "could not open a browser for enrollment");
+        }
     }
 }
 

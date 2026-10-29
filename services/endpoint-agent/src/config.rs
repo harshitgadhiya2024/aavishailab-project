@@ -199,6 +199,10 @@ pub async fn discard_enroll_drops() {
 /// this correctly stays false and MITM interception stays off (fail-open
 /// — see mitm.rs).
 pub fn mitm_ca_trusted() -> bool {
+    // Windows asks the certificate store itself; see ca_trust.rs.
+    #[cfg(target_os = "windows")]
+    return crate::ca_trust::windows_trusted();
+    #[allow(unreachable_code)]
     let marker = if cfg!(target_os = "macos") {
         state_dir().join("ca-trusted")
     } else if cfg!(target_os = "windows") {

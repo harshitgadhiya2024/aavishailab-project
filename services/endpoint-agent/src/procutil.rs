@@ -48,11 +48,26 @@ pub fn run_combined(cmd: &str, args: &[&str], timeout: Duration) -> Option<(bool
     capture(cmd, args, timeout, true)
 }
 
+/// `Command::new`, except that on Windows the child gets no console window.
+/// The agent is a windowed app there, so without CREATE_NO_WINDOW every
+/// netsh/powershell/taskkill it runs flashes a black console on screen.
+/// Every subprocess that can run on Windows is built through this.
+pub fn command(program: &str) -> std::process::Command {
+    #[allow(unused_mut)]
+    let mut cmd = std::process::Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(windows_sys::Win32::System::Threading::CREATE_NO_WINDOW);
+    }
+    cmd
+}
+
 fn capture(cmd: &str, args: &[&str], timeout: Duration, with_stderr: bool) -> Option<(bool, String)> {
     use std::io::Read;
-    use std::process::{Command, Stdio};
+    use std::process::Stdio;
 
-    let mut child = Command::new(cmd)
+    let mut child = command(cmd)
         .args(args)
         .stdout(Stdio::piped())
         .stderr(if with_stderr { Stdio::piped() } else { Stdio::null() })
@@ -113,6 +128,8 @@ fn capture(cmd: &str, args: &[&str], timeout: Duration, with_stderr: bool) -> Op
 mod tests {
     use super::*;
 
+    // Uses Unix tools (echo, sh, sleep).
+    #[cfg(unix)]
     #[test]
     fn test_run_captures_stdout() {
         let out = run("echo", &["hello"], Duration::from_secs(5));
@@ -124,11 +141,15 @@ mod tests {
         assert_eq!(run("definitely-not-a-real-command-xyz", &[], Duration::from_secs(5)), None);
     }
 
+    // Uses Unix tools (echo, sh, sleep).
+    #[cfg(unix)]
     #[test]
     fn test_run_returns_none_on_nonzero_exit() {
         assert_eq!(run("sh", &["-c", "exit 1"], Duration::from_secs(5)), None);
     }
 
+    // Uses Unix tools (echo, sh, sleep).
+    #[cfg(unix)]
     #[test]
     fn test_run_handles_output_larger_than_pipe_buffer() {
         // Regression test for the exact deadlock this module exists to
@@ -138,12 +159,16 @@ mod tests {
         assert_eq!(out.map(|s| s.len()), Some(200000));
     }
 
+    // Uses Unix tools (echo, sh, sleep).
+    #[cfg(unix)]
     #[test]
     fn test_run_combined_captures_stderr_and_nonzero_exit() {
         let out = run_combined("sh", &["-c", "echo out; echo err >&2; exit 3"], Duration::from_secs(5));
         assert_eq!(out, Some((false, "out\nerr\n".to_string())));
     }
 
+    // Uses Unix tools (echo, sh, sleep).
+    #[cfg(unix)]
     #[test]
     fn test_run_kills_and_returns_none_on_timeout() {
         let start = std::time::Instant::now();

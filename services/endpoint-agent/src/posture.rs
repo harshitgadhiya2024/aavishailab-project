@@ -241,8 +241,123 @@ fn collect_linux(s: &mut Signals) {
 }
 
 fn collect_windows(s: &mut Signals) {
-    if let Some(out) = run("netsh", &["advfirewall", "show", "allprofiles", "state"], PROBE_TIMEOUT) {
-        s.firewall = Some(out.to_uppercase().contains("ON"));
+    let p = windows::probe();
+    s.disk_encryption = p.disk_encryption;
+    s.firewall = p.firewall;
+    s.os_up_to_date = p.os_up_to_date;
+    s.screen_lock = p.screen_lock;
+    s.antivirus = p.antivirus;
+}
+
+/// Windows probes. Every one works as a standard user (no admin, no
+/// prompt), and all five run in one PowerShell process: spawning
+/// PowerShell is the expensive part, and the answers change on the scale
+/// of days, so the result is reused for `CACHE_FOR` rather than re-run on
+/// every 60-second heartbeat.
+mod windows {
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+
+    const CACHE_FOR: Duration = Duration::from_secs(10 * 60);
+    const TIMEOUT: Duration = Duration::from_secs(45);
+    /// Same limits as macOS: locked within 15 minutes of idle, and a
+    /// successful Windows Update install within 30 days.
+    const MAX_LOCK_SECS: u64 = 15 * 60;
+    const MAX_UPDATE_AGE_DAYS: f64 = 30.0;
+
+    #[derive(Clone, Copy, Default)]
+    pub struct Probe {
+        pub disk_encryption: Option<bool>,
+        pub firewall: Option<bool>,
+        pub os_up_to_date: Option<bool>,
+        pub screen_lock: Option<bool>,
+        pub antivirus: Option<bool>,
+    }
+
+    static CACHE: Mutex<Option<(Instant, Probe)>> = Mutex::new(None);
+
+    /// Each line is `key=value`; anything the script could not read is
+    /// left out, and so stays `None` (unknown) here.
+    ///
+    /// - bitlocker: Explorer's own `System.Volume.BitLockerProtection` for
+    ///   the system drive — readable without admin, unlike manage-bde or
+    ///   Win32_EncryptableVolume. 1 = protection on.
+    /// - firewall: every profile (Domain, Private, Public) enabled.
+    /// - updateage: days since Windows Update last installed successfully.
+    /// - saver/saversecure/savertimeout, inactivity, consolelock, sleep:
+    ///   the ways Windows locks an idle session (see `screen_lock`).
+    /// - av: Security Center's product states; bit 0x1000 is "enabled".
+    const SCRIPT: &str = r#"
+$ErrorActionPreference='SilentlyContinue'
+try { $v=(New-Object -ComObject Shell.Application).NameSpace("$env:SystemDrive\").Self.ExtendedProperty('System.Volume.BitLockerProtection'); if($v -ne $null){"bitlocker=$v"} } catch {}
+try { $p=@(Get-NetFirewallProfile -PolicyStore ActiveStore); if($p.Count -gt 0){"firewall=$(@($p | ? { -not $_.Enabled }).Count -eq 0)"} } catch {}
+try { $d=(New-Object -ComObject Microsoft.Update.AutoUpdate).Results.LastInstallationSuccessDate; if($d -and $d.Year -gt 2000){"updateage=$([int]((Get-Date).ToUniversalTime()-$d).TotalDays)"} } catch {}
+try { $k=Get-ItemProperty 'HKCU:\Control Panel\Desktop'; "saver=$($k.ScreenSaveActive)"; "saversecure=$($k.ScreenSaverIsSecure)"; "savertimeout=$($k.ScreenSaveTimeOut)" } catch {}
+try { $pk=Get-ItemProperty 'HKCU:\Software\Policies\Microsoft\Windows\Control Panel\Desktop'; if($pk.ScreenSaveActive){"saver=$($pk.ScreenSaveActive)"}; if($pk.ScreenSaverIsSecure){"saversecure=$($pk.ScreenSaverIsSecure)"}; if($pk.ScreenSaveTimeOut){"savertimeout=$($pk.ScreenSaveTimeOut)"} } catch {}
+try { $i=(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System').InactivityTimeoutSecs; if($i){"inactivity=$i"} } catch {}
+try { $o=powercfg /query SCHEME_CURRENT SUB_NONE CONSOLELOCK; $m=[regex]::Match(($o -join "`n"),'AC Power Setting Index: 0x([0-9a-fA-F]+)'); if($m.Success){"consolelock=$([Convert]::ToInt32($m.Groups[1].Value,16))"} } catch {}
+try { $o=powercfg /query SCHEME_CURRENT SUB_SLEEP STANDBYIDLE; $m=[regex]::Match(($o -join "`n"),'AC Power Setting Index: 0x([0-9a-fA-F]+)'); if($m.Success){"sleep=$([Convert]::ToInt32($m.Groups[1].Value,16))"} } catch {}
+try { $a=@(Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntivirusProduct); if($a.Count -gt 0){"av=$(@($a | ? { ($_.productState -band 0x1000) -ne 0 }).Count -gt 0)"} } catch {}
+"#;
+
+    pub fn probe() -> Probe {
+        if let Some((at, p)) = *CACHE.lock().unwrap() {
+            if at.elapsed() < CACHE_FOR {
+                return p;
+            }
+        }
+        let Some(out) = crate::procutil::run("powershell", &["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", SCRIPT], TIMEOUT) else {
+            return Probe::default();
+        };
+        let p = parse(&out);
+        *CACHE.lock().unwrap() = Some((Instant::now(), p));
+        p
+    }
+
+    pub(super) fn parse(out: &str) -> Probe {
+        let get = |key: &str| out.lines().rev().find_map(|l| l.trim().strip_prefix(key)?.strip_prefix('=').map(str::trim));
+        let num = |key: &str| get(key).and_then(|v| v.parse::<i64>().ok());
+        let flag = |key: &str| get(key).map(|v| v.eq_ignore_ascii_case("true"));
+
+        let screen_lock = screen_lock(
+            num("saver") == Some(1) && num("saversecure") == Some(1),
+            num("savertimeout").filter(|&t| t > 0).map(|t| t as u64),
+            num("inactivity").filter(|&t| t > 0).map(|t| t as u64),
+            num("consolelock").map(|v| v != 0),
+            num("sleep").map(|t| t.max(0) as u64),
+        );
+
+        Probe {
+            // 1 is on; 2 is off. 3–6 are encrypting, decrypting or
+            // suspended, none of which protects the disk yet. 0 is a drive
+            // BitLocker cannot report on: unknown, not off.
+            disk_encryption: num("bitlocker").and_then(|v| match v {
+                1 => Some(true),
+                2..=6 => Some(false),
+                _ => None,
+            }),
+            firewall: flag("firewall"),
+            os_up_to_date: num("updateage").map(|d| (d as f64) <= MAX_UPDATE_AGE_DAYS),
+            screen_lock,
+            antivirus: flag("av"),
+        }
+    }
+
+    /// Windows locks an idle session in one of three ways: a password-
+    /// protected screen saver, the machine inactivity limit (Group Policy
+    /// "Interactive logon: Machine inactivity limit"), or going to sleep
+    /// with "require sign-in on wake" (CONSOLELOCK, on by default). Any of
+    /// them within `MAX_LOCK_SECS` passes.
+    pub(super) fn screen_lock(secure_saver: bool, saver_secs: Option<u64>, inactivity_secs: Option<u64>, console_lock: Option<bool>, sleep_secs: Option<u64>) -> Option<bool> {
+        let within = |s: Option<u64>| s.is_some_and(|s| s > 0 && s <= MAX_LOCK_SECS);
+        if (secure_saver && within(saver_secs)) || within(inactivity_secs) || (console_lock == Some(true) && within(sleep_secs)) {
+            return Some(true);
+        }
+        // Nothing readable at all: unknown rather than a failure.
+        if console_lock.is_none() && sleep_secs.is_none() && saver_secs.is_none() && inactivity_secs.is_none() {
+            return None;
+        }
+        Some(false)
     }
 }
 
@@ -263,15 +378,74 @@ fn os_version() -> String {
     if cfg!(target_os = "macos") {
         run("sw_vers", &["-productVersion"], PROBE_TIMEOUT).map(|s| s.trim().to_string()).unwrap_or_default()
     } else if cfg!(target_os = "windows") {
-        run("cmd", &["/C", "ver"], PROBE_TIMEOUT).map(|s| s.trim().to_string()).unwrap_or_default()
+        windows_version()
     } else {
         run("uname", &["-r"], PROBE_TIMEOUT).map(|s| s.trim().to_string()).unwrap_or_default()
     }
 }
 
+/// "Windows 11 Pro 25H2 (26300.7019)", from the registry rather than `ver`.
+/// ProductName still says "Windows 10" on Windows 11, so the build number
+/// decides which it is.
+#[cfg(target_os = "windows")]
+fn windows_version() -> String {
+    use winreg::enums::{HKEY_LOCAL_MACHINE, KEY_READ, KEY_WOW64_64KEY};
+    let Ok(k) = winreg::RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey_with_flags("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion", KEY_READ | KEY_WOW64_64KEY) else {
+        return String::new();
+    };
+    let build: String = k.get_value("CurrentBuild").unwrap_or_default();
+    let ubr: u32 = k.get_value("UBR").unwrap_or(0);
+    let edition: String = k.get_value("EditionID").unwrap_or_default();
+    let display: String = k.get_value("DisplayVersion").unwrap_or_default();
+    let major = if build.parse::<u32>().unwrap_or(0) >= 22000 { "11" } else { "10" };
+    let edition = match edition.as_str() {
+        "Professional" => "Pro".to_string(),
+        "Core" => "Home".to_string(),
+        other => other.to_string(),
+    };
+    format!("Windows {major} {edition} {display} ({build}.{ubr})").split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+#[cfg(not(target_os = "windows"))]
+#[allow(dead_code)]
+fn windows_version() -> String {
+    String::new()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_windows_probe_parses_every_signal() {
+        let out = "bitlocker=1\nfirewall=True\nupdateage=12\nsaver=0\nsaversecure=0\nsavertimeout=600\nconsolelock=1\nsleep=900\nav=True\n";
+        let p = windows::parse(out);
+        assert_eq!(p.disk_encryption, Some(true));
+        assert_eq!(p.firewall, Some(true));
+        assert_eq!(p.os_up_to_date, Some(true));
+        assert_eq!(p.screen_lock, Some(true), "sleep after 15 min with sign-in on wake locks the PC");
+        assert_eq!(p.antivirus, Some(true));
+
+        let off = windows::parse("bitlocker=2\nfirewall=False\nupdateage=90\nconsolelock=1\nsleep=0\nav=False\n");
+        assert_eq!(off.disk_encryption, Some(false));
+        assert_eq!(off.firewall, Some(false));
+        assert_eq!(off.os_up_to_date, Some(false));
+        assert_eq!(off.screen_lock, Some(false), "never sleeping means never locking");
+        assert_eq!(off.antivirus, Some(false));
+
+        let unknown = windows::parse("bitlocker=0\n");
+        assert_eq!(unknown.disk_encryption, None);
+        assert_eq!(unknown.screen_lock, None);
+        assert_eq!(unknown.firewall, None);
+    }
+
+    #[test]
+    fn test_windows_screen_lock_accepts_any_lock_within_limit() {
+        assert_eq!(windows::screen_lock(true, Some(600), None, Some(false), Some(0)), Some(true));
+        assert_eq!(windows::screen_lock(false, Some(600), None, Some(false), Some(0)), Some(false), "an unsecured saver does not lock");
+        assert_eq!(windows::screen_lock(false, None, Some(900), None, None), Some(true));
+        assert_eq!(windows::screen_lock(false, None, None, Some(true), Some(3600)), Some(false), "an hour is too long");
+    }
 
     #[test]
     fn test_signals_serializes_with_server_field_names() {

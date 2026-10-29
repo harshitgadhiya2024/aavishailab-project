@@ -180,10 +180,15 @@ async fn run(ui: UiState, client_slot: ClientSlot, mut commands: tokio::sync::mp
     // to and including the proxy binding a port waits for that, exactly as
     // it does when a person is watching the Python original's window.
     let cancel = Arc::new(AtomicBool::new(false));
+    let mut auto_connect = first_run_auto_connect().await;
     loop {
-        let cmd = match commands.recv().await {
-            Some(c) => c,
-            None => return, // the GUI is gone; nothing left to wait for
+        let cmd = if std::mem::take(&mut auto_connect) {
+            Command::Connect
+        } else {
+            match commands.recv().await {
+                Some(c) => c,
+                None => return, // the GUI is gone; nothing left to wait for
+            }
         };
         match cmd {
             Command::Connect => {
@@ -254,6 +259,24 @@ async fn run(ui: UiState, client_slot: ClientSlot, mut commands: tokio::sync::mp
     }
 }
 
+/// Windows: the first start after installing goes straight into Connect, so
+/// the browser opens on its own — what the portal's download page promises
+/// ("A browser tab opens and links this PC to your account"). Only once per
+/// install: the marker survives a Disconnect, so someone who disconnected
+/// is not sent back to the browser every time the service restarts the
+/// agent. Uninstalling removes the whole state directory, marker included.
+async fn first_run_auto_connect() -> bool {
+    if !cfg!(target_os = "windows") {
+        return false;
+    }
+    let marker = crate::config::state_dir().join("auto-connect-done");
+    if marker.exists() {
+        return false;
+    }
+    let _ = tokio::fs::create_dir_all(crate::config::state_dir()).await;
+    tokio::fs::write(&marker, b"").await.is_ok()
+}
+
 /// Runs the full data plane forever: proxy, MITM, DLP/malware scan calls,
 /// policy/threat/CASB caching, activity reporting, heartbeat, app control,
 /// inventory. Identical to what `main.rs` used to do inline before the GUI
@@ -321,12 +344,34 @@ async fn run_full_agent(config: Config, ui: UiState, client_slot: ClientSlot, mu
     // marker file first (see ca_trust::install_if_needed), so a device
     // that already trusts the CA — the steady-state case, forever — never
     // pays more than that one file stat per interval.
+    #[cfg(not(target_os = "windows"))]
     tokio::spawn({
         let client = client.clone();
         async move {
             loop {
                 crate::ca_trust::install_if_needed(&client).await;
                 tokio::time::sleep(MITM_CONFIG_REFRESH_INTERVAL).await;
+            }
+        }
+    });
+    // Windows: the service installs the CA within seconds of enrollment,
+    // so look often until it is there, then turn inspection on at once
+    // instead of on the next five-minute MITM refresh.
+    #[cfg(target_os = "windows")]
+    tokio::spawn({
+        let client = client.clone();
+        let mitm = mitm.clone();
+        async move {
+            let mut was_trusted = false;
+            loop {
+                crate::ca_trust::install_if_needed(&client).await;
+                let trusted = crate::config::mitm_ca_trusted();
+                if trusted && !was_trusted {
+                    tracing::info!("organisation CA is trusted by Windows — HTTPS inspection is now active");
+                    mitm.refresh().await;
+                }
+                was_trusted = trusted;
+                tokio::time::sleep(if trusted { MITM_CONFIG_REFRESH_INTERVAL } else { Duration::from_secs(10) }).await;
             }
         }
     });

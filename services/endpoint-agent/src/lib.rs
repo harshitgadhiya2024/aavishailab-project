@@ -60,3 +60,7 @@ pub mod ui_state;
 pub mod tls_proxy;
 pub mod uninstall;
 pub mod update;
+#[cfg(windows)]
+pub mod win;
+#[cfg(windows)]
+pub mod service;

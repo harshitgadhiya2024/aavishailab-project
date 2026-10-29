@@ -27,7 +27,9 @@
 //! `acquire` itself stays platform-agnostic.
 
 use std::fs::{File, OpenOptions};
-use std::io::{Read, Seek, SeekFrom, Write};
+#[cfg(unix)]
+use std::io::Read;
+use std::io::{Seek, SeekFrom, Write};
 
 fn lock_path() -> std::path::PathBuf {
     crate::config::state_dir().join("agent.lock")
