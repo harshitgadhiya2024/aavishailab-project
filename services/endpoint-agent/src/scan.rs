@@ -336,7 +336,7 @@ impl<B> ScannedDownload<B> {
             } else {
                 spool.file.as_mut().expect("open while spooling").write_all(data).map_err(|e| match flagged_by_os(&e) {
                     ScanStop::FlaggedByOs => "av_flagged",
-                    ScanStop::Failed => "spool_failed",
+                    ScanStop::Failed(_) => "spool_failed",
                 })
             };
             if let Err(why) = written {
@@ -449,7 +449,8 @@ async fn resolve_download(client: AgentClient, file: DownloadFile, done: Finishe
         return Decision::Allow; // nothing to scan
     }
     let unscanned = done.spool.as_ref().err().copied();
-    if unscanned == Some("av_flagged") {
+    if unscanned == Some("av_flagged") || os_flagged_before(&done.sha256) {
+        remember_os_flagged(&done.sha256);
         // Windows Security stopped the agent writing its temporary copy.
         tracing::info!(host = %file.host, path = %file.path, "Windows Security flagged this download");
         let decision = match report_detection(&client, &file, &done).await {
@@ -478,6 +479,7 @@ async fn resolve_download(client: AgentClient, file: DownloadFile, done: Finishe
             Err(ScanStop::FlaggedByOs) => {
                 // The verdict came from the device's own antivirus; tell the
                 // server so the block is logged, and block whatever it says.
+                remember_os_flagged(&sha256);
                 let flagged = Finished { sha256: sha256.clone(), size, spool: Err("flagged") };
                 tracing::info!(host = %late_file.host, path = %late_file.path, "Windows Security flagged this download");
                 match report_detection(&late_client, &late_file, &flagged).await {
@@ -485,7 +487,10 @@ async fn resolve_download(client: AgentClient, file: DownloadFile, done: Finishe
                     _ => Some(Decision::Block("Windows Security found malware in this file".to_string())),
                 }
             }
-            Err(ScanStop::Failed) => None,
+            Err(ScanStop::Failed(why)) => {
+                tracing::warn!(host = %late_file.host, path = %late_file.path, %why, "download scan failed");
+                None
+            }
             Ok(decision) => Some(decision),
         };
         let decision = match result {
@@ -590,16 +595,39 @@ enum ScanStop {
     /// is a malware verdict in itself, and used to be treated as "could not
     /// scan — allow", which let an infected archive straight through.
     FlaggedByOs,
-    Failed,
+    /// Anything else, with what went wrong for the log.
+    Failed(String),
 }
 
 fn flagged_by_os(e: &std::io::Error) -> ScanStop {
-    // 225 ERROR_VIRUS_INFECTED, 226 ERROR_VIRUS_DELETED.
-    if cfg!(windows) && matches!(e.raw_os_error(), Some(225) | Some(226)) {
+    // 225 ERROR_VIRUS_INFECTED, 226 ERROR_VIRUS_DELETED, and 2/3 (file or
+    // path not found): the agent created this file a moment ago and has
+    // not deleted it, so it vanishing means Windows Security removed it.
+    // That last case let a browser's retry of a blocked archive through.
+    if cfg!(windows) && matches!(e.raw_os_error(), Some(225) | Some(226) | Some(2) | Some(3)) {
         ScanStop::FlaggedByOs
     } else {
-        ScanStop::Failed
+        ScanStop::Failed(e.to_string())
     }
+}
+
+/// Hashes this device's antivirus has already refused, so a browser that
+/// retries the same download is blocked at once rather than racing the
+/// antivirus again. Process-lifetime only; the server never caches these.
+static OS_FLAGGED: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+fn remember_os_flagged(sha256: &str) {
+    let mut seen = OS_FLAGGED.lock().unwrap();
+    if !seen.iter().any(|s| s == sha256) {
+        if seen.len() >= 256 {
+            seen.remove(0);
+        }
+        seen.push(sha256.to_string());
+    }
+}
+
+fn os_flagged_before(sha256: &str) -> bool {
+    OS_FLAGGED.lock().unwrap().iter().any(|s| s == sha256)
 }
 
 async fn report_detection(client: &AgentClient, file: &DownloadFile, done: &Finished) -> Option<HashAnswer> {
@@ -615,16 +643,29 @@ async fn report_detection(client: &AgentClient, file: &DownloadFile, done: &Fini
 /// Uploads the spooled file as a scan job and waits for its verdict.
 async fn upload_and_scan(client: &AgentClient, file: &DownloadFile, spool: Spool, size: u64) -> Result<Decision, ScanStop> {
     use tokio::io::{AsyncReadExt, AsyncSeekExt};
-    let failed = |_| ScanStop::Failed;
+    let failed = |e: reqwest::Error| ScanStop::Failed(e.to_string());
 
-    let resp = client.post_bytes(&format!("/internal/agent/scan-jobs?size={size}&{}", file.query()), "application/octet-stream", Vec::new()).await.map_err(failed)?;
+    // Open the local copy first: if the device's antivirus has removed it,
+    // that is the verdict, whatever the server would have said.
+    let mut reader = tokio::fs::File::open(&spool.path).await.map_err(|e| flagged_by_os(&e))?;
+
+    // 429 means this device already has scans in flight; wait for one to
+    // finish rather than give up and let the file through unscanned.
+    let mut resp = None;
+    for attempt in 0..6 {
+        let r = client.post_bytes(&format!("/internal/agent/scan-jobs?size={size}&{}", file.query()), "application/octet-stream", Vec::new()).await.map_err(failed)?;
+        if r.status() != reqwest::StatusCode::TOO_MANY_REQUESTS || attempt == 5 {
+            resp = Some(r);
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    }
+    let resp = resp.expect("set on the last attempt");
     if !resp.status().is_success() {
-        return Err(ScanStop::Failed);
+        return Err(ScanStop::Failed(format!("creating the scan job: HTTP {}", resp.status())));
     }
     let job: JobCreated = resp.json().await.map_err(failed)?;
     let base = format!("/internal/agent/scan-jobs/{}", job.id);
-
-    let mut reader = tokio::fs::File::open(&spool.path).await.map_err(|e| flagged_by_os(&e))?;
     let mut offset = 0u64;
     let mut failures = 0;
     while offset < size {
@@ -643,7 +684,7 @@ async fn upload_and_scan(client: &AgentClient, file: &DownloadFile, spool: Spool
             _ => {
                 failures += 1;
                 if failures > 3 {
-                    return Err(ScanStop::Failed);
+                    return Err(ScanStop::Failed("uploading a part failed four times".into()));
                 }
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;
             }
@@ -654,7 +695,7 @@ async fn upload_and_scan(client: &AgentClient, file: &DownloadFile, spool: Spool
 
     let r = client.post_bytes(&format!("{base}/complete"), "application/octet-stream", Vec::new()).await.map_err(failed)?;
     if !r.status().is_success() {
-        return Err(ScanStop::Failed);
+        return Err(ScanStop::Failed(format!("completing the scan job: HTTP {}", r.status())));
     }
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(20 * 60);
     loop {
@@ -664,7 +705,7 @@ async fn upload_and_scan(client: &AgentClient, file: &DownloadFile, spool: Spool
             return Ok(decision_for(&state.action, state.reason));
         }
         if tokio::time::Instant::now() > deadline {
-            return Err(ScanStop::Failed);
+            return Err(ScanStop::Failed("no verdict within 20 minutes".into()));
         }
     }
 }

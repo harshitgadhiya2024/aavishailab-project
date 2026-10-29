@@ -179,6 +179,10 @@ could not protect a Windows PC alone:
 | o | `os_version` was empty for every device, Macs included. | Heartbeats now store it (admin-api). Windows reports e.g. "Windows 11 Pro 25H2 (26300.7019)". | — |
 | p | A zip containing EICAR got through. Windows Security quarantined the agent's temp copy, the read failed, and the agent allowed the file as "not scanned". | "Virus infected" (225/226) from Windows is treated as a block and reported (`&detected=`, logged per device, not cached as hash reputation). | — |
 
+| q | **All platforms:** after 4 scanned downloads in 30 minutes, every further download went through unscanned. The per-device cap counted finished and abandoned scan jobs, which linger for 30 minutes (720 "Download not scanned" rows on Macs). | admin-api counts only jobs in flight (stalled uploads stop counting after 2 min). The agent waits and retries on 429 instead of allowing, and checks its local copy before asking the server. | 2.9.9 |
+| r | A browser retrying a download Windows Security had removed got it on the third try. | A vanished temp copy counts as removed by antivirus, and a hash flagged once on the device is blocked at once afterwards. | 2.9.9 |
+| s | `Stop-Service` reported that stopping the service failed (it stopped about 2s later). | StopPending is reported immediately. | 2.9.9 |
+
 - [ ] Clean Windows 10/11 PC **without** the Visual C++ runtime: install the
   `.msi` from the portal. **Expected:** the agent window and a browser tab
   open on their own, and the device enrolls without any prompt from Chrome
