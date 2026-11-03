@@ -275,6 +275,34 @@ six such hosts in 40 minutes. They are now inspected and answer 200.
 - [ ] A Slack/Teams/Drive host reported. **Expected:** not bypassed for
   everyone, and a "DLP blind spot" event appears.
 
+### 10. Bot protection blocked Upwork and Discord (all platforms)
+**Agent: next release after Windows 2.9.11 / macOS 2.9.9** · added 2026-11-03
+
+A client reported that Upwork showed Cloudflare's "Sorry, you have been
+blocked" and the Discord app did not work. Cloudflare (and Akamai and
+DataDome) fingerprint the TLS handshake. Under inspection they see the
+agent's handshake, not Chrome's, so strict sites refuse it. In the VM,
+the same Chrome loaded Upwork with `--no-proxy-server` and was blocked
+through the agent. Discord's gateway answered 403 through the agent and
+101 directly.
+
+The agent now recognises a bot wall from the response headers: a
+`cf-mitigated` header; a Cloudflare 403 HTML page made at its edge, which
+has no `cf-cache-status`; an Akamai `AkamaiGHost` 403; or a DataDome 403.
+It passes that host through for 24 hours and reports it as `bot_wall`.
+When the person was opening a page, the browser is redirected to the same
+URL on a new connection, so the real page loads with no visible error.
+
+- [x] 2026-11-03 / Windows 11 Pro 26H2 ARM64 (VM), test build: Upwork
+  opened its login page instead of the block page. In the Discord desktop
+  app the QR code loaded, and its log showed "handshake complete" instead of
+  repeated "Could not complete Remote Auth login".
+- [ ] On the client's PC after the release, open https://www.upwork.com
+  and the Discord app. **Expected:** both work on the first try. Discord
+  may need one reconnect, which it does on its own.
+- [ ] Dashboard: a "DLP blind spot" or "bypassed automatically" event shows
+  `upwork.com` / `discord.gg` with reason `bot_wall`.
+
 ### Earlier fixes (2026-09-29 → 09-30)
 - [ ] Run the full Windows checklist in [platform-verification.md](platform-verification.md#windows--not-yet-tested):
   - Web Gateway;

@@ -265,7 +265,7 @@ fn client_refused(e: &std::io::Error) -> bool {
 /// connection: the request goes upstream on a connection of its own, and
 /// once both sides have switched protocols the two streams are joined.
 /// Frames are not inspected — WebSocket messages are not uploads.
-async fn relay_upgrade(mut req: Request<Incoming>, host: &str, port: u16) -> Response<BoxBody> {
+async fn relay_upgrade(mut req: Request<Incoming>, deps: &Deps, host: &str, port: u16) -> Response<BoxBody> {
     let client_upgrade = hyper::upgrade::on(&mut req);
     let (parts, _body) = req.into_parts();
     let path_and_query = parts.uri.path_and_query().map(|pq| pq.as_str().to_string()).unwrap_or_else(|| "/".into());
@@ -294,7 +294,12 @@ async fn relay_upgrade(mut req: Request<Incoming>, host: &str, port: u16) -> Res
 
     if upstream_resp.status() != StatusCode::SWITCHING_PROTOCOLS {
         // Refused upstream: hand its answer back as an ordinary response.
+        // A bot wall refusing *us* (Discord's gateway behind Cloudflare)
+        // passes the host through, so the app's reconnect gets in.
         let (resp_parts, body) = upstream_resp.into_parts();
+        if is_bot_wall(&resp_parts) && deps.mitm.learn_refused(host, "bot_wall") {
+            tracing::warn!(%host, status = %resp_parts.status, "bot protection rejected the inspected connection — passing this host through uninspected for 24 hours");
+        }
         let body = body.map_err(Into::into).boxed();
         return crate::proxy::relayed_response(&resp_parts, body);
     }
@@ -334,6 +339,59 @@ async fn connect_upstream(host: &str, port: u16) -> std::io::Result<UpstreamSend
         }
     });
     Ok(sender)
+}
+
+/// Whether this response is bot protection turning away our upstream
+/// connection rather than the site answering the person.
+///
+/// Cloudflare, Akamai and DataDome fingerprint the TLS handshake (JA3/JA4).
+/// The browser says it is Chrome, but the handshake they see is ours, so
+/// sites with strict bot rules (Upwork, Discord's gateway) answered every
+/// inspected request with "Sorry, you have been blocked" — the site was
+/// unusable for as long as inspection was on. Nothing in the request can
+/// fix that; the only way through is to let the browser connect itself.
+///
+/// Judged from headers only: a real browser asks for compressed bodies, so
+/// the page text cannot be read without decompressing it.
+/// - Cloudflare: `cf-mitigated` marks its challenges. Its block pages (WAF,
+///   bot fight, error 1020) are made at its edge and so carry no
+///   `cf-cache-status`, which every response from the site itself has —
+///   a site's own 403 behind Cloudflare does not match.
+/// - Akamai: its "Access Denied" is served as `AkamaiGHost`; a site's own
+///   response keeps the site's `Server`.
+/// - DataDome: marks every response; a 403 from it is its block.
+fn is_bot_wall(parts: &hyper::http::response::Parts) -> bool {
+    let h = &parts.headers;
+    if h.contains_key("cf-mitigated") {
+        return true;
+    }
+    if parts.status != StatusCode::FORBIDDEN {
+        return false;
+    }
+    let server = h.get(hyper::header::SERVER).and_then(|v| v.to_str().ok()).unwrap_or("").to_ascii_lowercase();
+    let html = h.get(hyper::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).is_some_and(|v| v.to_ascii_lowercase().starts_with("text/html"));
+    (server == "cloudflare" && html && !h.contains_key("cf-cache-status")) || (server == "akamaighost" && html) || h.contains_key("x-datadome")
+}
+
+/// A request the browser can safely make again on its own: opening a page,
+/// with a method that does not change anything.
+fn is_retryable_navigation(method: &hyper::Method, headers: &hyper::HeaderMap) -> bool {
+    let navigate = headers.get("sec-fetch-mode").and_then(|v| v.to_str().ok()).is_some_and(|v| v.eq_ignore_ascii_case("navigate"));
+    navigate && (method == hyper::Method::GET || method == hyper::Method::HEAD)
+}
+
+/// Sends the browser back to the URL it asked for, and closes this
+/// connection so it cannot be reused: the browser opens a new one, which is
+/// now passed through, and gets the real page.
+fn reload_directly(host: &str, port: u16, path_and_query: &str) -> Response<BoxBody> {
+    let authority = if port == 443 { host.to_string() } else { format!("{host}:{port}") };
+    Response::builder()
+        .status(StatusCode::TEMPORARY_REDIRECT)
+        .header(hyper::header::LOCATION, format!("https://{authority}{path_and_query}"))
+        .header(hyper::header::CACHE_CONTROL, "no-store")
+        .header(hyper::header::CONNECTION, "close")
+        .body(full_body(Bytes::new()))
+        .unwrap_or_else(|_| crate::proxy::status_response(StatusCode::BAD_GATEWAY))
 }
 
 /// A request that may be sent a second time after its connection failed
@@ -389,7 +447,7 @@ async fn relay_one(
     port: u16,
 ) -> Result<Response<BoxBody>, hyper::Error> {
     if req.headers().contains_key(hyper::header::UPGRADE) {
-        return Ok(relay_upgrade(req, &host, port).await);
+        return Ok(relay_upgrade(req, &deps, &host, port).await);
     }
     let (parts, body) = req.into_parts();
     let method = parts.method.clone();
@@ -449,9 +507,23 @@ async fn relay_one(
         }
     };
 
+    let (resp_parts, resp_body) = resp.into_parts();
+
+    // Bot protection judged our upstream handshake, not the person: pass
+    // the host through, and if they were opening a page, send the browser
+    // straight back to it — it reconnects, now directly, and the real page
+    // loads instead of "Sorry, you have been blocked".
+    if is_bot_wall(&resp_parts) {
+        if deps.mitm.learn_refused(&host, "bot_wall") {
+            tracing::warn!(%host, status = %resp_parts.status, "bot protection rejected the inspected connection — passing this host through uninspected for 24 hours");
+        }
+        if is_retryable_navigation(&method, &parts.headers) && !deps.mitm.should_intercept(&host).await {
+            return Ok(reload_directly(&host, port, &path_and_query));
+        }
+    }
+
     // Downloads stream to the browser while they are scanned — see
     // scan::screen_download.
-    let (resp_parts, resp_body) = resp.into_parts();
     let body = match crate::scan::screen_download(&deps, &host, &path, &parts, &resp_parts, resp_body).await {
         Screened::Relay(body) => body,
         Screened::Block(verdict) => {
@@ -464,6 +536,43 @@ async fn relay_one(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn parts(status: u16, headers: &[(&str, &str)]) -> hyper::http::response::Parts {
+        let mut b = Response::builder().status(status);
+        for (k, v) in headers {
+            b = b.header(*k, *v);
+        }
+        b.body(()).unwrap().into_parts().0
+    }
+
+    #[test]
+    fn bot_walls_are_told_apart_from_a_sites_own_refusals() {
+        let html = ("content-type", "text/html; charset=UTF-8");
+        // Upwork's "Sorry, you have been blocked", as served to the agent.
+        assert!(is_bot_wall(&parts(403, &[html, ("server", "cloudflare"), ("cf-ray", "a54b-BOM")])));
+        assert!(is_bot_wall(&parts(403, &[html, ("server", "cloudflare"), ("cf-mitigated", "challenge")])));
+        assert!(is_bot_wall(&parts(403, &[html, ("server", "AkamaiGHost")])));
+        assert!(is_bot_wall(&parts(403, &[("content-type", "application/json"), ("x-datadome", "protected")])));
+        // The site's own answers through Cloudflare carry cf-cache-status.
+        assert!(!is_bot_wall(&parts(403, &[html, ("server", "cloudflare"), ("cf-cache-status", "DYNAMIC")])));
+        assert!(!is_bot_wall(&parts(404, &[html, ("server", "cloudflare")])));
+        assert!(!is_bot_wall(&parts(403, &[("content-type", "application/json"), ("server", "cloudflare")])));
+        assert!(!is_bot_wall(&parts(403, &[html, ("server", "nginx")])));
+        assert!(!is_bot_wall(&parts(200, &[html, ("server", "cloudflare")])));
+    }
+
+    #[test]
+    fn only_a_safe_page_open_is_redirected() {
+        let mut nav = hyper::HeaderMap::new();
+        nav.insert("sec-fetch-mode", "navigate".parse().unwrap());
+        assert!(is_retryable_navigation(&hyper::Method::GET, &nav));
+        assert!(!is_retryable_navigation(&hyper::Method::POST, &nav), "a form post is never replayed");
+        assert!(!is_retryable_navigation(&hyper::Method::GET, &hyper::HeaderMap::new()), "an app's API call just fails once");
+        let r = reload_directly("www.upwork.com", 443, "/nx/find-work/best-matches?x=1");
+        assert_eq!(r.status(), StatusCode::TEMPORARY_REDIRECT);
+        assert_eq!(r.headers()["location"], "https://www.upwork.com/nx/find-work/best-matches?x=1");
+        assert_eq!(r.headers()["connection"], "close");
+    }
 
     #[test]
     fn only_opening_a_page_counts() {
