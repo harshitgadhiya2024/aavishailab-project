@@ -75,7 +75,14 @@ jobs:
   # could break and nobody would notice until packaging.
   rust-test-endpoint-agent:
     name: cargo test (endpoint-agent)
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest: libspa 0.8.0 (via xcap -> pipewire)
+    # generates bindings from the runner's PipeWire headers, and its
+    # hand-written wrappers only compile against the PipeWire that 24.04
+    # ships. Newer images make spa_pod_builder opaque ("no field `data`
+    # on type `spa_pod_builder`"); 22.04 is too old (see agent-linux.yml).
+    # Same pin as agent-linux.yml's build job. Revisit when xcap moves to
+    # a newer libspa.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
