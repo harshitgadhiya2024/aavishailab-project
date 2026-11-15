@@ -5,7 +5,7 @@ import { Nav } from "@/components/nav";
 import { SiteChrome } from "@/components/site-chrome";
 import { SiteLoader, loaderGateScript } from "@/components/site-loader";
 import { ThemeProvider } from "@/components/theme-provider";
-import { JsonLd, SITE_NAME, SITE_URL } from "@/lib/seo";
+import { JsonLd, SITE_NAME, SITE_URL, SOCIAL } from "@/lib/seo";
 import "./globals.css";
 
 // Type system: Satoshi for display (Fontshare, loaded in <head>), Inter for
@@ -87,6 +87,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
                 description:
                   "Aavishield is an endpoint security platform: one agent enforces web filtering, data loss prevention, application and VPN control, malware scanning and device posture on macOS, Windows and Linux.",
                 email: "info@aavishield.com",
+                sameAs: SOCIAL.map((s) => s.href),
                 contactPoint: { "@type": "ContactPoint", contactType: "sales", email: "info@aavishield.com", url: `${SITE_URL}/contact`, availableLanguage: ["English"] },
                 parentOrganization: { "@type": "Organization", name: "Aavish AI Lab", url: "https://aavishailab.com" },
               },

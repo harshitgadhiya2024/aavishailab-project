@@ -1,11 +1,14 @@
-import { ArrowUpRight, EnvelopeSimple } from "@phosphor-icons/react/dist/ssr";
+import { ArrowUpRight, EnvelopeSimple, InstagramLogo, LinkedinLogo, XLogo } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import { CTA, modules, resources } from "@/lib/content";
 import { legalPages } from "@/lib/legal";
+import { SOCIAL } from "@/lib/seo";
 import { industries, solutionsList } from "@/lib/solutions";
 import { DitherField } from "./landing/dither-field";
 import { GridButton } from "./landing/grid-button";
 import { Logo } from "./wordmark";
+
+const SOCIAL_ICONS = { LinkedIn: LinkedinLogo, X: XLogo, Instagram: InstagramLogo } as const;
 
 const columns = [
   { title: "Platform", links: [{ href: "/platform", label: "Overview" }, ...modules.map((m) => ({ href: `/platform/${m.slug}`, label: m.name }))] },
@@ -47,6 +50,24 @@ export function Footer() {
             <p className="mt-4 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-muted">
               <span className="size-1.5 bg-brand" /> Runs on macOS · Windows · Linux
             </p>
+            <ul aria-label="Aavishield on social media" className="mt-5 flex gap-2">
+              {SOCIAL.map((s) => {
+                const Icon = SOCIAL_ICONS[s.name];
+                return (
+                  <li key={s.name}>
+                    <a
+                      href={s.href}
+                      target="_blank"
+                      rel="me noopener"
+                      aria-label={`Aavishield on ${s.name}`}
+                      className="grid size-9 place-items-center rounded-[6px] border border-line text-fg-2 transition-colors hover:border-brand hover:text-brand-ink"
+                    >
+                      <Icon size={17} weight="fill" aria-hidden />
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
           </div>
         </div>
 
