@@ -2,7 +2,7 @@
 kind: guide
 slug: agent-updates-and-offline-devices
 title: Agent updates and offline devices
-excerpt: The agent updates itself, keeps enforcing policy offline, and cannot be removed without admin approval.
+excerpt: The agent updates itself, keeps enforcing policy offline, and is tamper-resistant: removal needs admin approval and is recorded.
 category: Devices and agent
 tags: agent, updates, offline, uninstall
 author: Aavishield team
@@ -25,4 +25,4 @@ When an admin changes policy, devices pick it up on their next policy pull. Ever
 
 ## Uninstalling
 
-Uninstalling requires admin approval, and the uninstall is recorded in the console. An employee cannot quietly remove protection.
+Uninstalling requires admin approval, and every uninstall is recorded in the console, so removal does not go unnoticed.

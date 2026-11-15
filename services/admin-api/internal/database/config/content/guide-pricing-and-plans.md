@@ -26,7 +26,7 @@ Use the device picker on the [pricing page](/pricing) to see which plan fits, th
 
 ## Start with a pilot
 
-Most customers start with a small pilot group before rolling out to everyone. See [Plan a pilot rollout](/knowledge-hub/plan-a-pilot-rollout).
+We recommend starting with a small pilot group before rolling out to everyone. See [Plan a pilot rollout](/knowledge-hub/plan-a-pilot-rollout).
 
 ## Cancelling
 

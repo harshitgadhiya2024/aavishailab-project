@@ -2,13 +2,12 @@ tunnel: 5c80b1cc-3e08-425f-931e-0dc4ede64ec0
 credentials-file: /etc/cloudflared/creds.json
 
 ingress:
-  # Prelaunch: the apex serves only the waitlist page
-  # (enforced by frontend/website/src/proxy.ts).
+  # Public marketing website. The apex is the canonical origin; www and the
+  # old website.* subdomain redirect to it (frontend/website/src/proxy.ts).
   - hostname: aavishield.com
     service: http://website:1005
   - hostname: www.aavishield.com
     service: http://website:1005
-  # Public marketing website
   - hostname: website.aavishield.com
     service: http://website:1005
   # Company Dashboard

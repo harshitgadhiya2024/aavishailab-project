@@ -27,7 +27,7 @@ Explain what Aavishield does and why. Share your acceptable use policy, which mu
 
 ## Step 4: Roll out
 
-Send the enrollment link to everyone and track coverage on the overview. Most companies reach every device within two to three weeks, and most of that time goes on talking to employees.
+Send the enrollment link to everyone and track coverage on the overview. Plan for two to three weeks to reach every device; most of that time goes on talking to employees.
 
 ## Checklist
 

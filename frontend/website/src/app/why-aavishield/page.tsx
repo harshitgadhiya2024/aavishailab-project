@@ -53,11 +53,11 @@ const faq = [
 
 const icon = (v: V) =>
   v === "yes" ? (
-    <span className="inline-grid size-6 place-items-center rounded-[4px] bg-brand text-on-brand"><Check size={12} weight="bold" /></span>
+    <span className="inline-grid size-6 place-items-center rounded-[4px] bg-brand text-on-brand"><Check size={12} weight="bold" aria-hidden /><span className="sr-only">Yes</span></span>
   ) : v === "part" ? (
-    <span className="inline-grid size-6 place-items-center rounded-[4px] bg-bg-2 text-muted"><Minus size={12} weight="bold" /></span>
+    <span className="inline-grid size-6 place-items-center rounded-[4px] bg-bg-2 text-muted"><Minus size={12} weight="bold" aria-hidden /><span className="sr-only">Partly</span></span>
   ) : (
-    <span className="inline-grid size-6 place-items-center rounded-[4px] bg-danger/10 text-danger"><X size={12} weight="bold" /></span>
+    <span className="inline-grid size-6 place-items-center rounded-[4px] bg-danger/10 text-danger"><X size={12} weight="bold" aria-hidden /><span className="sr-only">No</span></span>
   );
 
 export default function WhyPage() {
@@ -117,7 +117,7 @@ export default function WhyPage() {
 
       {/* 4. Reasons */}
       <Section>
-        <SectionHead eyebrow="Six reasons" title="Why teams switch." accent={["switch."]} />
+        <SectionHead eyebrow="Six reasons" title="Why teams choose one agent." accent={["one", "agent."]} />
         <div className="mt-12"><CardGrid items={reasons} /></div>
       </Section>
 

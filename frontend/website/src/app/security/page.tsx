@@ -77,7 +77,7 @@ export default function SecurityPage() {
 
       {/* 4. Sign-in */}
       <Section>
-        <FeatureSplit eyebrow="Access" title="Every sign-in has a second factor" body="Admins confirm every sign-in with an emailed code or an authenticator app. Organisations can require app-based two-factor for everyone, and review signed-in sessions." points={["Emailed one-time codes", "Authenticator apps with recovery codes", "Session list and sign-out"]} shot={shots.settings} />
+        <FeatureSplit eyebrow="Access" title="Every admin sign-in has a second factor" body="Admins confirm every sign-in with an emailed code or an authenticator app. Organisations can require app-based two-factor for everyone, and review signed-in sessions." points={["Emailed one-time codes", "Authenticator apps with recovery codes", "Session list and sign-out"]} shot={shots.settings} />
       </Section>
 
       {/* 5. Roles */}

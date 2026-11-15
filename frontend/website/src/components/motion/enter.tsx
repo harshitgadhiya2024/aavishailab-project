@@ -1,3 +1,5 @@
+import { Fragment } from "react";
+
 /** CSS-only entrance for above-the-fold content (see `.enter` in globals.css). */
 export function Enter({ delay = 0, className = "", children }: { delay?: number; className?: string; children: React.ReactNode }) {
   return (
@@ -17,14 +19,18 @@ export function HeadlineRise({ text, accent = [], delay = 0 }: { text: string; a
   const words = text.split(" ");
   return (
     <>
-      <span className="sr-only">{text}</span>
+      {/* The words are the only copy of the text: an extra sr-only copy made
+          crawlers read every headline twice. Real spaces between the word
+          boxes keep the extracted text readable ("Pay per device"). */}
       {words.map((w, i) => (
-        <span key={i} aria-hidden className="inline-block overflow-hidden pb-[0.12em] align-top">
-          <span className={`rise inline-block ${hot.has(clean(w)) ? "text-brand" : ""}`} style={{ animationDelay: `${delay + i * 0.05}s` }}>
-            {w}
-            {i < words.length - 1 ? "\u00a0" : ""}
+        <Fragment key={i}>
+          <span className="inline-block overflow-hidden pb-[0.12em] align-top">
+            <span className={`rise inline-block ${hot.has(clean(w)) ? "text-brand" : ""}`} style={{ animationDelay: `${delay + i * 0.05}s` }}>
+              {w}
+            </span>
           </span>
-        </span>
+          {i < words.length - 1 ? " " : null}
+        </Fragment>
       ))}
     </>
   );

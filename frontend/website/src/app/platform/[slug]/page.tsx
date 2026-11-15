@@ -70,7 +70,8 @@ export default async function ModulePage(props: PageProps<"/platform/[slug]">) {
           description: x.description,
           url: `${SITE_URL}${path}`,
           primaryImageOfPage: `${SITE_URL}${shots[ms.hero].src}`,
-          about: { "@type": "SoftwareApplication", name: `Aavishield ${m.name}`, applicationCategory: "SecurityApplication", operatingSystem: "macOS, Windows, Linux" },
+          // The module is part of the one product defined on the home page.
+          about: { "@id": `${SITE_URL}/#software` },
           isPartOf: { "@id": `${SITE_URL}/#website` },
         }}
       />

@@ -120,6 +120,7 @@ export default function Home() {
         data={{
           "@context": "https://schema.org",
           "@type": "SoftwareApplication",
+          "@id": `${SITE_URL}/#software`,
           name: "Aavishield",
           applicationCategory: "SecurityApplication",
           operatingSystem: "macOS, Windows, Linux",
@@ -127,7 +128,8 @@ export default function Home() {
           screenshot: `${SITE_URL}${shots.overview.src}`,
           description: "Endpoint security agent with web gateway, data loss prevention, application control, VPN control, malware scanning, device posture and activity monitoring.",
           featureList: modules.map((m) => m.name),
-          offers: { "@type": "Offer", url: `${SITE_URL}/pricing`, availability: "https://schema.org/InStock" },
+          // No Offer: pricing is a custom quote, and an Offer without a price
+          // (marked InStock) contradicted the page. Add one when prices are public.
           publisher: { "@id": `${SITE_URL}/#org` },
         }}
       />

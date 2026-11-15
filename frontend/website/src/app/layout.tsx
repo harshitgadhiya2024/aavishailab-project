@@ -84,6 +84,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
                 name: SITE_NAME,
                 url: SITE_URL,
                 logo: `${SITE_URL}/brand/app-icon-512.png`,
+                description:
+                  "Aavishield is an endpoint security platform: one agent enforces web filtering, data loss prevention, application and VPN control, malware scanning and device posture on macOS, Windows and Linux.",
+                email: "info@aavishield.com",
+                contactPoint: { "@type": "ContactPoint", contactType: "sales", email: "info@aavishield.com", url: `${SITE_URL}/contact`, availableLanguage: ["English"] },
                 parentOrganization: { "@type": "Organization", name: "Aavish AI Lab", url: "https://aavishailab.com" },
               },
               { "@type": "WebSite", "@id": `${SITE_URL}/#website`, url: SITE_URL, name: SITE_NAME, publisher: { "@id": `${SITE_URL}/#org` }, inLanguage: "en" },

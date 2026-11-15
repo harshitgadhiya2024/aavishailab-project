@@ -76,8 +76,9 @@ const faq = [
 ];
 
 function CellView({ v }: { v: Cell }) {
-  if (v === true) return <span className="inline-grid size-6 place-items-center rounded-[4px] bg-brand text-on-brand"><Check size={12} weight="bold" /></span>;
-  if (v === false) return <Minus size={14} className="inline text-muted" />;
+  // Icons carry an sr-only word so screen readers and AI parsers can read the table.
+  if (v === true) return <span className="inline-grid size-6 place-items-center rounded-[4px] bg-brand text-on-brand"><Check size={12} weight="bold" aria-hidden /><span className="sr-only">Included</span></span>;
+  if (v === false) return <span><Minus size={14} className="inline text-muted" aria-hidden /><span className="sr-only">Not included</span></span>;
   return <span className="text-sm text-fg">{v}</span>;
 }
 

@@ -603,7 +603,7 @@ export const industries: Industry[] = [
     menu: "Customer financial data, card numbers and audits",
     headline: "Customer money data stays where it belongs.",
     accent: ["belongs."],
-    intro: "Lenders, brokers, payment companies and accounting firms process card numbers, bank details and identity documents every day. Aavishield shows where that data goes and keeps every device at a baseline auditors accept.",
+    intro: "Lenders, brokers, payment companies and accounting firms process card numbers, bank details and identity documents every day. Aavishield shows where that data goes and keeps every device at a security baseline you can show your auditors.",
     hero: "reportsCompliance",
     challenges: [
       { title: "Regulated data", body: "Card numbers, bank accounts, PAN and identity documents." },
@@ -614,7 +614,7 @@ export const industries: Industry[] = [
     data: ["Card numbers", "Bank account and IFSC details", "PAN and Aadhaar numbers", "Salary data", "Customer KYC documents"],
     useCases: [
       { title: "Track financial data movement", body: "DLP detects card numbers, bank details and identity numbers in uploads and messages.", shot: "dlp" },
-      { title: "Block payment-fraud lures", body: "Malicious invoices and look-alike login pages are stopped before they open.", shot: "activityDownloads" },
+      { title: "Block payment-fraud lures", body: "Downloads are scanned for malware and known phishing sites are blocked, so fake invoices and look-alike login pages are caught early.", shot: "activityDownloads" },
       { title: "Show device compliance", body: "Encryption, firewall and patch status for every device, exportable for audits.", shot: "reportsCompliance" },
     ],
     modules: ["data-loss-prevention", "malware-scanning", "device-posture", "web-gateway"],

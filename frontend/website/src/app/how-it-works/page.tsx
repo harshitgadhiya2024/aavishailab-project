@@ -9,7 +9,7 @@ import { Reveal, Stagger, StaggerItem } from "@/components/motion/reveal";
 import { PageHero } from "@/components/page-hero";
 import { Section, SectionHead } from "@/components/section";
 import { CTA } from "@/lib/content";
-import { JsonLd, SITE_URL, breadcrumbLd, faqLd } from "@/lib/seo";
+import { JsonLd, breadcrumbLd, faqLd } from "@/lib/seo";
 import { shots } from "@/lib/shots";
 
 export const metadata: Metadata = {
@@ -59,7 +59,7 @@ const reqs = [
 ];
 
 const faq = [
-  { q: "How long does rollout take?", a: "A pilot can be live in an afternoon. Most companies roll out to everyone within two to three weeks, mostly spent communicating with employees." },
+  { q: "How long does rollout take?", a: "A pilot can be live in an afternoon. We recommend planning two to three weeks to reach every device, most of it spent communicating with employees." },
   { q: "Does the agent update itself?", a: "Yes. Native installers support automatic updates, so you do not need to reinstall." },
   { q: "What if a device goes offline?", a: "It keeps enforcing the last signed policy it received, and reports events when it reconnects." },
   { q: "Can an employee remove the agent?", a: "Uninstalling requires admin approval, and the uninstall is recorded in the console." },
@@ -70,15 +70,6 @@ export default function HowItWorksPage() {
     <>
       <JsonLd data={breadcrumbLd([{ name: "Home", path: "" }, { name: "How it works", path: "/how-it-works" }])} />
       <JsonLd data={faqLd(faq)} />
-      <JsonLd
-        data={{
-          "@context": "https://schema.org",
-          "@type": "HowTo",
-          name: "Deploy Aavishield endpoint security",
-          url: `${SITE_URL}/how-it-works`,
-          step: timeline.map((t, i) => ({ "@type": "HowToStep", position: i + 1, name: t.t, text: t.b })),
-        }}
-      />
 
       {/* 1. Hero */}
       <PageHero visual={<RolloutHero />} eyebrow="How endpoint security deployment works" accent={["afternoon."]} title="From install to first event in an afternoon." body="No appliances, no network changes, no consultants. Here is exactly how Aavishield goes from sign-up to protecting every device.">

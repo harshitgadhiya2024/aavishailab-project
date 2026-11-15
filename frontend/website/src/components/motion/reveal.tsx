@@ -1,6 +1,7 @@
 "use client";
 
 import { motion, useReducedMotion, type HTMLMotionProps } from "motion/react";
+import { Fragment } from "react";
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 
@@ -58,9 +59,10 @@ export function StaggerItem({ className, children }: { className?: string; child
 }
 
 /**
- * Headline that rises in word by word on first view. The full sentence is
- * also rendered as plain sr-only text, so crawlers and screen readers get
- * one clean string. Words listed in `accent` are drawn in the brand colour.
+ * Headline that rises in word by word on first view. The words are the only
+ * copy of the text (an extra sr-only copy made crawlers read it twice), with
+ * real spaces between them so the extracted heading reads normally. Words
+ * listed in `accent` are drawn in the brand colour.
  */
 export function WordRise({ text, className, delay = 0, accent = [] }: { text: string; className?: string; delay?: number; accent?: string[] }) {
   const reduce = useReducedMotion();
@@ -69,20 +71,21 @@ export function WordRise({ text, className, delay = 0, accent = [] }: { text: st
   const hot = new Set(accent.map(clean));
   return (
     <span className={className}>
-      <span className="sr-only">{text}</span>
       {words.map((w, i) => (
-        <span key={i} aria-hidden className="inline-block overflow-hidden pb-[0.12em] align-top">
-          <motion.span
-            className={`inline-block ${hot.has(clean(w)) ? "text-brand" : ""}`}
-            initial={reduce ? false : { y: "110%" }}
-            whileInView={{ y: "0%" }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.9, delay: delay + i * 0.055, ease: EASE }}
-          >
-            {w}
-            {i < words.length - 1 ? "\u00a0" : ""}
-          </motion.span>
-        </span>
+        <Fragment key={i}>
+          <span className="inline-block overflow-hidden pb-[0.12em] align-top">
+            <motion.span
+              className={`inline-block ${hot.has(clean(w)) ? "text-brand" : ""}`}
+              initial={reduce ? false : { y: "110%" }}
+              whileInView={{ y: "0%" }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.9, delay: delay + i * 0.055, ease: EASE }}
+            >
+              {w}
+            </motion.span>
+          </span>
+          {i < words.length - 1 ? " " : null}
+        </Fragment>
       ))}
     </span>
   );

@@ -32,7 +32,7 @@ const groups: { id: string; title: string; items: { q: string; a: string }[] }[]
     id: "deployment",
     title: "Deployment",
     items: [
-      { q: "How long does it take to get started?", a: "A pilot can be live in an afternoon. A company-wide rollout typically takes two to three weeks." },
+      { q: "How long does it take to get started?", a: "A pilot can be live in an afternoon. We recommend planning two to three weeks for a company-wide rollout." },
       { q: "How do employees install the agent?", a: "They sign in to the employee portal and download a native installer for their system. The device enrolls automatically." },
       { q: "Do we need an appliance, VPN or network change?", a: "No. Enforcement happens on the device." },
       { q: "Does the agent update automatically?", a: "Yes. Native installers support automatic updates." },
@@ -83,7 +83,7 @@ const groups: { id: string; title: string; items: { q: string; a: string }[] }[]
     title: "Pricing and billing",
     items: [
       { q: "How is Aavishield priced?", a: "Per enrolled device, billed annually. Essentials and Business cover up to 50 devices; more than 50 devices is Enterprise. Book a demo for a quote." },
-      { q: "Can we start with a pilot?", a: "Yes. Most customers start with a small pilot group before rolling out." },
+      { q: "Can we start with a pilot?", a: "Yes, and we recommend it: start with a small pilot group, then roll out to everyone." },
       { q: "Can we cancel?", a: "Yes. Cancellation stops renewal and the service continues to the end of the paid term. See our refund and cancellation policy." },
     ],
   },

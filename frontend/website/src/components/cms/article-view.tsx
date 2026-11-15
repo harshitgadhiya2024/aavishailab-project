@@ -48,8 +48,10 @@ export function ArticleView({ post, related, siblings = [] }: { post: Post; rela
           articleSection: post.category || undefined,
           keywords: post.tags?.join(", ") || undefined,
           author: { "@type": "Organization", name: post.author_name || "Aavishield" },
-          publisher: { "@type": "Organization", name: "Aavish AI Lab", logo: { "@type": "ImageObject", url: `${SITE_URL}/brand/mark-512.png` } },
-          ...(post.cover_image ? { image: post.cover_image.startsWith("/") ? `${SITE_URL}${post.cover_image}` : post.cover_image } : {}),
+          isPartOf: { "@id": `${SITE_URL}/#website` },
+          publisher: { "@id": `${SITE_URL}/#org` },
+          // Articles without a cover fall back to the site's Open Graph card.
+          image: post.cover_image ? (post.cover_image.startsWith("/") ? `${SITE_URL}${post.cover_image}` : post.cover_image) : `${SITE_URL}/opengraph-image`,
         }}
       />
 
