@@ -2,7 +2,7 @@
 kind: guide
 slug: plan-a-pilot-rollout
 title: Plan a pilot, then roll out to everyone
-excerpt: A pilot can be live in an afternoon. Most companies reach everyone within two to three weeks. This is the plan we recommend.
+excerpt: A pilot can be live in an afternoon. Plan for two to three weeks to reach everyone. This is the plan we recommend.
 category: Getting started
 tags: pilot, rollout, change management
 author: Aavishield team
