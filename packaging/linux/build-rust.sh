@@ -157,7 +157,7 @@ Section: net
 Priority: optional
 Architecture: $ARCH
 Maintainer: Aavishield <info@aavishailab.com>
-Homepage: https://website.aavishield.com
+Homepage: https://aavishield.com
 Installed-Size: $INSTALLED_SIZE
 Depends: $RUNTIME_DEPENDS
 Conflicts: aavishield-agent-rust

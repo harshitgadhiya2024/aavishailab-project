@@ -631,7 +631,7 @@ func DemoRequestConfirmation(to, name string) {
 			"Thanks, "+html.EscapeString(name),
 			"Your demo request reached the Aavishield team.",
 			body, "", "",
-			"You're receiving this because you booked a demo on website.aavishield.com."),
+			"You're receiving this because you booked a demo on aavishield.com."),
 	})
 }
 

@@ -39,6 +39,6 @@ With Aavishield, employees install the agent from their own portal, and the port
 
 ## Then roll out
 
-Send the enrollment link to everyone and watch coverage on the overview. Most companies reach every device within two to three weeks, and most of that time is spent talking to people.
+Send the enrollment link to everyone and watch coverage on the overview. Plan for two to three weeks to reach every device; most of that time is spent talking to people.
 
 Read the full checklist in [Plan a pilot, then roll out to everyone](/knowledge-hub/plan-a-pilot-rollout).

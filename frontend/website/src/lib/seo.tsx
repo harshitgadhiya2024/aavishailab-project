@@ -1,4 +1,10 @@
-export const SITE_URL = "https://website.aavishield.com";
+/**
+ * Canonical origin for every canonical tag, Open Graph URL, JSON-LD id,
+ * sitemap entry and robots line. Pages are prerendered, so this is baked in
+ * at build time: rebuild after changing it. Override with NEXT_PUBLIC_SITE_URL
+ * (no trailing slash) for staging builds.
+ */
+export const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL ?? "https://aavishield.com").replace(/\/+$/, "");
 export const SITE_NAME = "Aavishield";
 
 /** Renders a JSON-LD block. `<` is escaped so content can't close the script tag. */

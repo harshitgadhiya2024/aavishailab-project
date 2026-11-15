@@ -487,7 +487,7 @@ services:
     networks:
       - aavishield-net
 
-  # Public marketing site (website.aavishield.com; aavishield.com serves only the waitlist). Static pages plus one
+  # Public marketing site (aavishield.com; www and website.aavishield.com redirect to it). Static pages plus one
   # /api/contact route, which forwards demo requests to admin-api
   # (stored, emailed to the team, listed in superadmin > Demo Requests).
   website:

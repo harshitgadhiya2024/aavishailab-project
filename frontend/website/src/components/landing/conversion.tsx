@@ -139,7 +139,7 @@ export function EarlyAccess() {
 
 export const OBJECTIONS = [
   { q: "Do we need an appliance, VPN or network change?", a: "No. Enforcement happens on the device, so it works on any network with nothing to route." },
-  { q: "How long does it take to get started?", a: "A pilot can be live in an afternoon. A company-wide rollout typically takes two to three weeks." },
+  { q: "How long does it take to get started?", a: "A pilot can be live in an afternoon. We recommend planning two to three weeks for a company-wide rollout." },
   { q: "Will DLP block our employees' work?", a: "No. DLP is monitor-only. It records what sensitive data left and where, without interrupting work." },
   { q: "Is every employee screen-recorded?", a: "No. Aavishield takes periodic screenshots, not recordings, and only on devices your organisation chooses to monitor." },
   { q: "Who can see the data?", a: "Only authorised admins of your organisation. Data is never shared across organisations or sold." },

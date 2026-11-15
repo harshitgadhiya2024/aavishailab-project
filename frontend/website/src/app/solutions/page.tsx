@@ -43,7 +43,7 @@ const approach = [
 
 const faq = [
   { q: "Do I need a different product for each problem?", a: "No. Every solution uses controls from the same Aavishield agent and console. You turn on what you need." },
-  { q: "Which problem should we start with?", a: "Most companies start with AI data leakage or remote work, because they need visibility quickly. In a demo we map your priorities to the right controls." },
+  { q: "Which problem should we start with?", a: "AI data leakage and remote work are good places to start, because they give you visibility quickly. In a demo we map your priorities to the right controls." },
   { q: "Can solutions be rolled out gradually?", a: "Yes. Start with monitor-only DLP and web filtering, then add application control, monitoring or stricter policy over time." },
   { q: "Does it work for small companies?", a: "Yes. The console is designed for one IT person or a founder to run." },
 ];
@@ -129,9 +129,9 @@ export default function SolutionsPage() {
                   {modules.map((m) => (
                     <td key={m.slug} className="px-3 py-3.5 text-center">
                       {s.modules.includes(m.slug) ? (
-                        <span className="inline-grid size-6 place-items-center rounded-[4px] bg-brand text-on-brand"><Check size={12} weight="bold" /></span>
+                        <span className="inline-grid size-6 place-items-center rounded-[4px] bg-brand text-on-brand"><Check size={12} weight="bold" aria-hidden /><span className="sr-only">Used</span></span>
                       ) : (
-                        <span className="inline-block size-1.5 rounded-full bg-line-strong" />
+                        <span className="inline-block size-1.5 rounded-full bg-line-strong"><span className="sr-only">Not used</span></span>
                       )}
                     </td>
                   ))}

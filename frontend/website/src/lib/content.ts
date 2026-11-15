@@ -309,7 +309,7 @@ export const moduleExtras: Record<ModuleSlug, ModuleExtra> = {
   "malware-scanning": {
     seoTitle: "Real-Time Malware Scanning for Downloads",
     description:
-      "Scan every download while it transfers and stop malicious files before they reach disk. Risk scoring with signatures, reputation and threat intelligence.",
+      "Scan every download while it transfers and block files flagged as malicious. Risk scoring with signatures, reputation and threat intelligence.",
     keywords: ["malware scanning", "download scanning", "real-time malware protection", "threat intelligence", "endpoint malware protection"],
     useCases: [
       { title: "Stop phishing attachments", body: "Malicious archives and invoices downloaded from email are caught in flight." },

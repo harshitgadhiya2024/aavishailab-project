@@ -11,10 +11,11 @@ import { industries, solutionsList } from "@/lib/solutions";
 export const revalidate = 300;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const now = new Date();
+  // Static pages carry no lastmod: stamping them with the build time on every
+  // rebuild teaches Google to ignore lastmod for the whole site. CMS posts
+  // below use their real updated_at.
   const entry = (path: string, priority: number, images?: string[]) => ({
     url: `${SITE_URL}${path}`,
-    lastModified: now,
     changeFrequency: "monthly" as const,
     priority,
     ...(images ? { images: images.map((i) => `${SITE_URL}${i}`) } : {}),
@@ -38,7 +39,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...blog.map((b) => post(`/blog/${b.slug}`, b, 0.6)),
     entry("/company", 0.6),
     entry("/contact", 0.7),
-    entry("/waitlist", 0.8),
+    entry("/waitlist", 0.5),
     ...modules.map((m) => entry(`/platform/${m.slug}`, 0.85, [shots[moduleShots[m.slug].hero].src])),
     ...solutionsList.map((s) => entry(`/solutions/${s.slug}`, 0.85, [shots[s.hero].src])),
     ...industries.map((i) => entry(`/industries/${i.slug}`, 0.75, [shots[i.hero].src])),
