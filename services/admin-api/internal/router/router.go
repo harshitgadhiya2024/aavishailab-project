@@ -81,6 +81,7 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	demoH := handlers.NewDemoRequestHandler(db)
 	waitlistH := handlers.NewWaitlistHandler(db)
 	contentH := handlers.NewContentHandler(db)
+	pricingH := handlers.NewPricingHandler(db)
 	flagH := handlers.NewFeatureFlagHandler(db)
 	complianceH := handlers.NewComplianceHandler(db)
 	revenueH := handlers.NewRevenueAnalyticsHandler(db)
@@ -119,6 +120,7 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	contentLimit := middleware.RateLimit(rdb, "public-content", 600, time.Minute)
 	r.GET("/public/content", contentLimit, contentH.PublicList)
 	r.GET("/public/content/:kind/:slug", contentLimit, contentH.PublicGet)
+	r.GET("/public/pricing", contentLimit, pricingH.Public)
 
 	// Razorpay calls this directly — no session, gated entirely on the
 	// X-Razorpay-Signature header verified inside the handler.
@@ -263,6 +265,14 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 			announcements.POST("", middleware.SuperAdminFullOnly(), announceH.Create)
 			announcements.PATCH("/:id", middleware.SuperAdminFullOnly(), announceH.Update)
 			announcements.DELETE("/:id", middleware.SuperAdminFullOnly(), announceH.Delete)
+		}
+
+		// Website pricing plans: prices, device ranges, features, pilot and GST.
+		pricing := superadmin.Group("/pricing")
+		{
+			pricing.GET("", pricingH.Get)
+			pricing.PUT("/plans/:key", middleware.SuperAdminFullOnly(), pricingH.UpdatePlan)
+			pricing.PUT("/settings", middleware.SuperAdminFullOnly(), pricingH.UpdateSettings)
 		}
 
 		// Website blog and knowledge hub.

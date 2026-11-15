@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { PricingPlans } from "@/components/pricing-plans";
-import { plans } from "@/lib/pricing";
+import { headers } from "next/headers";
+import { type Pricing, TAX_NOTE, bothPrices, cheapest, currencyForCountry, formatPrice, minDevices, monthlyPrice, offersLd } from "@/lib/pricing";
+import { getPricing } from "@/lib/pricing-data";
 import { PlanHero } from "@/components/landing/hero-widgets";
 import { Check, Minus } from "@phosphor-icons/react/dist/ssr";
 import { CardGrid, FaqSection, FeatureSplit } from "@/components/blocks";
@@ -9,17 +11,24 @@ import { CtaBand } from "@/components/cta-band";
 import { Reveal } from "@/components/motion/reveal";
 import { PageHero } from "@/components/page-hero";
 import { Section, SectionHead } from "@/components/section";
-import { JsonLd, breadcrumbLd, faqLd } from "@/lib/seo";
+import { JsonLd, SITE_URL, breadcrumbLd, faqLd } from "@/lib/seo";
 import { shots } from "@/lib/shots";
 
-export const metadata: Metadata = {
-  title: "Endpoint Security Pricing, Per Device",
-  description: "Aavishield pricing is per device, billed annually: Essentials or Business for up to 50 devices, Enterprise above 50. Pick your device count and get a quote.",
-  alternates: { canonical: "/pricing" },
-  openGraph: { url: "/pricing" },
-};
+// Prices come from the superadmin panel, so the description is built from them.
+export async function generateMetadata(): Promise<Metadata> {
+  const { plans, settings } = await getPricing();
+  const list = plans.map((p) => `${p.name} ${p.from ? "from " : ""}${formatPrice(p.price.INR, "INR")} / ${formatPrice(p.price.USD, "USD")}`).join(", ");
+  return {
+    title: "Endpoint Security Pricing in INR and USD, Per Device",
+    description: `Aavishield pricing per device per year: ${list}.${settings.pilotDays > 0 ? ` Free ${settings.pilotDays}-day pilot.` : ""}`,
+    alternates: { canonical: "/pricing" },
+    openGraph: { url: "/pricing" },
+  };
+}
 
 type Cell = boolean | string;
+// Comparison table columns, in order. Column names come from the live plans.
+const TABLE_KEYS = ["starter", "professional", "enterprise"] as const;
 const table: { group: string; rows: { label: string; v: [Cell, Cell, Cell] }[] }[] = [
   {
     group: "Protection",
@@ -60,20 +69,54 @@ const included = [
   { title: "The assistant", body: "Ask questions about your live security data in plain language." },
 ];
 
-const how = [
-  { title: "Per enrolled device", body: "You pay for devices running the agent, not for every employee in your directory." },
-  { title: "Billed annually", body: "One invoice a year, with GST where applicable." },
-  { title: "Grow any time", body: "Devices added mid-term are billed pro-rata for the rest of the term." },
-];
+/** Billing cards and pricing FAQs, written from the live prices and rules. */
+function pricingCopy({ plans, settings: s }: Pricing) {
+  const min = minDevices(plans);
+  const featured = plans.find((p) => p.popular) ?? plans[0];
+  const priced = plans.filter((p) => !p.from);
+  const quoted = plans.filter((p) => p.from);
+  const monthly = (p: Pricing["plans"][number]) =>
+    `${p.name} is ${formatPrice(monthlyPrice(p.price.INR, "INR", s), "INR")} (${formatPrice(monthlyPrice(p.price.USD, "USD", s), "USD")})`;
+  const open = plans.find((p) => !p.max);
 
-const faq = [
-  { q: "How is Aavishield priced?", a: "Per enrolled device, billed annually. Essentials and Business cover up to 50 devices; more than 50 devices is Enterprise. The quote depends on your plan and device count. Book a demo and we will send one within a day." },
+  const how = [
+    { title: "Per enrolled device", body: `You pay for devices running the agent, not for every employee in your directory. The minimum is ${min} devices.` },
+    {
+      title: "Annual or monthly",
+      body: `One invoice a year, with GST in India, or pay monthly for about ${s.monthlyUpliftPercent}% more (${featured.name} is ${formatPrice(monthlyPrice(featured.price.INR, "INR", s), "INR")} or ${formatPrice(monthlyPrice(featured.price.USD, "USD", s), "USD")} per device per month).`,
+    },
+    { title: "Grow any time", body: `Devices added mid-term are billed pro-rata for the rest of the term.${s.volumeFrom > 0 ? ` Volume pricing applies above ${s.volumeFrom} devices.` : ""}` },
+  ];
+
+  const faq = [
+    {
+      q: "How much does Aavishield cost?",
+      a: [
+        `Per device per year, billed annually: ${priced.map((p) => `${p.name} is ${bothPrices(p.price)}`).join(" and ")}.`,
+        ...quoted.map((p) => `${p.name}${p.min > min ? `, for ${p.min} or more devices,` : ""} starts at ${bothPrices(p.price)}.`),
+        `Indian prices are plus ${s.gstPercent}% GST.`,
+        `The minimum is ${min} devices, so ${featured.name} for ${min} devices costs ${formatPrice(featured.price.INR * min, "INR")} plus GST, or ${formatPrice(featured.price.USD * min, "USD")}, a year.`,
+      ].join(" "),
+    },
+    ...(s.pilotDays > 0
+      ? [{ q: "Is there a free trial?", a: `Yes. Every company can run a free ${s.pilotDays}-day pilot on up to ${s.pilotDevices} devices before buying. No card is needed.` }]
+      : []),
+    {
+      q: "Do prices include GST?",
+      a: `No. Indian prices are shown before GST. We add ${s.gstPercent}% GST and send a GST invoice, so registered businesses can claim input tax credit. Outside India we bill in US dollars.`,
+    },
+    { q: "Can we pay monthly?", a: `Yes. Monthly billing costs about ${s.monthlyUpliftPercent}% more than paying annually. Per device per month, ${priced.map(monthly).join(" and ")}.` },
+    ...(s.volumeFrom > 0
+      ? [{ q: "Do you offer volume discounts?", a: `Yes. Fleets of more than ${s.volumeFrom} devices get volume pricing${open ? ` on ${open.name}` : ""}. Tell us your device count and we will send a quote within a day.` }]
+      : []),
   { q: "Which operating systems are supported?", a: "macOS, Windows and Linux. The same agent binary and the same policy work on all three." },
   { q: "Will DLP block my employees' work?", a: "No. Data loss prevention is monitor-only. It records what sensitive data left and where it went, without ever blocking the upload." },
   { q: "Do we need to route traffic through an office or VPN?", a: "No. Enforcement happens on the device itself, so it works on any network with nothing to route." },
   { q: "Can we start with some controls and add others later?", a: "Yes. Every control runs in the same agent, so moving to a bigger plan is a policy change, not a reinstall." },
   { q: "Can we cancel?", a: "Yes. Cancellation stops renewal, and the service continues until the end of your paid term. See the refund and cancellation policy for details." },
-];
+  ];
+  return { how, faq };
+}
 
 function CellView({ v }: { v: Cell }) {
   // Icons carry an sr-only word so screen readers and AI parsers can read the table.
@@ -82,18 +125,52 @@ function CellView({ v }: { v: Cell }) {
   return <span className="text-sm text-fg">{v}</span>;
 }
 
-export default function PricingPage() {
+export default async function PricingPage() {
+  // Cloudflare adds CF-IPCountry to every request: India sees rupees, everyone else dollars.
+  const currency = currencyForCountry((await headers()).get("cf-ipcountry"));
+  const pricing = await getPricing();
+  const { plans, settings } = pricing;
+  const { how, faq } = pricingCopy(pricing);
+  const entry = cheapest(plans);
+  const from = formatPrice(entry.price[currency], currency);
+  const limited = plans.filter((p) => p.max);
+  const open = plans.find((p) => !p.max);
+  const featured = plans.find((p) => p.popular) ?? plans[0];
   return (
     <>
       <JsonLd data={faqLd(faq)} />
+      {/* Same @id as the homepage node, so the offers attach to one product. */}
+      <JsonLd
+        data={{
+          "@context": "https://schema.org",
+          "@type": "SoftwareApplication",
+          "@id": `${SITE_URL}/#software`,
+          name: "Aavishield",
+          applicationCategory: "SecurityApplication",
+          operatingSystem: "macOS, Windows, Linux",
+          offers: offersLd(SITE_URL, plans),
+        }}
+      />
       <JsonLd data={breadcrumbLd([{ name: "Home", path: "" }, { name: "Pricing", path: "/pricing" }])} />
 
       {/* 1. Hero */}
-      <PageHero visual={<PlanHero />} eyebrow="Endpoint security pricing" accent={["rack."]} title="Pay per device. Nothing to rack." body="Tell us how many devices you have. Essentials and Business cover up to 50; Enterprise is for larger fleets. Every plan includes the agent for macOS, Windows and Linux." />
+      <PageHero
+        visual={<PlanHero currency={currency} price={featured.price} planNames={plans.map((p) => p.name)} featuredName={featured.name} minDevices={minDevices(plans)} />}
+        eyebrow="Endpoint security pricing"
+        accent={["rack."]}
+        title="Pay per device. Nothing to rack."
+        body={[
+          `From ${from} per device per year ${TAX_NOTE[currency]}.`,
+          limited.length && open ? `${limited.map((p) => p.name).join(" and ")} cover ${minDevices(plans)} to ${Math.max(...limited.map((p) => p.max ?? 0))} devices; ${open.name} is for larger fleets.` : "",
+          `Every plan includes the agent for macOS, Windows and Linux${settings.pilotDays > 0 ? `, and starts with a free ${settings.pilotDays}-day pilot` : ""}.`,
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      />
 
       {/* 2. Plans, sized by device count */}
       <section className="grid-band px-5 py-16 sm:px-8 md:px-12 md:py-24">
-        <PricingPlans />
+        <PricingPlans pricing={pricing} currency={currency} />
       </section>
 
       {/* 3. Included */}
@@ -110,8 +187,8 @@ export default function PricingPage() {
             <thead>
               <tr className="border-b border-line bg-bg-2 text-sm">
                 <th className="px-5 py-4 font-medium text-fg">Feature</th>
-                {plans.map((p) => (
-                  <th key={p.name} className={`px-4 py-4 text-center font-medium ${p.name === "Business" ? "text-brand-ink" : "text-fg"}`}>{p.name}</th>
+                {TABLE_KEYS.map((key) => plans.find((x) => x.key === key)).map((p, i) => (
+                  <th key={TABLE_KEYS[i]} className={`px-4 py-4 text-center font-medium ${p?.popular ? "text-brand-ink" : "text-fg"}`}>{p?.name ?? TABLE_KEYS[i]}</th>
                 ))}
               </tr>
             </thead>
@@ -124,7 +201,7 @@ export default function PricingPage() {
                   <tr key={r.label} className="border-b border-line text-[15px] last:border-0">
                     <td className="px-5 py-3.5 text-fg-2">{r.label}</td>
                     {r.v.map((v, i) => (
-                      <td key={i} className={`px-4 py-3.5 text-center ${i === 1 ? "bg-brand/[0.04]" : ""}`}><CellView v={v} /></td>
+                      <td key={i} className={`px-4 py-3.5 text-center ${plans.find((x) => x.key === TABLE_KEYS[i])?.popular ? "bg-brand/[0.04]" : ""}`}><CellView v={v} /></td>
                     ))}
                   </tr>
                 ))}
@@ -151,11 +228,11 @@ export default function PricingPage() {
       <Section>
         <Reveal className="grid gap-8 rounded-[6px] border border-line bg-surface p-8 md:grid-cols-[1.4fr_1fr] md:items-center md:p-12">
           <div>
-            <h2 className="text-3xl font-normal tracking-tight text-fg md:text-4xl">Not sure which plan? Start with a pilot.</h2>
-            <p className="mt-4 max-w-[52ch] text-lg leading-relaxed text-muted">Enroll a handful of devices, see real events from your own team, and choose a plan based on what you actually find.</p>
+            <h2 className="text-3xl font-normal tracking-tight text-fg md:text-4xl">{settings.pilotDays > 0 ? `Try it free for ${settings.pilotDays} days.` : "Not sure which plan? Start with a pilot."}</h2>
+            <p className="mt-4 max-w-[52ch] text-lg leading-relaxed text-muted">Enroll {settings.pilotDevices > 0 ? `up to ${settings.pilotDevices}` : "a handful of"} devices, see real events from your own team, and choose a plan based on what you actually find. No card needed.</p>
           </div>
           <div className="flex flex-wrap gap-3 md:justify-end">
-            <Button href="/contact" size="lg">Start a pilot</Button>
+            <Button href="/contact" size="lg">Start a free pilot</Button>
             <Button href="/refund-and-cancellation" size="lg" variant="ghost">Refund policy</Button>
           </div>
         </Reveal>
@@ -164,7 +241,7 @@ export default function PricingPage() {
       {/* 8. FAQ */}
       <FaqSection title="Pricing questions" items={faq} />
 
-      <CtaBand title="Get a quote for your fleet." />
+      <CtaBand title="Start your free pilot." />
     </>
   );
 }

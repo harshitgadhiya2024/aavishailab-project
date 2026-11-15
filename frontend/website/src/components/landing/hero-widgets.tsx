@@ -17,6 +17,7 @@ import {
 } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "motion/react";
 import type { ModuleSlug } from "@/lib/content";
+import { type Currency, DEFAULT_PRICING, formatPrice } from "@/lib/pricing";
 import { LogoMark } from "../wordmark";
 import { LiveFeed } from "./live-feed";
 import { DataScanWidget, ModesWidget, ThreatQueueWidget } from "./section-widgets";
@@ -116,8 +117,24 @@ export function DataTypesHero() {
   );
 }
 
-/* Pricing: a quote card that builds itself. Prices stay "custom": no numbers are invented. */
-export function PlanHero() {
+/*
+ * Pricing: a quote card that builds itself, using the featured plan's live
+ * price. Without a price (the nav menu preview, which has no live data) it
+ * says "See pricing" rather than showing a number that may be out of date.
+ */
+export function PlanHero({
+  currency = "USD",
+  price,
+  planNames = DEFAULT_PRICING.plans.map((p) => p.name),
+  featuredName = (DEFAULT_PRICING.plans.find((p) => p.popular) ?? DEFAULT_PRICING.plans[0]).name,
+  minDevices = 1,
+}: {
+  currency?: Currency;
+  price?: Record<Currency, number>;
+  planNames?: string[];
+  featuredName?: string;
+  minDevices?: number;
+}) {
   const { ref, t } = useTimeline(60, 59);
   const devices = Math.round(48 * Math.min(1, t / 18));
   const items = ["Agent for macOS, Windows and Linux", "Admin console", "Employee self-enrollment", "Data Loss Prevention"];
@@ -126,8 +143,8 @@ export function PlanHero() {
       <Stage tag={<AgentTag className="left-6 top-1">Priced per device</AgentTag>}>
         <UiCard title="Your quote" meta={<span className="font-mono text-[10px] text-muted">Billed annually</span>} className="w-full max-w-[360px]">
           <div className="grid grid-cols-3 gap-1 rounded-[4px] bg-bg-2 p-1 text-center text-[12px]">
-            {["Essentials", "Business", "Enterprise"].map((pl) => (
-              <span key={pl} className={`rounded-[3px] py-1.5 transition-colors duration-300 ${pl === "Business" && t >= 4 ? "bg-brand text-on-brand" : "text-muted"}`}>{pl}</span>
+            {planNames.map((pl) => (
+              <span key={pl} className={`rounded-[3px] py-1.5 transition-colors duration-300 ${pl === featuredName && t >= 4 ? "bg-brand text-on-brand" : "text-muted"}`}>{pl}</span>
             ))}
           </div>
           <div className="mt-4 flex items-end justify-between">
@@ -153,7 +170,7 @@ export function PlanHero() {
           </ul>
           <div className="mt-4 flex items-center justify-between rounded-[4px] bg-brand-soft px-3 py-2.5">
             <span className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-brand-ink">Price</span>
-            <span className="text-sm text-fg">Custom quote</span>
+            <span className="text-sm tabular-nums text-fg">{price ? `${formatPrice(Math.max(devices, minDevices) * price[currency], currency)} / yr` : "See pricing"}</span>
           </div>
         </UiCard>
       </Stage>

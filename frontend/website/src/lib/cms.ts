@@ -53,7 +53,7 @@ export const GUIDE_CATEGORIES: { name: string; body: string }[] = [
 // admin-api listens on 6000 inside the compose network, and 6000 is on the
 // fetch spec's blocked-port list (fetch fails with "bad port"), so this uses
 // node:http directly. Caching comes from each page's `revalidate` export.
-function api<T>(url: string): Promise<T | null> {
+export function api<T>(url: string): Promise<T | null> {
   return new Promise((resolve) => {
     const r = http.get(`${API}${url}`, { timeout: 5000 }, (res) => {
       let body = "";

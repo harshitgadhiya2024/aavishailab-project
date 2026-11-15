@@ -143,7 +143,7 @@ export const OBJECTIONS = [
   { q: "Will DLP block our employees' work?", a: "No. DLP is monitor-only. It records what sensitive data left and where, without interrupting work." },
   { q: "Is every employee screen-recorded?", a: "No. Aavishield takes periodic screenshots, not recordings, and only on devices your organisation chooses to monitor." },
   { q: "Who can see the data?", a: "Only authorised admins of your organisation. Data is never shared across organisations or sold." },
-  { q: "How is Aavishield priced?", a: "Per enrolled device, billed annually. Essentials and Business cover up to 50 devices; Enterprise is for more than 50. Book a demo for a quote." },
+  { q: "How is Aavishield priced?", a: "Per enrolled device, billed annually, in rupees plus GST in India and in US dollars everywhere else. Current prices for every plan are on the pricing page, and every plan starts with a free pilot." },
 ];
 
 /** The questions buyers ask before a pilot, answered side by side (no accordion). */

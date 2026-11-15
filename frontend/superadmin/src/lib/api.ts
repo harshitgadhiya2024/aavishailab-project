@@ -99,6 +99,12 @@ export const billingApi = {
   cancel: (id: string) => api.delete(`/superadmin/billing/${id}`),
 };
 
+export const pricingApi = {
+  get: () => api.get("/superadmin/pricing"),
+  updatePlan: (key: string, data: any) => api.put(`/superadmin/pricing/plans/${key}`, data),
+  updateSettings: (data: any) => api.put("/superadmin/pricing/settings", data),
+};
+
 export const blocklistApi = {
   list: () => api.get("/superadmin/blocklist"),
   create: (data: any) => api.post("/superadmin/blocklist", data),

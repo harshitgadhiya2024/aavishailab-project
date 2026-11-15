@@ -202,6 +202,10 @@ func connectStores() (*gorm.DB, *redis.Client, error) {
 	if err := database.SeedContent(db); err != nil {
 		return nil, nil, fmt.Errorf("failed to seed website content: %w", err)
 	}
+	// Website pricing plans, insert-only like the content above.
+	if err := database.SeedPricingPlans(db); err != nil {
+		return nil, nil, fmt.Errorf("failed to seed pricing plans: %w", err)
+	}
 
 	// Dev seed data ships well-known default-password accounts (admin@acme.com
 	// etc.). It is gated on an explicit opt-in, not merely on APP_ENV, so a
