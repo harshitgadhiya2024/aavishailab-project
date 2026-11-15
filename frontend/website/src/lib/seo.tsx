@@ -7,6 +7,13 @@
 export const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL ?? "https://aavishield.com").replace(/\/+$/, "");
 export const SITE_NAME = "Aavishield";
 
+/** Official profiles: linked in the footer and listed as Organization `sameAs`. */
+export const SOCIAL = [
+  { name: "LinkedIn", href: "https://www.linkedin.com/company/aavishield/" },
+  { name: "X", href: "https://x.com/aavishield" },
+  { name: "Instagram", href: "https://www.instagram.com/aavishield/" },
+] as const;
+
 /** Renders a JSON-LD block. `<` is escaped so content can't close the script tag. */
 export function JsonLd({ data }: { data: Record<string, unknown> }) {
   return (

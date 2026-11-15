@@ -1,6 +1,6 @@
 import { listPosts } from "@/lib/cms";
 import { modules } from "@/lib/content";
-import { SITE_URL } from "@/lib/seo";
+import { SITE_URL, SOCIAL } from "@/lib/seo";
 import { industries, solutionsList } from "@/lib/solutions";
 
 // llms.txt (https://llmstxt.org): a plain Markdown map of the site for AI
@@ -44,6 +44,9 @@ export async function GET() {
     link("FAQ", "/faq"),
     link("Privacy policy", "/privacy-policy"),
     link("Terms and conditions", "/terms-and-conditions"),
+    "",
+    "## Official profiles",
+    ...SOCIAL.map((s) => `- [${s.name}](${s.href})`),
     "",
   ].join("\n");
 
