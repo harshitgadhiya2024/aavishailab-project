@@ -252,7 +252,7 @@ func (h *AgentHandler) Enroll(c *gin.Context) {
 		if reached, limit := trialDeviceLimitReached(h.db, enrollToken.OrgID); reached {
 			msg := "This free trial covers your own laptop. Choose a plan in the Aavishield console to add your team's devices."
 			if limit > selfServeSoloDevices {
-				msg = "This free trial covers up to 25 devices. Contact info@aavishield.com to add more before the trial ends."
+				msg = fmt.Sprintf("This free trial covers up to %d devices. Contact info@aavishield.com to add more before the trial ends.", limit)
 			}
 			c.JSON(http.StatusForbidden, gin.H{"error": msg, "code": "trial_device_limit"})
 			return

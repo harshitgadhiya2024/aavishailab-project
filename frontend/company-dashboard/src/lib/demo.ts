@@ -588,7 +588,7 @@ export function resolveDemo(config: { method?: string; url?: string; params?: an
   if (path.endsWith("/onboarding") && method === "get") {
     return {
       self_serve: true, onboarded: false, org_name: "Northwind Labs", plan_interest: "business",
-      trial_ends_at: new Date(Date.now() + 14 * 86400000).toISOString(), trial_device_limit: 1, team_trial: false,
+      trial_ends_at: new Date(Date.now() + 14 * 86400000).toISOString(), trial_device_limit: 1, trial_days: 14, team_devices: 10, team_trial: false,
       answers: {}, starter_categories: [], progress: { policies: 2, devices: 1, online_devices: 1 },
     };
   }
@@ -596,9 +596,10 @@ export function resolveDemo(config: { method?: string; url?: string; params?: an
   if (path.endsWith("/public/pricing")) {
     return {
       plans: [
-        { key: "starter", name: "Essentials", price_inr: 1788, price_usd_cents: 4800, popular: false, features: ["Web gateway, 27 categories", "VPN and proxy blocking", "Malware scanning", "Device posture"] },
-        { key: "professional", name: "Business", price_inr: 4188, price_usd_cents: 10800, popular: true, features: ["Everything in Essentials", "DLP with patterns, OCR and AI", "Application control", "Per-team policies"] },
+        { key: "starter", name: "Essentials", price_inr: 1799, price_usd_cents: 3900, min_devices: 10, max_devices: 50, popular: false, features: ["Web gateway, 27 categories", "VPN and proxy blocking", "Malware scanning", "Device posture"] },
+        { key: "professional", name: "Business", price_inr: 3599, price_usd_cents: 7900, min_devices: 10, max_devices: 50, popular: true, features: ["Everything in Essentials", "DLP with patterns, OCR and AI", "Application control", "Per-team policies"] },
       ],
+      settings: { pilot_days: 14, pilot_devices: 10 },
     };
   }
 

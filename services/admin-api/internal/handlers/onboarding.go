@@ -11,12 +11,10 @@ import (
 	"gorm.io/gorm"
 )
 
-// Self-serve trial limits. A new company starts on the admin's own laptop;
-// choosing a plan opens the trial to the team, up to selfServeTeamDevices.
-const (
-	selfServeSoloDevices = 1
-	selfServeTeamDevices = 25
-)
+// A new self-serve company starts on the admin's own laptop; choosing a plan
+// opens the trial to the team, up to the pilot device count on the pricing
+// page (trialTeamDevices).
+const selfServeSoloDevices = 1
 
 // starterPolicyName marks the web policy the onboarding wizard creates, so
 // running the step again updates it instead of adding a second one.
@@ -87,6 +85,8 @@ func (h *OnboardingHandler) Get(c *gin.Context) {
 		"plan_interest":      org.PlanInterest,
 		"trial_ends_at":      org.TrialEndsAt,
 		"trial_device_limit": org.TrialDeviceLimit,
+		"trial_days":         trialDays(h.db),
+		"team_devices":       trialTeamDevices(h.db),
 		"team_trial":         org.TeamTrialAt != nil,
 		"answers":            answers,
 		"starter_categories": starterCats,
@@ -219,8 +219,8 @@ func (h *OnboardingHandler) TeamTrial(c *gin.Context) {
 	}
 	answers["seats"] = req.Seats
 	limit := req.Seats
-	if limit > selfServeTeamDevices {
-		limit = selfServeTeamDevices
+	if team := trialTeamDevices(h.db); limit > team {
+		limit = team
 	}
 	if limit < selfServeSoloDevices {
 		limit = selfServeSoloDevices

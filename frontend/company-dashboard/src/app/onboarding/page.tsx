@@ -60,13 +60,19 @@ type Onboarding = {
   plan_interest: string;
   trial_ends_at: string | null;
   trial_device_limit: number;
+  /** Trial length and team-trial device count, from the pricing page's pilot settings. */
+  trial_days: number;
+  team_devices: number;
   team_trial: boolean;
   answers: { team_size?: string; goals?: string[]; heard_from?: string; seats?: number };
   starter_categories: string[];
   progress: { policies: number; devices: number; online_devices: number };
 };
 
-type Plan = { key: string; name: string; price_inr: number; price_usd_cents: number; features: string[]; popular: boolean };
+type Plan = {
+  key: string; name: string; price_inr: number; price_usd_cents: number; features: string[]; popular: boolean;
+  min_devices: number; max_devices: number;
+};
 
 export default function OnboardingPage() {
   const { data: session } = useSession();
@@ -140,7 +146,7 @@ export default function OnboardingPage() {
     { headline: "Welcome to Aavishield.", lead: "Two quick questions, then we'll set up protection that fits your company." },
     { headline: "Protection, on in one click.", lead: "Blocked sites are logged with a reason anyone can read. Data loss prevention watches every upload and never blocks work." },
     { headline: "See it work on your own laptop.", lead: "Install the agent on your laptop and watch your first events arrive in the console within minutes." },
-    { headline: "Roll it out to your team.", lead: "Choose a plan and team size. The trial is free for 14 days, and nothing is charged automatically." },
+    { headline: "Roll it out to your team.", lead: `Choose a plan and how many devices. The trial is free for ${ob.trial_days || 14} days, and nothing is charged automatically.` },
     { headline: "You're set up.", lead: "Your console is ready. Here's what to do next." },
   ][step];
 
@@ -335,9 +341,13 @@ function TeamStep({ ob, onNext, onSkip }: { ob: Onboarding; onNext: () => void; 
   });
   // Self-serve covers the two smaller plans; Enterprise goes through sales.
   const plans = useMemo(() => (data?.plans ?? []).filter(p => p.key === "starter" || p.key === "professional"), [data]);
-  const sizeSeats: Record<string, number> = { "1–10": 10, "11–50": 50, "51–250": 150, "250+": 250 };
+  // The device range these plans are sold for, e.g. 10–50; more is Enterprise.
+  const minDevices = plans.length ? Math.min(...plans.map(p => p.min_devices || 1)) : 10;
+  const maxDevices = plans.length ? Math.max(...plans.map(p => p.max_devices || 50)) : 50;
+  const sizeSeats: Record<string, number> = { "1–10": 10, "11–50": 50, "51–250": 50, "250+": 50 };
   const [choice, setChoice] = useState<"essentials" | "business">(ob.plan_interest === "business" ? "business" : "essentials");
-  const [seats, setSeats] = useState<number>(ob.answers.seats || sizeSeats[ob.answers.team_size || ""] || 10);
+  const [picked, setSeats] = useState<number>(ob.answers.seats || sizeSeats[ob.answers.team_size || ""] || 10);
+  const seats = Math.min(maxDevices, Math.max(minDevices, picked));
   const [currency, setCurrency] = useState<"INR" | "USD">("INR");
   const [busy, setBusy] = useState(false);
 
@@ -364,18 +374,19 @@ function TeamStep({ ob, onNext, onSkip }: { ob: Onboarding; onNext: () => void; 
   return (
     <>
       <AuthHeading eyebrow="Step 4 · Your team" title="Choose a plan for your team">
-        Your 14-day trial opens up to 25 devices. You pay nothing today, and we&apos;ll remind you before the trial ends.
+        Your {ob.trial_days || 14}-day trial covers up to {ob.team_devices || 10} devices. You pay nothing today, and we&apos;ll remind you before the trial ends.
       </AuthHeading>
 
       <div className="mt-6 flex items-center justify-between">
-        <p className={`${AUTH_LABEL} mb-0`}>Team size: <span className="font-mono">{seats}</span> {seats === 1 ? "person" : "people"}</p>
+        <p className={`${AUTH_LABEL} mb-0`}>Devices: <span className="font-mono">{seats}</span></p>
         <div className="flex rounded-[6px] border border-[rgb(11_11_13/0.12)] p-0.5 font-mono text-[11px]">
           {(["INR", "USD"] as const).map(c => (
             <button key={c} type="button" onClick={() => setCurrency(c)} className={`rounded-[4px] px-2.5 py-1 ${currency === c ? "bg-[#0b0b0d] text-white" : "text-[#5d5d66]"}`}>{c}</button>
           ))}
         </div>
       </div>
-      <input type="range" min={1} max={250} value={seats} onChange={e => setSeats(Number(e.target.value))} className="mt-3 w-full accent-[#ff7000]" aria-label="Team size" />
+      <input type="range" min={minDevices} max={maxDevices} value={seats} onChange={e => setSeats(Number(e.target.value))} className="mt-3 w-full accent-[#ff7000]" aria-label="Number of devices" />
+      <div className="mt-1 flex justify-between font-mono text-[10.5px] text-[#71717a]"><span>{minDevices}</span><span>{maxDevices}</span></div>
 
       <div className="mt-5 grid gap-3 sm:grid-cols-2">
         {(["essentials", "business"] as const).map(c => {
@@ -415,7 +426,7 @@ function TeamStep({ ob, onNext, onSkip }: { ob: Onboarding; onNext: () => void; 
         </button>
         <button type="button" onClick={onSkip} className={GHOST_BUTTON}>Not yet, keep exploring</button>
         <p className="text-center text-[13px] text-[#5d5d66]">
-          More than 250 people?{" "}
+          More than {maxDevices} devices?{" "}
           <a href={`${WEBSITE_URL}/contact`} target="_blank" rel="noreferrer" className={`font-medium ${AUTH_LINK}`}>Talk to sales</a>
         </p>
       </div>

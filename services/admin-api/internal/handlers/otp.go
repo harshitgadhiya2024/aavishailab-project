@@ -380,7 +380,7 @@ func (h *OTPHandler) VerifyRegistration(c *gin.Context) {
 		}
 	}
 
-	trialEnd := time.Now().AddDate(0, 0, 14)
+	trialEnd := time.Now().AddDate(0, 0, trialDays(h.db))
 	var user models.User
 	err = h.db.Transaction(func(tx *gorm.DB) error {
 		org := models.Organization{

@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { signIn } from "next-auth/react";
 import Link from "next/link";
 import { ArrowRight, Building2, Loader2, Mail } from "lucide-react";
-import { otpApi } from "@/lib/api";
+import { onboardingApi, otpApi } from "@/lib/api";
 import { toast } from "sonner";
 import {
   AUTH_ARROW, AUTH_BUTTON, AUTH_CHECK, AUTH_HINT, AUTH_LABEL, AUTH_LINK,
@@ -32,8 +32,13 @@ export default function RegisterPage() {
   const [resending, setResending] = useState(false);
   // The plan picked on the website's pricing page (?plan=essentials|business).
   const [plan, setPlan] = useState<"" | "essentials" | "business">("");
+  // Trial length, as set for the free pilot on the pricing page.
+  const [trialDays, setTrialDays] = useState(14);
 
   useEffect(() => {
+    onboardingApi.pricing()
+      .then(r => { const d = Number(r.data?.settings?.pilot_days); if (d > 0) setTrialDays(d); })
+      .catch(() => {});
     const params = new URLSearchParams(window.location.search);
     const p = params.get("plan");
     if (p === "essentials" || p === "business") setPlan(p);
@@ -147,12 +152,12 @@ export default function RegisterPage() {
 
   return (
     <AuthShell
-      headline="Start your 14-day free trial."
+      headline={`Start your ${trialDays}-day free trial.`}
       lead="Try Aavishield on your own laptop first, then roll it out to your team. No credit card required."
       topRight={<>Already have an account?{" "}<Link href="/login" className={`font-medium ${AUTH_LINK}`}>Sign in</Link></>}
     >
       <AuthHeading
-        eyebrow={codeSent ? "Step 2 · Verify" : plan ? `Free trial · ${plan === "business" ? "Business" : "Essentials"} plan` : "Free trial · 14 days"}
+        eyebrow={codeSent ? "Step 2 · Verify" : plan ? `Free trial · ${plan === "business" ? "Business" : "Essentials"} plan` : `Free trial · ${trialDays} days`}
         title={codeSent ? "Confirm your email" : "Create your organization"}
       >
         {codeSent

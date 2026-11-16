@@ -26,17 +26,39 @@ func (h *PricingHandler) plans() []models.PricingPlan {
 	return plans
 }
 
-// settings reads the saved pricing settings over the defaults, so a field
-// added later still has a value on an old row.
 func (h *PricingHandler) settings() models.PricingSettings {
+	return pricingSettings(h.db)
+}
+
+// pricingSettings reads the saved pricing settings over the defaults, so a
+// field added later still has a value on an old row. The free pilot here is
+// also the self-serve trial: its length and device count.
+func pricingSettings(db *gorm.DB) models.PricingSettings {
 	s := models.DefaultPricingSettings
 	var row models.PlatformSetting
-	if err := h.db.Where("key = ?", models.PricingSettingsKey).First(&row).Error; err == nil {
+	if err := db.Where("key = ?", models.PricingSettingsKey).First(&row).Error; err == nil {
 		if raw, err := json.Marshal(row.Value); err == nil {
 			_ = json.Unmarshal(raw, &s)
 		}
 	}
 	return s
+}
+
+// trialDays is how long a self-serve trial runs: the pilot length set on the
+// pricing page, or 14 days when the pilot offer is switched off.
+func trialDays(db *gorm.DB) int {
+	if d := pricingSettings(db).PilotDays; d > 0 {
+		return d
+	}
+	return 14
+}
+
+// trialTeamDevices is how many devices a self-serve team trial covers.
+func trialTeamDevices(db *gorm.DB) int {
+	if n := pricingSettings(db).PilotDevices; n > 0 {
+		return n
+	}
+	return 10
 }
 
 // ─── Public (website) ───────────────────────────────────────────────────────

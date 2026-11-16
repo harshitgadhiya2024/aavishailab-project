@@ -173,7 +173,7 @@ export function PricingPlans({ pricing, currency: initial }: { pricing: Pricing;
                   // Essentials and Business sign up on their own; Enterprise talks to sales.
                   p.key === "starter" || p.key === "professional" ? (
                     <GridButton href={trialHref(p.key === "starter" ? "essentials" : "business")} variant={chosen ? "solid" : "ghost"} className="w-full justify-center">
-                      Start 14-day free trial
+                      {`Start ${settings.pilotDays > 0 ? settings.pilotDays : 14}-day free trial`}
                     </GridButton>
                   ) : (
                     <GridButton href="/contact" variant={chosen ? "solid" : "ghost"} className="w-full justify-center">

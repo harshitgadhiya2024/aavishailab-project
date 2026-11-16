@@ -73,7 +73,7 @@ export const DEFAULT_PRICING: Pricing = {
       from: true,
     },
   ],
-  settings: { gstPercent: 18, monthlyUpliftPercent: 20, pilotDays: 30, pilotDevices: 10, volumeFrom: 100 },
+  settings: { gstPercent: 18, monthlyUpliftPercent: 20, pilotDays: 14, pilotDevices: 10, volumeFrom: 100 },
 };
 
 /** INR for visitors in India, USD for everyone else. `country` is an ISO 3166 code such as Cloudflare's CF-IPCountry. */

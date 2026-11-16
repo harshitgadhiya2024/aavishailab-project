@@ -49,7 +49,7 @@ const PricingSettingsKey = "pricing"
 var DefaultPricingSettings = PricingSettings{
 	GSTPercent:       18,
 	MonthlyUpliftPct: 20,
-	PilotDays:        30,
+	PilotDays:        14,
 	PilotDevices:     10,
 	VolumeFrom:       100,
 }
