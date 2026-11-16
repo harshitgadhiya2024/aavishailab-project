@@ -3,6 +3,7 @@
 import { CheckCircle, CircleNotch } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
+import { attribution, track } from "@/lib/track";
 
 type Status = "idle" | "sending" | "sent" | "error";
 type Errors = Partial<Record<"name" | "email" | "company" | "devices", string>>;
@@ -38,13 +39,17 @@ export function ContactForm() {
       const ref = new URL(document.referrer);
       if (ref.origin === window.location.origin && ref.pathname !== "/contact") source = `/contact (from ${ref.pathname})`;
     } catch {}
+    const { referrer, landing } = attribution();
+    if (window.location.search) source += ` ${window.location.search}`;
+    if (landing) source += ` (landed on ${landing})`;
     try {
       const res = await fetch("/api/contact", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...Object.fromEntries(data), source }),
+        body: JSON.stringify({ ...Object.fromEntries(data), source, referrer }),
       });
       if (res.ok) {
+        track("demo_request", { devices: String(data.get("devices") || "") || undefined });
         setStatus("sent");
       } else {
         const j = await res.json().catch(() => ({}));

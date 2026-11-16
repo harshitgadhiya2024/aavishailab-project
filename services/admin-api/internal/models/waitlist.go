@@ -23,7 +23,7 @@ const (
 
 type WaitlistEntry struct {
 	Base
-	Name    string `gorm:"not null" json:"name"`
+	Name string `gorm:"not null" json:"name"`
 	// One entry per address: a repeat sign-up is answered as a success but
 	// not stored twice (checked in the handler, so soft-deleted rows don't
 	// block someone from joining again).
@@ -32,11 +32,16 @@ type WaitlistEntry struct {
 	TeamSize string `json:"team_size"`
 	Role     string `json:"role"`
 	// Page path plus any utm_* parameters the visitor arrived with.
-	Source    string         `json:"source"`
-	IPAddress string         `json:"ip_address"`
-	UserAgent string         `json:"user_agent"`
-	Status    WaitlistStatus `gorm:"type:varchar(20);default:'waiting';index" json:"status"`
-	Notes     string         `gorm:"type:text" json:"notes"`
+	Source    string `json:"source"`
+	IPAddress string `json:"ip_address"`
+	UserAgent string `json:"user_agent"`
+	// Two-letter country from Cloudflare (CF-IPCountry) and the page that
+	// linked to the site, so leads can be counted by market and channel
+	// without any cookie.
+	Country  string         `gorm:"size:2;index" json:"country"`
+	Referrer string         `json:"referrer"`
+	Status   WaitlistStatus `gorm:"type:varchar(20);default:'waiting';index" json:"status"`
+	Notes    string         `gorm:"type:text" json:"notes"`
 	// Set the first time the entry is moved to "invited".
 	InvitedAt *time.Time `json:"invited_at"`
 	// Set by whichever superadmin last changed the status or notes.

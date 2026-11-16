@@ -4,6 +4,14 @@ import { ArrowRight, CaretDown, Check, CheckCircle, CircleNotch, LinkSimple } fr
 import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { attribution, track } from "@/lib/track";
+
+/** This page with its campaign tags, plus the landing page when the visitor arrived elsewhere. */
+function leadSource() {
+  const here = window.location.pathname + window.location.search;
+  const { landing } = attribution();
+  return landing && landing !== here ? `${here} (landed on ${landing})` : here;
+}
 
 // Same field style as the contact form; the error variant swaps the accent.
 const field =
@@ -110,7 +118,8 @@ export function WaitlistForm({ id = "join" }: { id?: string }) {
           role: get("role"),
           website: get("website"),
           // Page plus campaign parameters, so the team can see where sign-ups come from.
-          source: window.location.pathname + window.location.search,
+          source: leadSource(),
+          referrer: attribution().referrer,
         }),
       });
       if (!res.ok) {
@@ -118,6 +127,7 @@ export function WaitlistForm({ id = "join" }: { id?: string }) {
         throw new Error(body.error || "Could not add you to the list. Please try again.");
       }
       const first = get("name").split(" ")[0];
+      track("waitlist_signup", { team_size: get("team_size") || undefined, role: get("role") || undefined });
       setFirstName(first);
       setStatus("done");
       try {

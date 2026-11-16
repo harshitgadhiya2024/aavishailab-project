@@ -26,7 +26,7 @@ export const legalPages: LegalPage[] = [
       "This policy explains what personal data Aavishield collects, why, how long we keep it and the choices you have. It covers our website, the company admin console, the employee portal and the Aavishield agent installed on devices.",
     summary: [
       { title: "Your company decides", body: "For data collected from employee devices, your employer is in charge. We process it on their instructions." },
-      { title: "We never sell data", body: "Personal data is never sold or used for advertising." },
+      { title: "We never sell data", body: "Personal data is never sold, and console and portal data is never used for advertising." },
       { title: "Scoped to your organisation", body: "Each organisation's data is isolated and visible only to its own authorised admins." },
       { title: "You have rights", body: "Ask for access, correction or deletion at any time." },
     ],
@@ -45,7 +45,7 @@ export const legalPages: LegalPage[] = [
         body: ["What we collect depends on how you interact with Aavishield."],
         list: [
           "Website visitors and prospects: name, work email, company, role, team size and anything you write in the demo request form.",
-          "Website usage, only if you accept analytics cookies: the pages you view and how you interact with them, collected with Google Analytics and Microsoft Clarity. See our Cookie Policy.",
+          "Website usage, only if you accept cookies: the pages you view and how you interact with them, collected with Google Analytics and Microsoft Clarity, and whether you arrived from or signed up after one of our ads. See our Cookie Policy.",
           "Customer administrators: name, work email, password (stored only as a hash), role, sign-in history, two-factor settings and actions taken in the console (audit log).",
           "Employees of customers: name, work email, department, team, devices enrolled and portal account details.",
           "Device data from the agent: hostname, operating system and version, agent version, IP address, installed applications and security posture (disk encryption, firewall, updates, screen lock, antivirus).",
@@ -79,8 +79,8 @@ export const legalPages: LegalPage[] = [
         id: "sharing",
         title: "Who we share data with",
         body: [
-          "We do not sell personal data and we do not share it for advertising. A customer's data is visible only to that customer's authorised users, never to other organisations on the platform.",
-          "We use service providers who process data on our behalf under contract, for: cloud hosting and storage, network delivery and protection, transactional email, payment processing, website analytics (Google Analytics and Microsoft Clarity, only with your consent), and AI model providers used to classify content for data loss prevention. We may disclose data if the law requires it, or to protect the rights and safety of our users and the public.",
+          "We do not sell personal data. Data from the console, the employee portal and the endpoint agent is never shared for advertising. On the public website, and only if you accept cookies, advertising platforms learn that a visit or sign-up came from one of our ads, so we can measure our own campaigns. A customer's data is visible only to that customer's authorised users, never to other organisations on the platform.",
+          "We use service providers who process data on our behalf under contract, for: cloud hosting and storage, network delivery and protection, transactional email, payment processing, website analytics and ad measurement (Google Analytics, Microsoft Clarity and advertising platforms such as Google Ads, LinkedIn and Meta, only with your consent), and AI model providers used to classify content for data loss prevention. We may disclose data if the law requires it, or to protect the rights and safety of our users and the public.",
         ],
       },
       {
@@ -228,7 +228,7 @@ export const legalPages: LegalPage[] = [
     description: "Which cookies and similar storage the Aavishield website, console and employee portal use, and how to control them.",
     intro: "We keep cookies to the minimum the service needs. This policy lists what we use and why.",
     summary: [
-      { title: "No advertising cookies", body: "We do not use cookies to track you for advertising." },
+      { title: "Ad cookies only if you agree", body: "Advertising cookies measure our own ads, are set only after you accept, and never in the console or portal." },
       { title: "Essentials only", body: "Sign-in and security cookies keep the console working." },
       { title: "Analytics only if you agree", body: "Google Analytics and Microsoft Clarity cookies are set only after you accept them." },
       { title: "You are in control", body: "Your browser lets you clear or block cookies at any time." },
@@ -240,9 +240,10 @@ export const legalPages: LegalPage[] = [
         title: "On our website",
         body: [
           "The public website stores your theme choice (light or dark) and your cookie choice in your browser's local storage, so the site looks and behaves the way you left it.",
-          "If you accept analytics cookies, we use Google Analytics to understand how people use the site: the pages viewed and how visitors interact with them, such as scrolling, outbound links and downloads. Google Analytics sets cookies named _ga and _ga_TRTQ0TD218, which last up to two years. Advertising features are turned off in our tag, and we never use this data for advertising.",
+          "If you accept analytics cookies, we use Google Analytics to understand how people use the site: the pages viewed and how visitors interact with them, such as scrolling, outbound links and downloads. Google Analytics sets cookies named _ga and _ga_G9JZS65BGC, which last up to two years. We use this data only to understand and improve our website and our own campaigns, and never sell it.",
           "If you accept, we may also use Microsoft Clarity to see, in aggregate, where visitors click and scroll and where pages confuse them, through heatmaps and session replays. Clarity masks text you type into forms, sets cookies named _clck and _clsk (up to one year and one day respectively), and its data is not used for advertising.",
-          "If you decline, no analytics cookies are set and Clarity is not loaded. Google may still receive a basic signal that a page was viewed, without setting or reading cookies.",
+          "If you accept, we also load Google Tag Manager, which runs advertising tags from Google Ads, LinkedIn and Meta. They tell those platforms that a visit or sign-up came from one of our ads, so we can see which campaigns work. These providers set their own cookies, which can last up to two years.",
+          "If you decline, no analytics or advertising cookies are set, and Clarity and Tag Manager are not loaded. Google may still receive a basic signal that a page was viewed, without setting or reading cookies.",
           "You can change your choice at any time with the Cookie settings link at the bottom of every page.",
         ],
       },
@@ -252,7 +253,7 @@ export const legalPages: LegalPage[] = [
         body: ["When you sign in to the company admin console or the employee portal we use strictly necessary cookies to:"],
         list: ["Keep you signed in and refresh your session securely", "Protect forms against cross-site request forgery", "Remember your theme and layout preferences, such as a collapsed sidebar"],
       },
-      { id: "third-party", title: "Third parties", body: ["Our network provider may set a strictly necessary cookie to protect the site against bots and abuse. Google and Microsoft set analytics cookies on the website only if you accept them. We do not allow third parties to place advertising cookies through our services."] },
+      { id: "third-party", title: "Third parties", body: ["Our network provider may set a strictly necessary cookie to protect the site against bots and abuse. Google and Microsoft set analytics cookies on the website only if you accept them. Advertising platforms (Google Ads, LinkedIn, Meta) may set cookies on the public website only if you accept them, and only to measure our own ads. No advertising cookies are used in the console, the employee portal or the agent."] },
       { id: "control", title: "Managing cookies", body: ["You can clear or block cookies in your browser settings. If you block strictly necessary cookies, you will not be able to sign in to the console or portal."] },
       { id: "changes", title: "Changes", body: [`If we add new kinds of cookies we will update this policy and, where the law requires, ask for your consent first. Questions: ${LEGAL_EMAIL}.`] },
     ],

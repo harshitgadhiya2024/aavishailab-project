@@ -59,3 +59,13 @@ export const STATUS_STYLES: Record<string, { label: string; dot: string; text: s
   suspended: { label: "Suspended", dot: "bg-red-500", text: "text-red-600" },
   inactive: { label: "Inactive", dot: "bg-zinc-500", text: "text-muted-foreground" },
 };
+
+/** "IN" → "India", from a Cloudflare country code; "Unknown" when missing. */
+export function countryName(code?: string) {
+  if (!code) return "Unknown";
+  try {
+    return new Intl.DisplayNames(["en"], { type: "region" }).of(code) ?? code;
+  } catch {
+    return code;
+  }
+}

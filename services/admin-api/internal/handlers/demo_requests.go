@@ -35,12 +35,24 @@ type demoSubmission struct {
 	Source    string `json:"source"`
 	IPAddress string `json:"ip_address"`
 	UserAgent string `json:"user_agent"`
+	Country   string `json:"country"`
+	Referrer  string `json:"referrer"`
 }
 
 func clip(s string, n int) string {
 	s = strings.TrimSpace(s)
 	if len(s) > n {
 		return s[:n]
+	}
+	return s
+}
+
+// countryCode keeps a Cloudflare CF-IPCountry value only when it is a plain
+// two-letter code. "XX" (unknown) and "T1" (Tor) are not countries.
+func countryCode(s string) string {
+	s = strings.ToUpper(strings.TrimSpace(s))
+	if len(s) != 2 || s == "XX" || s == "T1" || s[0] < 'A' || s[0] > 'Z' || s[1] < 'A' || s[1] > 'Z' {
+		return ""
 	}
 	return s
 }
@@ -71,6 +83,8 @@ func (h *DemoRequestHandler) Submit(c *gin.Context) {
 		Source:    clip(req.Source, 300),
 		IPAddress: clip(req.IPAddress, 64),
 		UserAgent: clip(req.UserAgent, 500),
+		Country:   countryCode(req.Country),
+		Referrer:  clip(req.Referrer, 500),
 		Status:    models.DemoRequestNew,
 	}
 	if item.Name == "" || item.Company == "" {

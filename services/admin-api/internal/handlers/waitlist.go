@@ -37,6 +37,8 @@ type waitlistSubmission struct {
 	Source    string `json:"source"`
 	IPAddress string `json:"ip_address"`
 	UserAgent string `json:"user_agent"`
+	Country   string `json:"country"`
+	Referrer  string `json:"referrer"`
 }
 
 // Submit handles POST /internal/website/waitlist. Like demo requests, only
@@ -64,6 +66,8 @@ func (h *WaitlistHandler) Submit(c *gin.Context) {
 		Source:    clip(req.Source, 500),
 		IPAddress: clip(req.IPAddress, 64),
 		UserAgent: clip(req.UserAgent, 500),
+		Country:   countryCode(req.Country),
+		Referrer:  clip(req.Referrer, 500),
 		Status:    models.WaitlistWaiting,
 	}
 	if item.Name == "" || item.Company == "" {

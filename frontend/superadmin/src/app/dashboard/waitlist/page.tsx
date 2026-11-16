@@ -6,7 +6,7 @@ import { waitlistApi } from "@/lib/api";
 import {
   Hourglass, Search, X, Loader2, Mail, Building2, Users, Briefcase, Globe, Send, Download, Trash2, ExternalLink,
 } from "lucide-react";
-import { cn, formatDateTime } from "@/lib/utils";
+import { cn, countryName, formatDateTime } from "@/lib/utils";
 import { toast } from "sonner";
 
 const STATUSES = [
@@ -36,6 +36,8 @@ type Entry = {
   source: string;
   ip_address: string;
   user_agent: string;
+  country?: string;
+  referrer?: string;
   status: string;
   notes: string;
   invited_at: string | null;
@@ -297,6 +299,8 @@ function EntryDrawer({ item, onClose }: { item: Entry; onClose: () => void }) {
             <Row icon={Users} label="Team size">{item.team_size || "Not given"}</Row>
             <Row icon={Briefcase} label="Role">{item.role || "Not given"}</Row>
             <Row icon={Globe} label="Source">{item.source || "/waitlist"}</Row>
+            <Row icon={Globe} label="Country">{countryName(item.country)}</Row>
+            {item.referrer && <Row icon={Globe} label="Came from">{item.referrer}</Row>}
             {item.invited_at && <Row icon={Send} label="Invited">{formatDateTime(item.invited_at)}</Row>}
           </dl>
 
