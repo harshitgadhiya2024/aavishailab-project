@@ -1,6 +1,6 @@
 import { ArrowUpRight, EnvelopeSimple, InstagramLogo, LinkedinLogo, XLogo } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
-import { CTA, modules, resources } from "@/lib/content";
+import { CTA, modules, resources, trialHref } from "@/lib/content";
 import { legalPages } from "@/lib/legal";
 import { SOCIAL } from "@/lib/seo";
 import { CookieSettingsButton } from "./analytics";
@@ -21,7 +21,7 @@ const columns = [
     links: [
       { href: "/company", label: "About" },
       { href: "/pricing", label: "Pricing" },
-      { href: "/contact", label: "Book a demo" },
+      { href: "/contact", label: "Talk to sales" },
       { href: "mailto:info@aavishield.com", label: "info@aavishield.com" },
     ],
   },
@@ -45,7 +45,7 @@ export function Footer() {
           </div>
           <div className="md:justify-self-end">
             <div className="flex flex-wrap gap-3">
-              <GridButton href="/contact">{CTA.demo}</GridButton>
+              <GridButton href={trialHref()}>{CTA.trial}</GridButton>
               <GridButton href="mailto:info@aavishield.com" variant="ghost" icon={EnvelopeSimple}>info@aavishield.com</GridButton>
             </div>
             <p className="mt-4 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.1em] text-muted">

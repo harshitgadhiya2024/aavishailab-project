@@ -238,6 +238,8 @@ export const authOptions: NextAuthOptions = {
           accessToken: (user as any).accessToken,
           refreshToken: (user as any).refreshToken,
           accessTokenExpires: (user as any).accessTokenExpires,
+          // When this sign-in happened: console prompts show once per login.
+          loginAt: Date.now(),
           user: {
             id: user.id,
             email: user.email,
@@ -283,6 +285,7 @@ export const authOptions: NextAuthOptions = {
       (session as any).refreshToken = token.refreshToken;
       (session as any).error = token.error;
       (session as any).user = token.user;
+      (session as any).loginAt = token.loginAt ?? null;
       return session;
     },
   },

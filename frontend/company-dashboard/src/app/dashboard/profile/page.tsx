@@ -10,6 +10,7 @@ import {
 import { cn, formatDate } from "@/lib/utils";
 import { usePermissions, PERMISSIONS } from "@/lib/permissions";
 import { toast } from "sonner";
+import { MetricCard, MetricRow } from "@/components/ui/MetricCard";
 
 const INDUSTRIES = [
   "Technology / Software", "Financial Services", "Healthcare", "Manufacturing",
@@ -180,23 +181,15 @@ export default function CompanyProfilePage() {
       </div>
 
       {/* Plan and usage — read-only facts an admin looks for on this page */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      <MetricRow cols={5}>
         {[
-          { label: "Employees", value: usage.employees ?? 0, icon: Users },
-          { label: "Devices", value: usage.devices ?? 0, icon: Monitor },
-          { label: "Teams", value: usage.teams ?? 0, icon: UsersRound },
-          { label: "Policies", value: usage.policies ?? 0, icon: FileText },
-          { label: "Dashboard users", value: `${usage.dashboard_users ?? 0}${usage.max_users ? ` / ${usage.max_users}` : ""}`, icon: UserCog },
-        ].map(s => (
-          <div key={s.label} className="bg-card rounded-xl border border-border p-4">
-            <div className="flex items-center gap-2 text-muted-foreground mb-1">
-              <s.icon className="w-3.5 h-3.5" />
-              <span className="text-xs">{s.label}</span>
-            </div>
-            <p className="[font-family:Satoshi,var(--font-inter),sans-serif] text-[1.5rem] font-medium leading-tight tracking-[-0.02em] text-foreground tabular-nums">{s.value}</p>
-          </div>
-        ))}
-      </div>
+          { label: "Employees", value: usage.employees ?? 0, icon: Users, href: "/dashboard/employees", detail: "people in the company" },
+          { label: "Devices", value: usage.devices ?? 0, icon: Monitor, href: "/dashboard/devices", detail: "enrolled laptops" },
+          { label: "Teams", value: usage.teams ?? 0, icon: UsersRound, href: "/dashboard/teams", detail: "groups for policies" },
+          { label: "Policies", value: usage.policies ?? 0, icon: FileText, href: "/dashboard/swg", detail: "web policies" },
+          { label: "Console users", value: `${usage.dashboard_users ?? 0}${usage.max_users ? ` / ${usage.max_users}` : ""}`, icon: UserCog, href: "/dashboard/users", detail: usage.max_users ? "seats used" : "admins and analysts" },
+        ].map(s => <MetricCard key={s.label} {...s} />)}
+      </MetricRow>
 
       <div className="bg-card rounded-xl border border-border p-4 flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3 flex-wrap text-sm">

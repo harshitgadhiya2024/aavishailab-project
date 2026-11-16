@@ -11,7 +11,7 @@ import { ModuleIcon } from "@/components/icons";
 import { Reveal } from "@/components/motion/reveal";
 import { Section, SectionHead } from "@/components/section";
 import { SolutionIcon } from "@/components/solution-icon";
-import { CTA, getModule, type ModuleSlug } from "@/lib/content";
+import { CTA, getModule, type ModuleSlug, trialHref } from "@/lib/content";
 import { JsonLd, breadcrumbLd, faqLd } from "@/lib/seo";
 import { shots } from "@/lib/shots";
 import { getIndustry, getSolution, industries } from "@/lib/solutions";
@@ -70,7 +70,7 @@ export default async function IndustryPage(props: PageProps<"/industries/[slug]"
         body={ind.intro}
         visual={<ModuleVisual slug={ind.modules[0]} />}
       >
-        <Button href="/contact" size="lg">{CTA.demo}</Button>
+        <Button href={trialHref()} size="lg">{CTA.trial}</Button>
         <Button href="#use-cases" size="lg" variant="ghost">Use cases</Button>
       </PageHero>
 

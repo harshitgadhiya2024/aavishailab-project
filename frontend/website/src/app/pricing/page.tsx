@@ -127,7 +127,8 @@ function CellView({ v }: { v: Cell }) {
 
 export default async function PricingPage() {
   // Cloudflare adds CF-IPCountry to every request: India sees rupees, everyone else dollars.
-  const currency = currencyForCountry((await headers()).get("cf-ipcountry"));
+  const country = (await headers()).get("cf-ipcountry");
+  const currency = currencyForCountry(country);
   const pricing = await getPricing();
   const { plans, settings } = pricing;
   const { how, faq } = pricingCopy(pricing);
@@ -170,7 +171,7 @@ export default async function PricingPage() {
 
       {/* 2. Plans, sized by device count */}
       <section className="grid-band px-5 py-16 sm:px-8 md:px-12 md:py-24">
-        <PricingPlans pricing={pricing} currency={currency} />
+        <PricingPlans pricing={pricing} currency={currency} countryKnown={!!country} />
       </section>
 
       {/* 3. Included */}

@@ -140,6 +140,12 @@ type ScreenshotSettings struct {
 
 	// How long to keep images. A cleanup job deletes older ones. 0 = keep.
 	RetentionDays int `gorm:"default:90" json:"retention_days"`
+
+	// PortalHidden takes "My Screenshots" out of the employee portal: the
+	// page, the menu item and the portal's screenshot API. Capture itself is
+	// unaffected — that is Enabled. Stored as "hidden" so the zero value is
+	// the default (shown) and an insert can never drop a false.
+	PortalHidden bool `gorm:"default:false" json:"portal_hidden"`
 }
 
 // DefaultScreenshotSettings is what an org sees before it configures anything.

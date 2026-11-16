@@ -13,7 +13,7 @@ import { ArrowRight, CaretDown } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
 import { useState } from "react";
-import { CTA, modules, resources, type ModuleSlug } from "@/lib/content";
+import { CONSOLE_URL, CTA, modules, resources, trialHref, type ModuleSlug } from "@/lib/content";
 import { industries, solutionsList } from "@/lib/solutions";
 import { GridButton } from "./landing/grid-button";
 import {
@@ -253,7 +253,7 @@ export function SolutionsMenu({ onNavigate }: { onNavigate: () => void }) {
               </li>
             ))}
           </ul>
-          <Callout label="Not sure where to start?" title="Tell us the problem. We will show you the fix." href="/contact" cta={CTA.demo} onNavigate={onNavigate} />
+          <Callout label="Not sure where to start?" title="Try it on your own laptop first. No card needed." href={trialHref()} cta={CTA.trial} onNavigate={onNavigate} />
         </div>
         <Stage>
           <SolutionsFeedHero kind={hover.kind} slug={hover.kind === "all" ? undefined : hover.slug} />
@@ -350,7 +350,7 @@ export function ResourcesMenu({ onNavigate }: { onNavigate: () => void }) {
             <Link href="/pricing" onClick={onNavigate} onPointerEnter={() => setHover("/pricing")} className={hover === "/pricing" ? "text-fg" : "hover:text-fg"}>Pricing</Link>
             <Link href="/security" onClick={onNavigate} onPointerEnter={() => setHover("/security")} className={hover === "/security" ? "text-fg" : "hover:text-fg"}>Security</Link>
           </div>
-          <Callout label="See it on your devices" title="A pilot can be live in an afternoon." href="/contact" cta={CTA.demo} onNavigate={onNavigate} />
+          <Callout label="See it on your devices" title="A pilot can be live in an afternoon." href={trialHref()} cta={CTA.trial} onNavigate={onNavigate} />
         </div>
         <Stage>
           <div key={hover} className="h-full">{resourcesVisual(hover)}</div>
@@ -446,8 +446,9 @@ export function MobileMenu() {
           </li>
         ))}
       </ul>
-      <div className="p-5 sm:hidden">
-        <GridButton href="/contact" className="w-full justify-center">{CTA.demo}</GridButton>
+      <div className="grid gap-2 p-5">
+        <GridButton href={trialHref()} className="w-full justify-center sm:hidden">{CTA.trial}</GridButton>
+        <GridButton href={`${CONSOLE_URL}/login`} variant="ghost" className="w-full justify-center">{CTA.signIn}</GridButton>
       </div>
     </motion.div>
   );

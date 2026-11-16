@@ -22,7 +22,7 @@ import { SolutionIcon } from "@/components/solution-icon";
 import { moduleShots } from "@/lib/module-shots";
 import { shots } from "@/lib/shots";
 import { solutionsList } from "@/lib/solutions";
-import { CTA, getModule, moduleExtras, modules, type ModuleSlug } from "@/lib/content";
+import { CTA, getModule, moduleExtras, modules, type ModuleSlug, trialHref } from "@/lib/content";
 import { JsonLd, SITE_URL, breadcrumbLd, faqLd } from "@/lib/seo";
 
 export function generateStaticParams() {
@@ -85,7 +85,7 @@ export default async function ModulePage(props: PageProps<"/platform/[slug]">) {
         body={m.intro}
         visual={<ModuleVisual slug={m.slug as ModuleSlug} />}
       >
-        <Button href="/contact" size="lg">{CTA.demo}</Button>
+        <Button href={trialHref()} size="lg">{CTA.trial}</Button>
         <Button href="#faq" size="lg" variant="ghost">Read FAQs</Button>
       </PageHero>
 

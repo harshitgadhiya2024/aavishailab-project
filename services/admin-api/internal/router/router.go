@@ -352,6 +352,9 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 	// Any org member may enter; each route below states the permission it needs.
 	company.Use(middleware.CompanyAccess())
 	company.Use(middleware.SetScopedOrgFromJWT())
+	// An expired self-serve company can look but not change anything except
+	// its plan, billing, demo booking and support (see middleware.ExpiredOrgGate).
+	company.Use(middleware.ExpiredOrgGate(db))
 
 	// Employees (+ enrollment token sub-routes)
 	emps := company.Group("/employees")
@@ -378,6 +381,8 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 		devices.GET("", middleware.RequirePermission(models.PermDevicesRead), agentH.ListDevices)
 		devices.GET("/:id", middleware.RequirePermission(models.PermDevicesRead), agentH.GetDevice)
 		devices.DELETE("/:id", middleware.RequirePermission(models.PermDevicesWrite), agentH.RevokeDevice)
+		// Ask the employee to reconnect a revoked device (email + portal notice).
+		devices.POST("/:id/reconnect-link", middleware.RequirePermission(models.PermDevicesWrite), agentH.SendReconnectLink)
 		// Working hours: which device is company-owned vs personal, and when
 		// its agent is allowed to enforce.
 		devices.PATCH("/:id", middleware.RequirePermission(models.PermDevicesWrite), enfH.SetDeviceOwnership)
@@ -508,6 +513,34 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 		aiChat.PATCH("/sessions/:id", aiH.UpdateSession)
 		aiChat.DELETE("/sessions/:id", aiH.DeleteSession)
 		aiChat.POST("/sessions/:id/messages", aiH.AddMessage)
+	}
+
+	// First-run wizard for companies that signed up on their own.
+	onboardingH := handlers.NewOnboardingHandler(db)
+	onboarding := company.Group("/onboarding")
+	{
+		onboarding.GET("", middleware.RequirePermission(models.PermSettingsRead), onboardingH.Get)
+		onboarding.PUT("/answers", middleware.RequirePermission(models.PermSettingsWrite), onboardingH.SaveAnswers)
+		onboarding.POST("/starter-policy", middleware.RequirePermission(models.PermSettingsWrite), onboardingH.StarterPolicy)
+		onboarding.POST("/team-trial", middleware.RequirePermission(models.PermSettingsWrite), onboardingH.TeamTrial)
+		onboarding.POST("/complete", middleware.RequirePermission(models.PermSettingsWrite), onboardingH.Complete)
+	}
+	// The signed-in user's answers to console prompts (welcome, tour, demo).
+	company.PUT("/me/prompts", onboardingH.SetPrompt)
+
+	// Book a demo slot with the team from inside the console.
+	demoBookingH := handlers.NewDemoBookingHandler(db)
+	company.GET("/demo-booking", middleware.RequirePermission(models.PermSettingsRead), demoBookingH.Get)
+	company.POST("/demo-booking", middleware.RequirePermission(models.PermSettingsWrite), demoBookingH.Book)
+	company.DELETE("/demo-booking", middleware.RequirePermission(models.PermSettingsWrite), demoBookingH.Cancel)
+
+	// Self-serve plan, invoices and online payment.
+	selfBillingH := handlers.NewSelfServeBillingHandler(db)
+	selfBilling := company.Group("/billing")
+	{
+		selfBilling.GET("", middleware.RequirePermission(models.PermSettingsRead), selfBillingH.Get)
+		selfBilling.POST("/quote", middleware.RequirePermission(models.PermSettingsRead), selfBillingH.Quote)
+		selfBilling.POST("/checkout", middleware.RequirePermission(models.PermSettingsWrite), selfBillingH.Checkout)
 	}
 
 	// The organization's own profile and preferences.

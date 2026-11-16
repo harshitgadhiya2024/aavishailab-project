@@ -18,6 +18,23 @@ import { PERIOD_LABELS, periodFor, periodParams, periodText, validateRange, type
 import { PeriodPicker } from "@/components/reports/PeriodPicker";
 import { ControlTrend } from "@/components/reports/ControlTrend";
 import { BarList } from "@/components/reports/BarList";
+import { MetricCard, MetricRow } from "@/components/ui/MetricCard";
+import { AlertTriangle, Ban, Flag, ShieldAlert } from "lucide-react";
+
+/** Report summaries arrive as label/value pairs; pick an icon from the label. */
+function summaryIcon(label: string): React.ElementType {
+  const l = label.toLowerCase();
+  if (/incident/.test(l)) return ShieldAlert;
+  if (/block/.test(l)) return Ban;
+  if (/flag|alert/.test(l)) return Flag;
+  if (/device|laptop|posture/.test(l)) return Monitor;
+  if (/employee|people|user|person/.test(l)) return Users;
+  if (/app/.test(l)) return AppWindow;
+  if (/file|upload|dlp|data/.test(l)) return FileText;
+  if (/domain|site|web|url/.test(l)) return Globe;
+  if (/risk/.test(l)) return AlertTriangle;
+  return BarChart3;
+}
 
 const AI_URL = process.env.NEXT_PUBLIC_AI_URL || "http://localhost:6002";
 
@@ -291,15 +308,13 @@ function ReportsInner() {
             )}
 
             {(report.summary ?? []).length > 0 && (
-              <div className="mt-5 grid grid-cols-2 md:grid-cols-4 gap-3">
+              <MetricRow className="mt-5">
                 {(report.summary as any[]).map((s) => (
-                  <div key={s.label} className="rounded-lg bg-elevated px-4 py-3">
-                    <p className="text-xs text-muted-foreground">{s.label}</p>
-                    <p className="mt-1 [font-family:Satoshi,var(--font-inter),sans-serif] text-[1.5rem] font-medium leading-tight tracking-[-0.02em] text-foreground tabular-nums">{typeof s.value === "number" ? formatNumber(s.value) : s.value}</p>
-                    {s.hint && <p className="mt-0.5 text-[11px] text-subtle">{s.hint}</p>}
-                  </div>
+                  <MetricCard key={s.label} label={s.label} icon={summaryIcon(s.label)}
+                    value={typeof s.value === "number" ? formatNumber(s.value) : s.value}
+                    detail={s.hint} />
                 ))}
-              </div>
+              </MetricRow>
             )}
           </div>
 

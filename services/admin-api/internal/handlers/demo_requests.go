@@ -7,6 +7,7 @@ import (
 	"net/mail"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/aavishield/admin-api/internal/mailer"
 	"github.com/aavishield/admin-api/internal/models"
@@ -122,12 +123,27 @@ func (h *DemoRequestHandler) List(c *gin.Context) {
 	if s := c.Query("status"); s != "" && s != "all" {
 		q = q.Where("status = ?", s)
 	}
+	order := "created_at DESC"
+	now := time.Now()
+	// booked=upcoming lists console bookings still to happen, soonest first;
+	// booked=past the ones whose time has gone.
+	switch c.Query("booked") {
+	case "upcoming":
+		q = q.Where("preferred_at > ? AND status <> ?", now, models.DemoRequestClosed)
+		order = "preferred_at ASC"
+	case "past":
+		q = q.Where("preferred_at <= ?", now)
+		order = "preferred_at DESC"
+	case "any":
+		q = q.Where("preferred_at IS NOT NULL")
+		order = "preferred_at DESC"
+	}
 	if term := strings.TrimSpace(c.Query("q")); term != "" {
 		like := "%" + strings.ToLower(term) + "%"
 		q = q.Where("LOWER(name) LIKE ? OR LOWER(email) LIKE ? OR LOWER(company) LIKE ?", like, like, like)
 	}
 	var items []models.DemoRequest
-	q.Order("created_at DESC").Limit(500).Find(&items)
+	q.Order(order).Limit(500).Find(&items)
 
 	type row struct {
 		Status string
@@ -142,13 +158,17 @@ func (h *DemoRequestHandler) List(c *gin.Context) {
 		total += r.N
 	}
 	counts["all"] = total
+	var upcoming int64
+	h.db.Model(&models.DemoRequest{}).Where("preferred_at > ? AND status <> ?", now, models.DemoRequestClosed).Count(&upcoming)
+	counts["upcoming"] = upcoming
 
 	c.JSON(http.StatusOK, gin.H{"demo_requests": items, "counts": counts})
 }
 
 type demoUpdate struct {
-	Status *string `json:"status"`
-	Notes  *string `json:"notes"`
+	Status     *string `json:"status"`
+	Notes      *string `json:"notes"`
+	MeetingURL *string `json:"meeting_url"`
 }
 
 // Update handles PATCH /superadmin/demo-requests/:id (status and/or notes).
@@ -181,6 +201,23 @@ func (h *DemoRequestHandler) Update(c *gin.Context) {
 	if req.Notes != nil {
 		changes["notes"] = clip(*req.Notes, 10000)
 	}
+	sendLink := false
+	if req.MeetingURL != nil {
+		link := strings.TrimSpace(*req.MeetingURL)
+		if link != "" && !strings.HasPrefix(link, "https://") && !strings.HasPrefix(link, "http://") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Meeting link must start with https://"})
+			return
+		}
+		link = clip(link, 500)
+		if link != item.MeetingURL {
+			changes["meeting_url"] = link
+			// Email it when it's a console booking still to come.
+			sendLink = link != "" && item.PreferredAt != nil && item.PreferredAt.After(time.Now()) && item.Status != models.DemoRequestClosed
+			if sendLink {
+				changes["calendar_seq"] = item.CalendarSeq + 1 // the invite update carries the link
+			}
+		}
+	}
 	if len(changes) == 0 {
 		c.JSON(http.StatusOK, item)
 		return
@@ -193,5 +230,8 @@ func (h *DemoRequestHandler) Update(c *gin.Context) {
 	delete(changes, "notes") // keep free-text notes out of the audit trail
 	writeAudit(h.db, c, nil, "update", "demo_request", &item.ID, changes)
 	h.db.First(&item, "id = ?", id)
+	if sendLink {
+		mailer.DemoMeetingLink(item.Email, firstWord(item.Name), demoWhen(*item.PreferredAt, item.Timezone), item.MeetingURL, demoInvite(&item))
+	}
 	c.JSON(http.StatusOK, item)
 }

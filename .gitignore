@@ -179,3 +179,6 @@ scripts/loadtest/tokens*.json
 # Certificate passwords kept next to signing material
 *password*.txt
 *password*.md
+
+# Social / marketing assets stay local only — never commit or push them.
+docs/social/

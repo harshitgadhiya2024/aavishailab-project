@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { formatDateTime, cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { MetricCard, MetricRow, type MetricTone } from "@/components/ui/MetricCard";
 import { Pagination } from "@/components/ui/Pagination";
 
 /**
@@ -263,9 +264,9 @@ export default function SWGPage() {
   // No "Allowed requests" card: routine, allowed traffic is never stored (see
   // dropAllowedEvents on the server), so there is nothing live to count.
   const statCards = useMemo(() => ([
-    { label: "Policies", value: policyTotal, color: "bg-brand-500/10 text-brand-500", icon: Shield },
-    { label: "Blocked requests", value: stats.total_blocked ?? 0, color: "bg-red-500/10 text-danger", icon: XCircle },
-    { label: "Logged events", value: logTotal, color: "bg-green-500/10 text-success", icon: AlertCircle },
+    { label: "Policies", value: policyTotal, tone: (policyTotal ? "good" : "neutral") as MetricTone, icon: Shield, detail: policyTotal ? "web policies in place" : "no policy yet" },
+    { label: "Blocked requests", value: stats.total_blocked ?? 0, tone: ((stats.total_blocked ?? 0) ? "bad" : "neutral") as MetricTone, icon: XCircle, detail: "sites stopped by a policy" },
+    { label: "Logged events", value: logTotal, tone: "neutral" as MetricTone, icon: AlertCircle, detail: "blocked or flagged visits" },
   ]), [policyTotal, logTotal, stats.total_blocked]);
 
   return (
@@ -288,17 +289,9 @@ export default function SWGPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {statCards.map(s => (
-          <div key={s.label} className="bg-card rounded-xl p-4 border border-border shadow-sm flex items-center gap-3">
-            <div className={`p-2 rounded-lg ${s.color}`}><s.icon className="w-4 h-4" /></div>
-            <div>
-              <p className="text-xs text-muted-foreground">{s.label}</p>
-              <p className="[font-family:Satoshi,var(--font-inter),sans-serif] text-[1.5rem] font-medium leading-tight tracking-[-0.02em] text-foreground">{s.value}</p>
-            </div>
-          </div>
-        ))}
-      </div>
+      <MetricRow cols={3}>
+        {statCards.map(s => <MetricCard key={s.label} label={s.label} value={s.value} detail={s.detail} icon={s.icon} tone={s.tone} />)}
+      </MetricRow>
 
       {/* URL checker */}
       <div className="bg-card rounded-xl border border-border shadow-sm p-5">

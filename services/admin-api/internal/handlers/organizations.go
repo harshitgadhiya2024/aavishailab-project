@@ -13,6 +13,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/aavishield/admin-api/internal/dataplane"
+	"github.com/aavishield/admin-api/internal/middleware"
 	"github.com/aavishield/admin-api/internal/models"
 )
 
@@ -49,6 +50,12 @@ func (h *OrgHandler) List(c *gin.Context) {
 	}
 	if plan != "" {
 		q = q.Where("plan = ?", plan)
+	}
+	switch c.Query("source") {
+	case "self_serve":
+		q = q.Where("self_serve = ?", true)
+	case "sales":
+		q = q.Where("self_serve = ?", false)
 	}
 
 	var total int64
@@ -130,6 +137,15 @@ func (h *OrgHandler) List(c *gin.Context) {
 			"device_count":   devices[org.ID],
 			"online_count":   online[org.ID],
 			"last_seen_at":   lastSeen[org.ID],
+			// Self-serve funnel: how the company signed up and where it stands.
+			"self_serve":         org.SelfServe,
+			"plan_interest":      org.PlanInterest,
+			"onboarded_at":       org.OnboardedAt,
+			"team_trial_at":      org.TeamTrialAt,
+			"trial_device_limit": org.TrialDeviceLimit,
+			"paid_through":       org.PaidThrough,
+			"expired_at":         org.ExpiredAt,
+			"onboarding":         org.Onboarding,
 		}
 	}
 
@@ -299,7 +315,7 @@ func (h *OrgHandler) Update(c *gin.Context) {
 		return
 	}
 	switch models.OrgStatus(req.Status) {
-	case "", models.OrgStatusActive, models.OrgStatusInactive, models.OrgStatusSuspended, models.OrgStatusTrial:
+	case "", models.OrgStatusActive, models.OrgStatusInactive, models.OrgStatusSuspended, models.OrgStatusTrial, models.OrgStatusExpired:
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Unknown status"})
 		return
@@ -323,7 +339,21 @@ func (h *OrgHandler) Update(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Trial end date must be YYYY-MM-DD"})
 			return
 		}
-		updates["trial_ends_at"] = t.Add(24*time.Hour - time.Second)
+		end := t.Add(24*time.Hour - time.Second)
+		updates["trial_ends_at"] = end
+		// Extending an expired trial reopens it (unless a status was given),
+		// and the reminder emails start over for the new end date.
+		if end.After(time.Now()) {
+			if org.Status == models.OrgStatusExpired && req.Status == "" {
+				updates["status"] = models.OrgStatusTrial
+				updates["expired_at"] = nil
+			}
+			if org.Settings != nil {
+				delete(org.Settings, "trial_notice_3d_at")
+				delete(org.Settings, "trial_notice_1d_at")
+				updates["settings"] = org.Settings
+			}
+		}
 	}
 	if req.Name != "" {
 		updates["name"] = req.Name
@@ -349,6 +379,8 @@ func (h *OrgHandler) Update(c *gin.Context) {
 		return
 	}
 	orgUUID := org.ID
+	middleware.ForgetOrgStatus(orgUUID.String())
+	delete(updates, "settings")
 	writeAudit(h.db, c, &orgUUID, "update", "organization", &orgUUID, updates)
 	h.db.First(&org, "id = ?", org.ID)
 	c.JSON(http.StatusOK, org)

@@ -494,6 +494,8 @@ services:
     build:
       context: ./frontend/website
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_CLARITY_ID: ${NEXT_PUBLIC_CLARITY_ID:-}
     container_name: aavishield-website
     deploy:
       resources:

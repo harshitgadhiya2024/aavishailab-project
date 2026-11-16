@@ -413,12 +413,17 @@ func (h *MonitoringHandler) UpdateSettings(c *gin.Context) {
 		IdleThresholdPercent *int  `json:"idle_threshold_percent"`
 		Blur                 *bool `json:"blur"`
 		RetentionDays        *int  `json:"retention_days"`
+		PortalHidden         *bool `json:"portal_hidden"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
+	if in.Enabled != nil && *in.Enabled && screenshotsLockedForTrial(h.db, orgID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Screenshots switch on once your company moves to a paid plan. They stay off during the free trial."})
+		return
+	}
 	s := screenshotSettingsFor(h.db, orgID)
 	if in.Enabled != nil {
 		s.Enabled = *in.Enabled
@@ -437,6 +442,9 @@ func (h *MonitoringHandler) UpdateSettings(c *gin.Context) {
 	}
 	if in.RetentionDays != nil {
 		s.RetentionDays = *in.RetentionDays
+	}
+	if in.PortalHidden != nil {
+		s.PortalHidden = *in.PortalHidden
 	}
 
 	// Guard rails: a 0-second interval would hammer the agent, and min>max is

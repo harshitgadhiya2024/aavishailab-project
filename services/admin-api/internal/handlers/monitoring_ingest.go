@@ -44,6 +44,10 @@ func screenshotSettingsFor(db *gorm.DB, orgID uuid.UUID) models.ScreenshotSettin
 		s = models.DefaultScreenshotSettings(orgID)
 		db.Create(&s)
 	}
+	// Self-serve trials never capture screens, whatever is saved.
+	if s.Enabled && screenshotsLockedForTrial(db, orgID) {
+		s.Enabled = false
+	}
 	return s
 }
 

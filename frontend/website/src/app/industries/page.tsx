@@ -11,7 +11,7 @@ import { Reveal, Stagger, StaggerItem } from "@/components/motion/reveal";
 import { PageHero } from "@/components/page-hero";
 import { Section, SectionHead } from "@/components/section";
 import { SolutionIcon } from "@/components/solution-icon";
-import { CTA } from "@/lib/content";
+import { CTA, trialHref } from "@/lib/content";
 import { JsonLd, breadcrumbLd } from "@/lib/seo";
 import { shots } from "@/lib/shots";
 import { industries, solutionsList } from "@/lib/solutions";
@@ -43,7 +43,7 @@ export default function IndustriesPage() {
 
       {/* 1. Hero */}
       <PageHero visual={<DataTypesHero />} eyebrow="Endpoint security by industry" accent={["handle."]} title="Security shaped around the data you handle." body="Different industries carry different data and different obligations. Aavishield adapts the same seven controls to each.">
-        <Button href="/contact" size="lg">{CTA.demo}</Button>
+        <Button href={trialHref()} size="lg">{CTA.trial}</Button>
       </PageHero>
 
       {/* 2. Industry cards */}

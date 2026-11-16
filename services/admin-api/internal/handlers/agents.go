@@ -249,6 +249,21 @@ func (h *AgentHandler) Enroll(c *gin.Context) {
 	device.LastSeenAt = &now
 
 	if isNewDevice {
+		if orgExpired(h.db, enrollToken.OrgID) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "This company's Aavishield trial has ended. An admin needs to choose a plan in the console before new devices can be added.",
+				"code":  "trial_expired",
+			})
+			return
+		}
+		if reached, limit := trialDeviceLimitReached(h.db, enrollToken.OrgID); reached {
+			msg := "This free trial covers your own laptop. Choose a plan in the Aavishield console to add your team's devices."
+			if limit > selfServeSoloDevices {
+				msg = fmt.Sprintf("This free trial covers up to %d devices. Contact info@aavishield.com to add more before the trial ends.", limit)
+			}
+			c.JSON(http.StatusForbidden, gin.H{"error": msg, "code": "trial_device_limit"})
+			return
+		}
 		device.EnrolledAt = now
 		if err := h.db.Create(&device).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create device"})

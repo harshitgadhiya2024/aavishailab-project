@@ -1,4 +1,4 @@
-import { CTA } from "@/lib/content";
+import { CTA, trialHref } from "@/lib/content";
 import { Reassurance } from "./landing/conversion";
 import { DitherField } from "./landing/dither-field";
 import { GridButton } from "./landing/grid-button";
@@ -21,7 +21,7 @@ export function CtaBand({ title = "Put policy on every device this week." }: { t
               Install the agent, choose a policy, and see every decision in one console. A pilot can be live in an afternoon.
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
-              <GridButton href="/contact">{CTA.demo}</GridButton>
+              <GridButton href={trialHref()}>{CTA.trial}</GridButton>
               <GridButton href="/pricing" variant="ghost">See pricing</GridButton>
             </div>
             <Reassurance className="mt-5" />

@@ -447,6 +447,7 @@ function MonitoringPanel({ canWrite }: { canWrite: boolean }) {
       idle_threshold_percent: v.idle_threshold_percent,
       blur: v.blur,
       retention_days: v.retention_days,
+      portal_hidden: v.portal_hidden,
     }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["monitoring-settings"] }); toast.success("Monitoring settings saved"); },
     onError: (e: any) => toast.error(e.response?.data?.error ?? "Could not save settings"),
@@ -546,6 +547,30 @@ function MonitoringPanel({ canWrite }: { canWrite: boolean }) {
           </div>
         </div>
       </div>
+
+      <label className="flex items-center justify-between gap-4 rounded-xl border border-border bg-card px-4 py-3">
+        <div>
+          <div className="text-sm font-medium text-body inline-flex items-center gap-2">
+            <Camera className="w-4 h-4" /> Show screenshots in the employee portal
+          </div>
+          <div className="text-xs text-muted-foreground">
+            {draft.portal_hidden
+              ? "Hidden: employees don't see the My Screenshots page or their screenshot count. Capture is not affected."
+              : "Employees can see their own screenshots and add a reason to any of them."}
+          </div>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={!draft.portal_hidden}
+          aria-label="Show screenshots in the employee portal"
+          disabled={!canWrite}
+          onClick={() => set({ portal_hidden: !draft.portal_hidden })}
+          className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors ${!draft.portal_hidden ? "bg-brand-500" : "bg-elevated border border-border-strong"}`}
+        >
+          <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${!draft.portal_hidden ? "translate-x-6" : "translate-x-1"}`} />
+        </button>
+      </label>
 
       <div className="flex justify-end">
         <button

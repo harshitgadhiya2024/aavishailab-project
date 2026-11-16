@@ -384,13 +384,13 @@ impl ConnectorApp {
                 ui.set_width(280.0 * scale);
                 let title = match snap.state {
                     ConnState::Blocked => "Device already registered",
-                    ConnState::Revoked => "Device not registered",
+                    ConnState::Revoked => "Removed by your IT administrator",
                     _ => "",
                 };
                 ui.label(egui::RichText::new(title).strong().color(DANGER));
                 let fallback = match snap.state {
                     ConnState::Blocked => "Your device entry already exists — ask your company IT administrator for permission to reconnect.",
-                    ConnState::Revoked => "This device is no longer registered. Reconnect it, or ask your company IT administrator.",
+                    ConnState::Revoked => "This device no longer reports to Aavishield. Click Reconnect and sign in to add it again, or ask your company IT administrator.",
                     _ => "",
                 };
                 let body = if snap.message.is_empty() { fallback } else { &snap.message };

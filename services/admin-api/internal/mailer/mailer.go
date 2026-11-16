@@ -8,6 +8,7 @@ package mailer
 
 import (
 	"crypto/tls"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"net"
@@ -27,6 +28,15 @@ type Message struct {
 	// Headers are extra RFC 5322 headers, e.g. Message-ID / In-Reply-To /
 	// References so every email about one ticket lands in one thread.
 	Headers map[string]string
+	// Calendar, when set, makes the email a calendar invite (or update, or
+	// cancellation) that mail clients apply to the recipient's calendar.
+	Calendar *CalendarPart
+}
+
+// CalendarPart is an iCalendar body and its iTIP method (REQUEST or CANCEL).
+type CalendarPart struct {
+	Method string
+	ICS    string
 }
 
 type Config struct {
@@ -235,17 +245,50 @@ func buildMIME(msg Message) []byte {
 		fmt.Fprintf(&b, "%s: %s\r\n", k, v)
 	}
 	b.WriteString("MIME-Version: 1.0\r\n")
-	fmt.Fprintf(&b, "Content-Type: multipart/alternative; boundary=%q\r\n\r\n", boundary)
 
 	text := msg.Text
 	if text == "" {
 		text = stripHTML(msg.HTML)
 	}
-	fmt.Fprintf(&b, "--%s\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s\r\n\r\n", boundary, text)
-	fmt.Fprintf(&b, "--%s\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n%s\r\n\r\n", boundary, msg.HTML)
-	fmt.Fprintf(&b, "--%s--\r\n", boundary)
+	writeAlternative := func(boundary string) {
+		fmt.Fprintf(&b, "--%s\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s\r\n\r\n", boundary, text)
+		fmt.Fprintf(&b, "--%s\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n%s\r\n\r\n", boundary, msg.HTML)
+		if msg.Calendar != nil {
+			// The inline text/calendar part is what Gmail and Outlook read to
+			// add (or update, or remove) the event on the recipient's calendar.
+			fmt.Fprintf(&b, "--%s\r\nContent-Type: text/calendar; charset=UTF-8; method=%s\r\n\r\n%s\r\n", boundary, msg.Calendar.Method, msg.Calendar.ICS)
+		}
+		fmt.Fprintf(&b, "--%s--\r\n", boundary)
+	}
 
+	if msg.Calendar == nil {
+		fmt.Fprintf(&b, "Content-Type: multipart/alternative; boundary=%q\r\n\r\n", boundary)
+		writeAlternative(boundary)
+		return []byte(b.String())
+	}
+
+	// With an invite: multipart/mixed holding the alternative body (which
+	// carries the calendar part) plus the same invite as an .ics attachment
+	// for clients that only look at attachments.
+	alt := boundary + "-alt"
+	fmt.Fprintf(&b, "Content-Type: multipart/mixed; boundary=%q\r\n\r\n", boundary)
+	fmt.Fprintf(&b, "--%s\r\nContent-Type: multipart/alternative; boundary=%q\r\n\r\n", boundary, alt)
+	writeAlternative(alt)
+	fmt.Fprintf(&b, "\r\n--%s\r\nContent-Type: application/ics; name=\"invite.ics\"\r\nContent-Disposition: attachment; filename=\"invite.ics\"\r\nContent-Transfer-Encoding: base64\r\n\r\n%s\r\n", boundary, base64Lines(msg.Calendar.ICS))
+	fmt.Fprintf(&b, "--%s--\r\n", boundary)
 	return []byte(b.String())
+}
+
+// base64Lines encodes s as base64 wrapped at 76 characters, as MIME requires.
+func base64Lines(s string) string {
+	enc := base64.StdEncoding.EncodeToString([]byte(s))
+	var out strings.Builder
+	for len(enc) > 76 {
+		out.WriteString(enc[:76] + "\r\n")
+		enc = enc[76:]
+	}
+	out.WriteString(enc)
+	return out.String()
 }
 
 func stripHTML(html string) string {

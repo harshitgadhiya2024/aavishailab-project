@@ -4,7 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LayoutDashboard, Download, Activity, Monitor, Camera, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
+import { portalApi } from "@/lib/api";
 import { BrandLogo, BrandMark } from "@/components/brand/BrandLogo";
 
 const navItems = [
@@ -17,6 +19,10 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  // The company can take "My Screenshots" out of the portal.
+  const { data: me } = useQuery({ queryKey: ["portal-me"], queryFn: () => portalApi.me(), staleTime: 60_000 });
+  const hidden = me?.data?.features?.screenshots === false;
+  const items = navItems.filter(i => !(hidden && i.href === "/dashboard/screenshots"));
   const [collapsed, setCollapsed] = useState(false);
   // Phones always get the compact icon rail so the page keeps its width;
   // `wide` is true only where the full sidebar shows (md and up, not collapsed).
@@ -43,7 +49,7 @@ export function Sidebar() {
         {wide && (
           <p className="hidden px-2.5 pb-1.5 font-mono text-[10.5px] uppercase tracking-[0.12em] text-subtle md:block">My protection</p>
         )}
-        {navItems.map((item) => {
+        {items.map((item) => {
           const isActive = pathname === item.href ||
             (item.href !== "/dashboard" && pathname.startsWith(item.href));
           return (

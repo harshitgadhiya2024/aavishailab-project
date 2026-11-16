@@ -22,7 +22,7 @@ use crate::http_client::{AgentClient, AgentRevoked};
 use crate::mitm::MitmEngine;
 use crate::policy_cache::PolicyCache;
 use crate::threat_cache::ThreatIntelCache;
-use crate::ui_state::UiState;
+use crate::ui_state::{ConnState, UiState};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -409,6 +409,24 @@ async fn run_full_agent(config: Config, ui: UiState, client_slot: ClientSlot, mu
     // the process's life), not compete with it in the same select! loop —
     // the proxy is the reason this thread exists, and nothing about
     // watching for a Disconnect click should ever add latency to it.
+    // An administrator revoking this device only shows up as the server
+    // rejecting its key. Turn that into a state the person can act on —
+    // "removed by your IT administrator" with a working Reconnect — instead
+    // of a window that keeps saying Connected while nothing is enforced.
+    tokio::spawn({
+        let ui = ui.clone();
+        let revoked = revoked.clone();
+        async move {
+            loop {
+                tokio::time::sleep(REVOKED_WATCH_INTERVAL).await;
+                if revoked.by_server() && matches!(ui.snapshot().state, ConnState::Connected | ConnState::Paused) {
+                    tracing::warn!("device key rejected by the server — showing Reconnect");
+                    ui.set_revoked(REVOKED_MESSAGE);
+                }
+            }
+        }
+    });
+
     let disconnect_client = client.clone();
     let disconnect_ui = ui.clone();
     let disconnect_revoked = revoked.clone();
@@ -417,6 +435,13 @@ async fn run_full_agent(config: Config, ui: UiState, client_slot: ClientSlot, mu
             match cmd {
                 Command::Disconnect => {
                     handle_disconnect(&disconnect_client, &disconnect_ui, &disconnect_revoked).await;
+                }
+                // Reconnect after an administrator revoked this device: run
+                // the same browser enrollment a fresh install uses, then swap
+                // the new key into the running agent. The server recognises
+                // this machine and brings back its existing device record.
+                Command::Connect if disconnect_revoked.by_server() => {
+                    reconnect(&disconnect_client, &disconnect_ui, &mut commands).await;
                 }
                 Command::Uninstall { email, password, respond } => {
                     // authorize_and_run resolves as soon as the server has
@@ -430,7 +455,7 @@ async fn run_full_agent(config: Config, ui: UiState, client_slot: ClientSlot, mu
                     let result = crate::uninstall::authorize_and_run(&disconnect_client, &email, &password).await;
                     let _ = respond.send(result);
                 }
-                // Connect/CancelConnect have nothing to do once already
+                // Otherwise Connect/CancelConnect have nothing to do once
                 // enrolled — the button that would send them isn't shown.
                 Command::Connect | Command::CancelConnect => {}
             }
@@ -508,6 +533,47 @@ fn spawn_permission_warm_up() {
 /// event and emails the org's admins. Local teardown happens regardless of
 /// whether that report reaches the server — the person asked to stop being
 /// monitored, and a network hiccup must not be the reason it doesn't take.
+/// How often the window checks whether the server has rejected this device.
+const REVOKED_WATCH_INTERVAL: Duration = Duration::from_secs(3);
+
+/// What the window says once an administrator has revoked this device.
+pub const REVOKED_MESSAGE: &str =
+    "Your company's IT administrator removed this device from Aavishield. Click Reconnect and sign in to add it again.";
+
+/// Re-enrolls a revoked device from inside the running agent. Cancel and the
+/// browser flow behave exactly as on a fresh install; on success the new key
+/// replaces the rejected one in every running loop and enforcement resumes.
+async fn reconnect(client: &AgentClient, ui: &UiState, commands: &mut tokio::sync::mpsc::Receiver<Command>) {
+    let cancel = Arc::new(AtomicBool::new(false));
+    ui.set_connecting();
+    let portal_url = crate::config::resolved_portal_url();
+    let admin_url = crate::config::resolved_admin_url();
+    let enroll_fut = crate::enroll_interactive::browser_enroll(&portal_url, &admin_url, cancel.clone());
+    tokio::pin!(enroll_fut);
+    let outcome = loop {
+        tokio::select! {
+            outcome = &mut enroll_fut => break outcome,
+            next = commands.recv() => match next {
+                Some(Command::CancelConnect) | None => cancel.store(true, Ordering::SeqCst),
+                Some(Command::Uninstall { respond, .. }) => {
+                    let _ = respond.send(Err("Finish or cancel reconnecting first.".to_string()));
+                }
+                Some(_) => {}
+            },
+        }
+    };
+    match outcome {
+        crate::enroll_interactive::EnrollOutcome::Enrolled(config) => {
+            tracing::info!(device_id = %config.device_id, "reconnected after being revoked");
+            spawn_report_connected(&config);
+            client.replace_credentials(config);
+            ui.set_connected("", "");
+        }
+        crate::enroll_interactive::EnrollOutcome::Blocked(message) => ui.set_blocked(message),
+        crate::enroll_interactive::EnrollOutcome::Cancelled => ui.set_revoked(REVOKED_MESSAGE),
+    }
+}
+
 async fn handle_disconnect(client: &AgentClient, ui: &UiState, revoked: &AgentRevoked) {
     if let Err(e) = client.post_json("/internal/agent/lifecycle/disconnected", &serde_json::json!({})).await {
         tracing::warn!(error = %e, "could not report the disconnect");

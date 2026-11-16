@@ -33,6 +33,11 @@ const (
 	OrgStatusInactive  OrgStatus = "inactive"
 	OrgStatusSuspended OrgStatus = "suspended"
 	OrgStatusTrial     OrgStatus = "trial"
+	// OrgStatusExpired is a self-serve company whose trial (or paid period,
+	// after a grace week) ended without payment. The console turns read-only
+	// apart from billing, new devices can't enrol, and enrolled agents keep
+	// enforcing the last policy so the company is never left unprotected.
+	OrgStatusExpired OrgStatus = "expired"
 
 	PlanTrial        PlanType = "trial"
 	PlanStarter      PlanType = "starter"
@@ -80,6 +85,25 @@ type Organization struct {
 	MaxUsers           int            `gorm:"default:50" json:"max_users"`
 	TrialEndsAt        *time.Time     `json:"trial_ends_at"`
 	Settings           map[string]any `gorm:"type:jsonb;serializer:json" json:"settings"`
+
+	// ─── Self-serve trial ───
+	// Set for organizations that signed up on their own from the website.
+	// A self-serve trial starts on the admin's own laptop (TrialDeviceLimit 1)
+	// and opens up to the team only once they choose a plan (TeamTrialAt).
+	SelfServe        bool           `gorm:"default:false" json:"self_serve"`
+	TermsAcceptedAt  *time.Time     `json:"terms_accepted_at"`
+	PlanInterest     string         `json:"plan_interest"`
+	TrialDeviceLimit int            `gorm:"default:0" json:"trial_device_limit"`
+	TeamTrialAt      *time.Time     `json:"team_trial_at"`
+	OnboardedAt      *time.Time     `json:"onboarded_at"`
+	Onboarding       map[string]any `gorm:"type:jsonb;serializer:json" json:"onboarding"`
+
+	// ─── Self-serve subscription ───
+	// PaidThrough is the end of the period the company has paid for; the
+	// lifecycle job raises the renewal invoice a week before it. ExpiredAt is
+	// when the org last moved to OrgStatusExpired.
+	PaidThrough *time.Time `json:"paid_through"`
+	ExpiredAt   *time.Time `json:"expired_at"`
 
 	// Relations
 	Users     []User     `gorm:"foreignKey:OrgID" json:"-"`
@@ -760,6 +784,10 @@ const (
 	BillingStatusPaid      BillingStatus = "paid"
 	BillingStatusCancelled BillingStatus = "cancelled"
 	BillingStatusExpired   BillingStatus = "expired"
+
+	// Self-serve billing sources (BillingRecord.Source).
+	BillingSourceCheckout = "checkout"
+	BillingSourceRenewal  = "renewal"
 )
 
 type BillingRecord struct {
@@ -775,6 +803,11 @@ type BillingRecord struct {
 	BillingCycle string        `json:"billing_cycle"`
 	Status       BillingStatus `gorm:"type:varchar(20);default:'pending'" json:"status"`
 	Description  string        `json:"description"`
+	// Source says who raised it: "" for superadmin, or BillingSourceCheckout /
+	// BillingSourceRenewal for self-serve. A paid self-serve record activates
+	// the org's plan through PeriodEnd.
+	Source string `gorm:"type:varchar(20);index" json:"source"`
+	Seats  int    `json:"seats"`
 
 	RazorpayPaymentLinkID string `json:"razorpay_payment_link_id"`
 	RazorpayPaymentID     string `json:"razorpay_payment_id"`
@@ -968,6 +1001,26 @@ type DemoRequest struct {
 	UserAgent string            `json:"user_agent"`
 	Status    DemoRequestStatus `gorm:"type:varchar(20);default:'new';index" json:"status"`
 	Notes     string            `gorm:"type:text" json:"notes"`
+
+	// Booked from the company console: the organization, the slot the
+	// customer picked (UTC) and the time zone they picked it in.
+	OrgID       *uuid.UUID `gorm:"type:uuid;index" json:"org_id"`
+	Phone       string     `json:"phone"`
+	Topics      []string   `gorm:"type:jsonb;serializer:json" json:"topics"`
+	PreferredAt *time.Time `gorm:"index" json:"preferred_at"`
+	Timezone    string     `json:"timezone"`
+	// MeetingURL is the call link the team adds in superadmin; setting it
+	// emails it to the customer, and the one-hour reminder repeats it.
+	MeetingURL string `json:"meeting_url"`
+	// CancelledAt is set when the company cancels from the console (the row
+	// is also closed, which frees the slot).
+	CancelledAt *time.Time `json:"cancelled_at"`
+	// Reminder markers, so the lifecycle job sends each reminder once.
+	Reminder24hSentAt *time.Time `gorm:"column:reminder_24h_sent_at" json:"reminder_24h_sent_at"`
+	Reminder1hSentAt  *time.Time `gorm:"column:reminder_1h_sent_at" json:"reminder_1h_sent_at"`
+	// CalendarSeq is the iCalendar SEQUENCE of the invite on the customer's
+	// calendar; it goes up with every reschedule, link change or cancel.
+	CalendarSeq int `gorm:"default:0" json:"calendar_seq"`
 	// Set by whichever superadmin last changed the status or notes.
 	UpdatedBy *uuid.UUID `gorm:"type:uuid" json:"updated_by"`
 }

@@ -7,7 +7,7 @@ import { CtaBand } from "@/components/cta-band";
 import { Reveal } from "@/components/motion/reveal";
 import { PageHero } from "@/components/page-hero";
 import { Section, SectionHead } from "@/components/section";
-import { CTA } from "@/lib/content";
+import { CTA, trialHref } from "@/lib/content";
 import { JsonLd, breadcrumbLd, faqLd } from "@/lib/seo";
 
 export const metadata: Metadata = {
@@ -96,7 +96,7 @@ export default function FaqPage() {
       <JsonLd data={faqLd(groups.flatMap((g) => g.items))} />
 
       <PageHero visual={<FaqHero />} eyebrow="Endpoint security FAQ" accent={["answers."]} title="Straight answers." body="Everything people ask us before, during and after rolling out Aavishield. Missing something? Ask us directly.">
-        <Button href="/contact" size="lg">{CTA.demo}</Button>
+        <Button href={trialHref()} size="lg">{CTA.trial}</Button>
       </PageHero>
 
       <section className="grid-band px-5 py-16 sm:px-8 md:px-12 md:py-24">

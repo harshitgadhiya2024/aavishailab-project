@@ -11,7 +11,7 @@ import { ModuleIcon } from "@/components/icons";
 import { Reveal } from "@/components/motion/reveal";
 import { Section, SectionHead } from "@/components/section";
 import { SolutionIcon } from "@/components/solution-icon";
-import { CTA, getModule } from "@/lib/content";
+import { CTA, getModule, trialHref } from "@/lib/content";
 import { JsonLd, SITE_URL, breadcrumbLd, faqLd } from "@/lib/seo";
 import { shots } from "@/lib/shots";
 import { getSolution, industries, solutionsList } from "@/lib/solutions";
@@ -59,7 +59,7 @@ export default async function SolutionPage(props: PageProps<"/solutions/[slug]">
         body={s.intro}
         visual={<ModuleVisual slug={s.modules[0]} />}
       >
-        <Button href="/contact" size="lg">{CTA.demo}</Button>
+        <Button href={trialHref()} size="lg">{CTA.trial}</Button>
         <Button href="#how" size="lg" variant="ghost">How we solve it</Button>
       </PageHero>
 

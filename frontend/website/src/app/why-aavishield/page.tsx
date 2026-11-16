@@ -10,7 +10,7 @@ import { Reveal } from "@/components/motion/reveal";
 import { PageHero } from "@/components/page-hero";
 import { ScrollText } from "@/components/scroll-text";
 import { Section, SectionHead } from "@/components/section";
-import { CTA } from "@/lib/content";
+import { CTA, trialHref } from "@/lib/content";
 import { JsonLd, breadcrumbLd, faqLd } from "@/lib/seo";
 import { shots } from "@/lib/shots";
 
@@ -68,7 +68,7 @@ export default function WhyPage() {
 
       {/* 1. Hero */}
       <PageHero visual={<ConsolidateHero />} eyebrow="Why one endpoint security agent" accent={["four."]} title="One agent instead of four." body="Most companies protect laptops with a patchwork: an office firewall, a VPN, a DLP tool and a compliance checker. Aavishield replaces the patchwork with one agent and one console.">
-        <Button href="/contact" size="lg">{CTA.demo}</Button>
+        <Button href={trialHref()} size="lg">{CTA.trial}</Button>
       </PageHero>
 
       {/* 2. Before/after */}
