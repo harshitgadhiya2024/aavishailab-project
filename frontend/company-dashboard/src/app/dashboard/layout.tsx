@@ -8,6 +8,7 @@ import { SetupBanner } from "@/components/layout/SetupBanner";
 import { authOptions } from "@/lib/auth";
 import { AssistantWidget } from "@/components/assistant/AssistantWidget";
 import { WelcomeTour } from "@/components/onboarding/WelcomeTour";
+import { BookDemo } from "@/components/onboarding/BookDemo";
 import { isDemo } from "@/lib/demo";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -32,6 +33,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <AssistantWidget />
       {/* Welcome popup and product tour, once, after a company signs up. */}
       <WelcomeTour />
+      {/* Book a demo with the team: opened from the header or the welcome popup. */}
+      <BookDemo />
     </div>
   );
 }

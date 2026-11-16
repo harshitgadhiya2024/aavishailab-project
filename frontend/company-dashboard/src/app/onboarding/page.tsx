@@ -181,7 +181,7 @@ export default function OnboardingPage() {
                 {GOALS.map(g => {
                   const on = goals.includes(g.id);
                   return (
-                    <button key={g.id} type="button" onClick={() => setGoals(on ? goals.filter(x => x !== g.id) : [...goals, g.id])} className={`${chip(on)} flex items-center justify-between`}>
+                    <button key={g.id} type="button" onClick={() => setGoals(prev => (prev.includes(g.id) ? prev.filter(x => x !== g.id) : [...prev, g.id]))} className={`${chip(on)} flex items-center justify-between`}>
                       {g.label}
                       {on && <Check className="h-4 w-4 text-[#ff7000]" />}
                     </button>
@@ -218,7 +218,7 @@ export default function OnboardingPage() {
                 {Object.keys(CATEGORY_LABEL).map(cat => {
                   const on = categories.includes(cat);
                   return (
-                    <button key={cat} type="button" onClick={() => setCategories(on ? categories.filter(c => c !== cat) : [...categories, cat])} className={`${chip(on)} flex items-center justify-between`}>
+                    <button key={cat} type="button" onClick={() => setCategories(prev => (prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]))} className={`${chip(on)} flex items-center justify-between`}>
                       {CATEGORY_LABEL[cat]}
                       {on && <Check className="h-4 w-4 text-[#ff7000]" />}
                     </button>

@@ -635,6 +635,25 @@ func DemoRequestConfirmation(to, name string) {
 	})
 }
 
+// DemoBookedConfirmation confirms a demo booked for a specific time from the
+// company console. when is already formatted in the customer's time zone.
+func DemoBookedConfirmation(to, name, when string) {
+	body := fmt.Sprintf(`<p style="margin:0;">Your 30-minute Aavishield demo is booked for <strong>%s</strong>.</p>
+	<p style="margin:16px 0 0 0;">We'll send a meeting link before the call. We'll walk through your own console and
+	the controls you picked, and answer questions about rolling it out to your team.</p>
+	<p style="margin:16px 0 0 0;">Need a different time? Just reply to this email.</p>`, html.EscapeString(when))
+
+	Send(Message{
+		To:      []string{to},
+		Subject: "Your Aavishield demo: " + when,
+		HTML: layout(
+			"See you soon, "+html.EscapeString(name),
+			"Your demo with the Aavishield team is booked.",
+			body, "", "",
+			"You're receiving this because you booked a demo from your Aavishield console."),
+	})
+}
+
 // ─── Prelaunch waitlist ──────────────────────────────────────────────────────
 
 // WaitlistJoined tells the team about a new sign-up (only when

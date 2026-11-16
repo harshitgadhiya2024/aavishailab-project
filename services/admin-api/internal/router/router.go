@@ -521,6 +521,11 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 		onboarding.POST("/complete", middleware.RequirePermission(models.PermSettingsWrite), onboardingH.Complete)
 	}
 
+	// Book a demo slot with the team from inside the console.
+	demoBookingH := handlers.NewDemoBookingHandler(db)
+	company.GET("/demo-booking", demoBookingH.Get)
+	company.POST("/demo-booking", demoBookingH.Book)
+
 	// The organization's own profile and preferences.
 	organization := company.Group("/organization")
 	{

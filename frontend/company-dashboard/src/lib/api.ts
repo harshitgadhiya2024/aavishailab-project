@@ -116,6 +116,13 @@ export const onboardingApi = {
   pricing: () => api.get("/public/pricing"),
 };
 
+// ─── Demo booking (a call with the team, booked from the console) ───────────
+export const demoApi = {
+  get: () => api.get("/api/v1/demo-booking"),
+  book: (data: { preferred_at: string; timezone: string; phone?: string; devices?: string; topics?: string[]; message?: string }) =>
+    api.post("/api/v1/demo-booking", data),
+};
+
 // ─── Employees ───────────────────────────────────────────────────────────────
 export const employeeApi = {
   list: (params?: Record<string, any>) => api.get("/api/v1/employees", { params }),

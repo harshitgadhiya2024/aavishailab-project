@@ -7,6 +7,7 @@ import { ArrowRight, CalendarDays, X } from "lucide-react";
 import { onboardingApi } from "@/lib/api";
 import { isDemo } from "@/lib/demo";
 import { BrandLogo } from "@/components/brand/BrandLogo";
+import { openBookDemo } from "./BookDemo";
 
 /*
  * First visit to the dashboard after sign-up: a welcome popup that offers a
@@ -15,7 +16,6 @@ import { BrandLogo } from "@/components/brand/BrandLogo";
  * self-serve companies only; "aavishield:start-tour" replays it any time.
  */
 
-const WEBSITE_URL = process.env.NEXT_PUBLIC_WEBSITE_URL || "https://aavishield.com";
 const START_EVENT = "aavishield:start-tour";
 
 const STEPS: { target: string; title: string; body: string }[] = [
@@ -128,15 +128,13 @@ export function WelcomeTour() {
               <button type="button" onClick={() => { setStep(0); setPhase("tour"); }} className="group flex h-11 items-center justify-center gap-2 rounded-md bg-brand-500 font-mono text-[12.5px] font-medium uppercase tracking-[0.06em] text-white transition-colors hover:bg-brand-600">
                 Take the tour <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
               </button>
-              <a
-                href={`${WEBSITE_URL}/contact?source=console`}
-                target="_blank"
-                rel="noreferrer"
-                onClick={close}
+              <button
+                type="button"
+                onClick={() => { close(); openBookDemo(); }}
                 className="flex h-11 items-center justify-center gap-2 rounded-md border border-border font-mono text-[12.5px] uppercase tracking-[0.06em] text-foreground transition-colors hover:bg-elevated"
               >
                 <CalendarDays className="h-4 w-4" /> Book a demo
-              </a>
+              </button>
               <button type="button" onClick={close} className="mt-1 text-sm text-muted-foreground hover:text-foreground">Skip for now</button>
             </div>
           </div>

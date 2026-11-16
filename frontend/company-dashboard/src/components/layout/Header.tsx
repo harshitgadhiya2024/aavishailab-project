@@ -9,6 +9,7 @@ import { getInitials } from "@/lib/utils";
 import { ThemeMenuItem } from "@/components/ui/ThemeToggle";
 import { NotificationBell } from "@/components/layout/NotificationBell";
 import { SupportButton } from "@/components/support/SupportButton";
+import { BookDemoButton } from "@/components/onboarding/BookDemo";
 
 // Page title shown in the header, by route prefix (most specific first).
 const TITLES: [string, string][] = [
@@ -51,6 +52,7 @@ export function Header({ title }: { title?: string }) {
 
         {/* Help & support: every role can ask for help, so it lives in the
             header rather than in a permission-gated sidebar group. */}
+        <BookDemoButton />
         <SupportButton />
 
         {/* Notifications */}

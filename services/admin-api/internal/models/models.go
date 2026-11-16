@@ -980,6 +980,14 @@ type DemoRequest struct {
 	UserAgent string            `json:"user_agent"`
 	Status    DemoRequestStatus `gorm:"type:varchar(20);default:'new';index" json:"status"`
 	Notes     string            `gorm:"type:text" json:"notes"`
+
+	// Booked from the company console: the organization, the slot the
+	// customer picked (UTC) and the time zone they picked it in.
+	OrgID       *uuid.UUID `gorm:"type:uuid;index" json:"org_id"`
+	Phone       string     `json:"phone"`
+	Topics      []string   `gorm:"type:jsonb;serializer:json" json:"topics"`
+	PreferredAt *time.Time `gorm:"index" json:"preferred_at"`
+	Timezone    string     `json:"timezone"`
 	// Set by whichever superadmin last changed the status or notes.
 	UpdatedBy *uuid.UUID `gorm:"type:uuid" json:"updated_by"`
 }
