@@ -22,6 +22,8 @@ export function PricingPlans({ pricing, currency: initial, countryKnown = true }
   const [currency, setCurrency] = useState<Currency>(initial);
   const [billing, setBilling] = useState<"yearly" | "monthly">("yearly");
   const fmt = (n: number) => formatPrice(n, currency);
+  // What a yearly price works out to per month (paid once a year).
+  const perMonth = (yearly: number) => (currency === "INR" ? Math.round(yearly / 12) : Math.round((yearly / 12) * 100) / 100);
   // Yearly saves the monthly uplift, e.g. 20% more monthly is about 17% off yearly.
   const yearlySaving = Math.round((settings.monthlyUpliftPercent / (100 + settings.monthlyUpliftPercent)) * 100);
 
@@ -165,7 +167,7 @@ export function PricingPlans({ pricing, currency: initial, countryKnown = true }
                 <p className="mt-0.5 text-[13px] text-muted">
                   {monthly
                     ? `or ${fmt(p.price[currency])} / device / year, billed annually${yearlySaving > 0 ? ` (save ${yearlySaving}%)` : ""}`
-                    : `or ${fmt(monthlyPrice(p.price[currency], currency, settings))} / device / month, billed monthly`}
+                    : `≈ ${fmt(perMonth(p.price[currency]))} / device / month · or ${fmt(monthlyPrice(p.price[currency], currency, settings))} billed monthly`}
                 </p>
               </div>
 

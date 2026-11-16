@@ -441,6 +441,9 @@ function TeamStep({ ob, onNext, onSkip }: { ob: Onboarding; onNext: () => void; 
                 {p ? money(unitFor(p)) : "—"}
                 <span className="text-[12px] font-normal text-[#71717a]"> / device / {monthly ? "month" : "year"}</span>
               </p>
+              {!monthly && p && (
+                <p className="mt-0.5 text-[11.5px] text-[#71717a]">≈ {money(currency === "INR" ? Math.round(unitFor(p) / 12) : Math.round((unitFor(p) / 12) * 100) / 100)} / device / month, paid yearly</p>
+              )}
               <ul className="mt-3 space-y-1.5 text-[12.5px] text-[#3f3f46]">
                 {(p?.features ?? []).slice(0, 4).map(f => (
                   <li key={f} className="flex gap-1.5"><Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#ff7000]" />{f}</li>
