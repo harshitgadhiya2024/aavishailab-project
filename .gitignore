@@ -179,3 +179,6 @@ scripts/loadtest/tokens*.json
 # Certificate passwords kept next to signing material
 *password*.txt
 *password*.md
+
+# Marketing videos are large; keep them out of git.
+docs/social/*.mp4

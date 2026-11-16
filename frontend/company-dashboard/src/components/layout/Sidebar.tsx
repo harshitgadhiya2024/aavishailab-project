@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Users, UsersRound,
   Activity, Globe, Monitor, ChevronDown, PanelLeftClose, PanelLeftOpen,
-  BarChart3, FileWarning, Inbox, Tags, UserCog, AppWindow, Camera,
+  BarChart3, FileWarning, Inbox, Tags, UserCog, AppWindow, Camera, X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
@@ -58,6 +58,10 @@ const navGroups: NavGroup[] = [
 
 const STORAGE_KEY = "aavishield-sidebar-groups";
 
+/** Fired by the header's menu button to open the sidebar drawer on phones. */
+export const SIDEBAR_OPEN_EVENT = "aavishield:sidebar-open";
+export const openSidebar = () => window.dispatchEvent(new Event(SIDEBAR_OPEN_EVENT));
+
 function isItemActive(pathname: string, href: string) {
   return pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
 }
@@ -65,7 +69,25 @@ function isItemActive(pathname: string, href: string) {
 export function Sidebar() {
   const pathname = usePathname();
   const { can } = usePermissions();
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsedPref, setCollapsed] = useState(false);
+  // Phones: the sidebar is a drawer, opened from the header's menu button.
+  const [mobileOpen, setMobileOpen] = useState(false);
+  // The icon rail is a desktop thing; the phone drawer always shows labels.
+  const collapsed = collapsedPref && !mobileOpen;
+
+  useEffect(() => {
+    const open = () => setMobileOpen(true);
+    window.addEventListener(SIDEBAR_OPEN_EVENT, open);
+    return () => window.removeEventListener(SIDEBAR_OPEN_EVENT, open);
+  }, []);
+  useEffect(() => { setMobileOpen(false); }, [pathname]);
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMobileOpen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mobileOpen]);
+
   // Every group starts open; a collapsed group is remembered per browser so the
   // sidebar looks the same on the next visit.
   const [closedGroups, setClosedGroups] = useState<string[]>([]);
@@ -134,10 +156,20 @@ export function Sidebar() {
   };
 
   return (
+    <>
+    {mobileOpen && (
+      <div aria-hidden onClick={() => setMobileOpen(false)} className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[1px] md:hidden" />
+    )}
     <aside
+      aria-label="Main navigation"
       className={cn(
-        "h-screen bg-card text-foreground flex flex-col transition-[width] duration-300 relative border-r border-border",
-        collapsed ? "w-16" : "w-64"
+        "flex h-screen flex-col border-r border-border bg-card text-foreground",
+        // Phones: an off-canvas drawer over the page.
+        "fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] shadow-xl transition-transform duration-300",
+        mobileOpen ? "translate-x-0" : "-translate-x-full",
+        // Desktop: in the page flow, full width or the icon rail.
+        "md:relative md:z-auto md:max-w-none md:translate-x-0 md:shadow-none md:transition-[width]",
+        collapsed ? "md:w-16" : "md:w-64"
       )}
     >
       {/* Logo */}
@@ -147,7 +179,15 @@ export function Sidebar() {
         ) : (
           <>
             <BrandLogo className="text-[20px]" />
-            <span className="font-mono text-[9.5px] uppercase tracking-[0.12em] text-subtle">Admin</span>
+            <span className="hidden font-mono text-[9.5px] uppercase tracking-[0.12em] text-subtle md:inline">Admin</span>
+            <button
+              type="button"
+              onClick={() => setMobileOpen(false)}
+              aria-label="Close menu"
+              className="grid h-9 w-9 place-items-center rounded-md text-muted-foreground hover:bg-elevated hover:text-foreground md:hidden"
+            >
+              <X className="h-[18px] w-[18px]" />
+            </button>
           </>
         )}
       </div>
@@ -200,7 +240,7 @@ export function Sidebar() {
       </nav>
 
       {/* Footer: collapse control, in the website's mono label style. */}
-      <div className="border-t border-border p-2">
+      <div className="hidden border-t border-border p-2 md:block">
         <button
           onClick={() => setCollapsed(!collapsed)}
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
@@ -218,5 +258,6 @@ export function Sidebar() {
         </button>
       </div>
     </aside>
+    </>
   );
 }

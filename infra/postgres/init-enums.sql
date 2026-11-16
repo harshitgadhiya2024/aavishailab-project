@@ -33,7 +33,7 @@ EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
 DO $$ BEGIN
-  CREATE TYPE org_status AS ENUM ('active', 'inactive', 'suspended', 'trial');
+  CREATE TYPE org_status AS ENUM ('active', 'inactive', 'suspended', 'trial', 'expired');
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 

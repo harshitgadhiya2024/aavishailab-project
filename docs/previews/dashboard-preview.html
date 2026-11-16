@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dashboard preview</title>
+<!-- Brand fonts, as in frontend/company-dashboard/src/app/layout.tsx -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=DM+Mono:wght@400;500&family=Sora:wght@600&display=swap" rel="stylesheet" />
+<link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
+<script>
+  // Exact console tokens (globals.css :root) and chart palette (lib/chart-theme.ts LIGHT).
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          brand: { 300: "#ff8b33", 400: "#ff8b33", 500: "#ff7000", 600: "#e56400", 700: "#c2410c" },
+          "brand-tint": "#fff1e5", "brand-soft": "#fff8f2",
+          background: "#fafafa", card: "#ffffff", elevated: "#f4f4f5", sunken: "#f4f4f5",
+          foreground: "#0b0b0d", body: "#3f3f46", muted: "#5d5d66", subtle: "#71717a", faint: "#a1a1aa",
+          border: "#e7e7e8", "border-strong": "#d1d1d3",
+          success: "#15803d", warning: "#b45309", danger: "#dc2626",
+        },
+        fontFamily: { sans: ["Inter", "system-ui", "sans-serif"], mono: ["DM Mono", "ui-monospace", "monospace"], logo: ["Sora", "sans-serif"], sat: ["Satoshi", "Inter", "sans-serif"] },
+        borderRadius: { md: "0.375rem" },
+      },
+    },
+  };
+</script>
+<style>
+  body { font-family: Inter, system-ui, sans-serif; font-feature-settings: "ss01", "cv11"; -webkit-font-smoothing: antialiased; }
+  h1, h2, h3 { font-family: Satoshi, Inter, sans-serif; }
+  .lbl { font-family: "DM Mono", monospace; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; }
+  .num { font-family: Satoshi, Inter, sans-serif; font-weight: 500; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .card-t { font-family: "DM Mono", monospace; font-size: 11px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; color: #0b0b0d; }
+  .head-link { display:inline-flex; align-items:center; gap:4px; font-family: "DM Mono", monospace; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: #e56400; }
+  .head-link:hover { color: #c2410c; }
+  .page-eyebrow { display:flex; align-items:center; gap:.5rem; font-family:"DM Mono",monospace; font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:#e56400; }
+  .page-eyebrow::before { content:""; width:6px; height:6px; background:#ff7000; }
+  .sq { width:6px; height:6px; flex:none; display:inline-block; }
+  .chip { font-family: "DM Mono", monospace; font-size: 10px; letter-spacing: .06em; text-transform: uppercase; border:1px solid #e7e7e8; background:#fff; border-radius: 4px; padding: 1px 6px; color:#5d5d66; white-space: nowrap; }
+  .btn-primary { display:inline-flex; align-items:center; gap:6px; height:32px; padding:0 12px; border-radius:6px; background:#ff7000; color:#fff; font-family:"DM Mono",monospace; font-size:11.5px; font-weight:500; letter-spacing:.06em; text-transform:uppercase; }
+  .btn-primary:hover { background:#e56400; }
+  .btn { display:inline-flex; align-items:center; gap:6px; height:30px; padding:0 10px; border-radius:6px; border:1px solid #e7e7e8; background:#fff; color:#0b0b0d; font-size:12.5px; font-weight:500; }
+  .btn:hover { background:#f4f4f5; }
+  [data-lucide] { width: 16px; height: 16px; stroke-width: 2; }
+  .pin { width:20px; height:20px; border-radius:999px; background:#ff7000; color:#fff; font: 500 11px "DM Mono", monospace; display:grid; place-items:center; box-shadow: 0 0 0 3px rgb(255 112 0 / .2); }
+  .note { position:absolute; z-index:20; display:flex; align-items:flex-start; gap:8px; cursor:help; }
+  .note .tag { display:none; background:#0b0b0d; color:#fafafa; font-size:11.5px; line-height:1.4; padding:7px 10px; border-radius:6px; max-width:260px; }
+  .note .tag b { color:#ff8b33; font-weight:500; }
+  .note:hover .tag { display:block; }
+  body.no-pins .note { display:none; }
+</style>
+</head>
+<body class="bg-background text-foreground">
+<div class="flex min-h-screen">
+
+  <!-- Sidebar: replica of components/layout/Sidebar.tsx -->
+  <aside class="hidden lg:flex w-64 shrink-0 flex-col border-r border-border bg-card sticky top-0 h-screen">
+    <div class="flex h-16 items-center justify-between border-b border-border px-4">
+      <span class="inline-flex items-center gap-[0.28em] font-logo font-semibold text-[20px] leading-none">
+        <svg viewBox="446 445 181 190" class="h-[1.22em] w-auto"><path fill="#ff7000" d="M588.666,552.478c2.711-3.8,5.051-7.745,6.998-11.808.407-.849.804-1.707,1.185-2.566,5.464-12.309,8.234-25.816,8.234-40.148v-30.421l-7.391.002h-.008c-6.677,0-13.871-1.925-16.61-16.175l-1.151-5.996h-86.475l-.963,6.268c-1.478,9.623-6.4,14.406-16.459,15.992l-6.239.984v37.629c0,11.684,2.264,22.657,6.731,32.614,2.43,5.419,5.45,10.499,9.004,15.157l-38.859,79.965,11.238.495c1.684.073,3.355.111,5.024.111,26.882-.002,51.776-9.639,74.141-28.69,22.504,19.084,47.642,28.741,74.866,28.741,1.176,0,2.359-.019,3.544-.054l11.199-.342-38.01-81.759ZM470.107,619.551l26.226-53.969,29.937,30.07c-17.419,14.531-35.926,22.431-56.163,23.9ZM547.81,595.601l25.162-25.605-6.64-14.33-29.311,29.835-37.341-37.507c-3.925-4.521-7.182-9.63-9.676-15.189-3.607-8.042-5.436-16.98-5.436-26.565v-25.439c10.64-3.274,17.805-10.293,21.082-20.654h62.429c3.795,11.81,11.463,19.194,22.224,21.44v16.369c0,12.253-2.343,23.742-6.966,34.157-.323.728-.657,1.452-1,2.17-.352.735-.727,1.464-1.111,2.19l-23.033-49.545h-41.873l-19.561,43.772c1.848,4.633,5.348,9.299,8.989,13.496l19.959-42.488h23.058l17.216,37.031.022-.01,12.079,26.068.009-.009,25.441,54.723c-20.113-1.681-38.479-9.583-55.721-23.91Z"/></svg>
+        <span>Aavishield</span>
+      </span>
+      <span class="font-mono text-[9.5px] uppercase tracking-[0.12em] text-subtle">Admin</span>
+    </div>
+    <nav class="flex-1 overflow-y-auto px-3 py-4 text-[13.5px] font-medium" id="nav"></nav>
+    <div class="border-t border-border p-2"><div class="flex h-9 items-center gap-2.5 px-2.5 font-mono text-[10.5px] uppercase tracking-[0.1em] text-subtle"><i data-lucide="panel-left-close" style="width:18px;height:18px"></i>Collapse<span class="ml-auto text-faint">v1.0 · MVP</span></div></div>
+  </aside>
+
+  <div class="flex-1 min-w-0">
+    <!-- Header: replica of components/layout/Header.tsx -->
+    <header class="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border bg-card px-6">
+      <h1 class="text-[19px] font-medium tracking-[-0.02em]">Dashboard</h1>
+      <div class="flex items-center gap-2">
+        <div class="mr-1 hidden sm:flex items-center gap-1.5 rounded-md border border-brand-500/20 bg-brand-tint px-2.5 py-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-brand-700"><i data-lucide="building-2" style="width:14px;height:14px"></i>Artonest Technosys</div>
+        <span class="flex h-9 items-center gap-1.5 rounded-md px-3 text-sm text-muted"><i data-lucide="life-buoy"></i>Support</span>
+        <span class="relative grid h-9 w-9 place-items-center text-muted"><i data-lucide="bell" style="width:18px;height:18px"></i><span class="absolute right-0.5 top-0.5 rounded-full bg-red-500 px-1 text-[9px] font-semibold text-white">9+</span></span>
+        <span class="ml-1 flex items-center gap-2.5 py-1.5 pl-1.5 pr-2.5"><span class="grid h-8 w-8 place-items-center rounded-md bg-brand-500 font-mono text-[12px] font-medium text-white">VP</span><span><span class="block text-sm font-medium leading-none">Vijay Parmar</span><span class="mt-1 block font-mono text-[10px] uppercase tracking-[0.08em] text-subtle">Org admin</span></span><i data-lucide="chevron-down" class="text-muted"></i></span>
+      </div>
+    </header>
+
+    <main class="space-y-6 p-6">
+      <!-- Preview key (not part of the design) -->
+      <details open class="rounded-lg border border-dashed border-brand-500/40 bg-brand-soft px-4 py-3 text-[13px]">
+        <summary class="flex flex-wrap items-center gap-3 cursor-pointer list-none">
+          <span class="lbl text-brand-700">Preview · dummy data</span>
+          <span class="text-muted flex-1">Proposed dashboard in the console's own styles. Hover an orange pin to see what changed.</span>
+          <label class="flex items-center gap-2 text-muted" onclick="event.stopPropagation()"><input type="checkbox" checked onchange="document.body.classList.toggle('no-pins',!this.checked)"> Show pins</label>
+        </summary>
+        <ol class="mt-3 grid gap-x-8 gap-y-1.5 md:grid-cols-2 text-[12.5px] text-body">
+          <li><b class="text-brand-700 font-medium">1</b> · Headline: what needs you this week, before any card.</li>
+          <li><b class="text-brand-700 font-medium">2</b> · Protection status: four identical cards, short values, a fix link when empty.</li>
+          <li><b class="text-brand-700 font-medium">3</b> · Incidents by control: the same simple metric card, exact numbers (1,670 not 1.7K).</li>
+          <li><b class="text-brand-700 font-medium">4</b> · Trend chart under it, full axis, same series colours, so there's no empty gap.</li>
+          <li><b class="text-brand-700 font-medium">5</b> · Needs attention: grouped, worst first, each with its fix button.</li>
+          <li><b class="text-brand-700 font-medium">6</b> · One list style: ranked rows, count plus share of the total, no bars.</li>
+          <li><b class="text-brand-700 font-medium">7</b> · People sorted by count (Het 941 was below Jeel 203).</li>
+          <li><b class="text-brand-700 font-medium">8</b> · Blocked websites shows real blocks; skipped-SSL domains get their own line.</li>
+          <li><b class="text-brand-700 font-medium">9</b> · Empty boxes say what to do next.</li>
+        </ol>
+      </details>
+
+      <!-- Title -->
+      <div class="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p class="page-eyebrow">10 Nov to 16 Nov 2026</p>
+          <h2 class="mt-2 text-[2rem] font-normal leading-[1.1] tracking-[-0.035em]">Security overview</h2>
+        </div>
+        <button class="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm"><i data-lucide="calendar" class="text-muted"></i><span class="font-medium">Last 7 days</span><span class="text-muted">10 Nov to 16 Nov 2026</span><i data-lucide="chevron-down" class="text-muted"></i></button>
+      </div>
+
+      <!-- 1 · Headline -->
+      <section class="relative rounded-lg border border-border bg-card">
+        <div class="note -left-2.5 -top-2.5"><span class="pin">1</span><span class="tag"><b>Headline first.</b> One line answers "is anything wrong this week?" before the cards.</span></div>
+        <div class="flex flex-wrap items-center gap-x-8 gap-y-4 px-5 py-4">
+          <div class="flex min-w-[280px] flex-1 items-start gap-3">
+            <span class="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-red-500/20 bg-red-500/10 text-danger"><i data-lucide="circle-alert"></i></span>
+            <div>
+              <p class="text-[15px] font-medium">3 things need you this week</p>
+              <p class="mt-0.5 text-[13px] text-muted">96 high-severity data leaks, 330 threats, and 14 laptops with security settings off.</p>
+            </div>
+          </div>
+          <div class="flex items-center divide-x divide-border">
+            <div class="pr-6"><p class="lbl text-muted">Incidents</p><p class="num mt-1 text-[1.3rem] leading-tight">2,581 <span class="font-sans text-[12px] font-medium text-danger">↑ 11.3%</span></p></div>
+            <div class="px-6"><p class="lbl text-muted">People involved</p><p class="num mt-1 text-[1.3rem] leading-tight">13</p></div>
+            <div class="pl-6"><p class="lbl text-muted">Blocked</p><p class="num mt-1 text-[1.3rem] leading-tight">551 <span class="font-sans text-[12px] text-subtle">sites and apps</span></p></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2 · Protection status (MetricCard plain) -->
+      <section class="relative">
+        <div class="note -right-2.5 -top-2.5 flex-row-reverse"><span class="pin">2</span><span class="tag"><b>Same card as every other page</b> (Application Control, Devices, Web Gateway): standalone, bordered, short values, a fix link when something is off.</span></div>
+        <div class="mb-2.5 flex items-baseline justify-between gap-3"><h3 class="card-t">Protection status</h3><span class="text-[12px] text-subtle">Right now, across your organization</span></div>
+        <div class="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3" id="status"></div>
+      </section>
+
+      <!-- Main grid -->
+      <!-- Both columns end at the same line: the trend card grows to match "Needs attention". -->
+      <div class="grid gap-6 lg:grid-cols-3">
+        <div class="flex flex-col gap-6 lg:col-span-2">
+          <!-- 3 · Incidents by control -->
+          <section class="relative rounded-lg border border-border bg-card">
+            <div class="note -left-2.5 -top-2.5"><span class="pin">3</span><span class="tag"><b>Same simple card as everywhere else</b>, with exact numbers (1,670 not 1.7K).</span></div>
+            <div class="flex items-center justify-between border-b border-border px-5 py-3"><h3 class="card-t">Incidents by control</h3><span class="inline-flex items-center gap-1 text-xs text-muted"><i data-lucide="trending-up" style="width:14px;height:14px"></i>+11.3% vs previous</span></div>
+            <div class="p-5">
+              <p class="-mt-1 mb-4 text-[13px] text-muted">2,581 incidents, 13 employees involved</p>
+              <div class="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3" id="controls"></div>
+            </div>
+          </section>
+
+          <!-- 4 · Trend -->
+          <section class="relative flex flex-1 flex-col rounded-lg border border-border bg-card">
+            <div class="note -right-2.5 -top-2.5 flex-row-reverse"><span class="pin">4</span><span class="tag"><b>Fills the column.</b> The chart grows to the height of "Needs attention", so both columns end on the same line. Full axis labels and a breakdown on hover.</span></div>
+            <div class="flex items-center justify-between border-b border-border px-5 py-3"><h3 class="card-t">Incidents over time</h3><a class="head-link" href="#">All incidents <i data-lucide="arrow-right" style="width:12px;height:12px"></i></a></div>
+            <div class="flex flex-1 flex-col p-5">
+              <p class="-mt-1 mb-4 text-[13px] text-muted">Per day, by control</p>
+              <div class="flex min-h-[220px] flex-1 gap-3">
+                <div class="flex w-10 flex-col justify-between pb-6 text-right text-[11px] leading-none text-[#6b7280]"><span>1,200</span><span>900</span><span>600</span><span>300</span><span>0</span></div>
+                <div class="relative flex-1">
+                  <div class="absolute inset-0 bottom-6 flex flex-col justify-between"><div class="border-t border-dashed border-[#e5e7eb]"></div><div class="border-t border-dashed border-[#e5e7eb]"></div><div class="border-t border-dashed border-[#e5e7eb]"></div><div class="border-t border-dashed border-[#e5e7eb]"></div><div class="border-t border-[#e5e7eb]"></div></div>
+                  <div class="relative flex h-full items-end justify-around gap-3 pb-6" id="chart"></div>
+                </div>
+              </div>
+              <div class="mt-3 flex flex-wrap justify-center gap-4 text-[11px] text-[#6b7280]" id="legend"></div>
+            </div>
+          </section>
+        </div>
+
+        <!-- 5 · Needs attention -->
+        <section class="relative rounded-lg border border-border bg-card">
+          <div class="note -left-2.5 -top-2.5"><span class="pin">5</span><span class="tag"><b>Grouped and ranked</b>: one item per problem (not one per laptop), worst first, each with the button that fixes it.</span></div>
+          <div class="flex items-center justify-between border-b border-border px-5 py-3"><h3 class="card-t">Needs attention</h3><span class="text-[12px] text-subtle">6 open items</span></div>
+          <ul class="space-y-2 p-5" id="attention"></ul>
+        </section>
+      </div>
+
+      <!-- Lists -->
+      <div class="relative grid gap-6 lg:grid-cols-2">
+        <div class="note left-1/2 -top-2.5 -translate-x-1/2"><span class="pin">6</span><span class="tag"><b>One list style</b>: ranked rows with a mono number, the count and its share of the total. No bars behind the text.</span></div>
+
+        <section class="rounded-lg border border-border bg-card">
+          <div class="flex items-center justify-between border-b border-border px-5 py-3"><h3 class="card-t">Where sensitive data went</h3><a class="head-link" href="#">Report <i data-lucide="arrow-right" style="width:12px;height:12px"></i></a></div>
+          <div class="p-5">
+            <p class="-mt-1 mb-4 text-[13px] text-muted">Data protection findings by destination</p>
+            <div id="dlp"></div>
+            <div class="mt-4 flex flex-wrap gap-1.5"><span class="chip">AI-detected text 365</span><span class="chip">PAN (India) 54</span><span class="chip">API key 39</span><span class="chip">Aadhaar 29</span><span class="chip">GitHub token 22</span><span class="chip">AI-detected image 13</span></div>
+          </div>
+        </section>
+
+        <section class="relative rounded-lg border border-border bg-card">
+          <div class="note -right-2.5 -top-2.5 flex-row-reverse"><span class="pin">7</span><span class="tag"><b>Sorted by count.</b> Het (941) was shown below Jeel (203). Top two areas per person; the rest in the report.</span></div>
+          <div class="flex items-center justify-between border-b border-border px-5 py-3"><h3 class="card-t">People with the most incidents</h3><a class="head-link" href="#">Report <i data-lucide="arrow-right" style="width:12px;height:12px"></i></a></div>
+          <div class="p-5">
+            <p class="-mt-1 mb-4 text-[13px] text-muted">Worth a conversation, not necessarily a warning</p>
+            <div id="people"></div>
+          </div>
+        </section>
+
+        <section class="relative rounded-lg border border-border bg-card">
+          <div class="note -left-2.5 -top-2.5"><span class="pin">8</span><span class="tag"><b>Real blocks only.</b> microsoft.com, google.com etc. weren't blocked; they skipped SSL inspection. That's now its own labelled line.</span></div>
+          <div class="flex items-center justify-between border-b border-border px-5 py-3"><h3 class="card-t">Blocked websites</h3><a class="head-link" href="#">Report <i data-lucide="arrow-right" style="width:12px;height:12px"></i></a></div>
+          <div class="p-5">
+            <p class="-mt-1 mb-4 text-[13px] text-muted">Most-attempted sites a policy stopped</p>
+            <div id="sites"></div>
+            <div class="mt-3 flex items-center gap-2.5 rounded-md border border-yellow-500/30 bg-yellow-500/[0.07] px-3 py-2 text-[12.5px]">
+              <i data-lucide="triangle-alert" class="shrink-0 text-warning" style="width:14px;height:14px"></i>
+              <span class="flex-1 text-body">6 domains skipped SSL inspection, so their uploads weren't checked</span>
+              <a class="head-link" href="#">View <i data-lucide="arrow-right" style="width:12px;height:12px"></i></a>
+            </div>
+          </div>
+        </section>
+
+        <section class="relative rounded-lg border border-border bg-card">
+          <div class="note -right-2.5 -top-2.5 flex-row-reverse"><span class="pin">9</span><span class="tag"><b>Same ranked rows</b> as the other lists. With nothing blocked, this box shows a next step instead of sitting empty.</span></div>
+          <div class="flex items-center justify-between border-b border-border px-5 py-3"><h3 class="card-t">Blocked applications</h3><a class="head-link" href="#">Report <i data-lucide="arrow-right" style="width:12px;height:12px"></i></a></div>
+          <div class="p-5">
+            <p class="-mt-1 mb-4 text-[13px] text-muted">Apps stopped from running, including VPN clients</p>
+            <div id="apps"></div>
+          </div>
+        </section>
+      </div>
+
+      <p class="flex items-center gap-2 font-mono text-[10.5px] uppercase tracking-[0.08em] text-subtle"><i data-lucide="clock" style="width:14px;height:14px"></i>Refreshes every minute · times in your time zone</p>
+    </main>
+  </div>
+</div>
+
+<script>
+  const fmt = n => n.toLocaleString("en-IN");
+  const icon = (n, s = 16, cls = "") => `<i data-lucide="${n}" class="${cls}" style="width:${s}px;height:${s}px"></i>`;
+  const MARK = { good: "#22c55e", warn: "#eab308", bad: "#ef4444", neutral: "rgb(11 11 13 / .3)" };
+
+  // Sidebar
+  const NAV = [
+    [null, [["layout-dashboard", "Dashboard", true]]],
+    ["Organization", [["users", "Employees"], ["users-round", "Teams"], ["monitor", "Devices"], ["user-cog", "Team & Access"]]],
+    ["Policy management", [["tags", "Policy Categories"], ["globe", "Web Gateway"], ["app-window", "Application Control"], ["file-warning", "Data Loss Prevention"]]],
+    ["Monitoring", [["activity", "Activity"], ["camera", "Screenshots"], ["inbox", "Access Requests"], ["bar-chart-3", "Reports"]]],
+  ];
+  document.getElementById("nav").innerHTML = NAV.map(([g, items]) => `
+    <div class="${g ? "mt-5" : ""}">
+      ${g ? `<div class="flex items-center justify-between px-2.5 pb-1.5"><span class="font-mono text-[10.5px] uppercase tracking-[0.12em] text-subtle">${g}</span>${icon("chevron-down", 14, "text-faint")}</div>` : ""}
+      <div class="space-y-0.5">${items.map(([i, l, a]) => `
+        <div class="relative flex h-9 items-center gap-3 rounded-md px-2.5 ${a ? "bg-brand-tint text-brand-700" : "text-muted hover:bg-elevated hover:text-foreground"}">
+          ${a ? `<span class="absolute -left-2 top-1/2 h-4 w-[3px] -translate-y-1/2 bg-brand-500"></span>` : ""}
+          ${icon(i, 18, a ? "text-brand-500" : "text-subtle")}<span class="truncate">${l}</span></div>`).join("")}</div>
+    </div>`).join("");
+
+  // MetricCard (components/ui/MetricCard.tsx, variant "card": the same card as Application Control)
+  const metric = ({ ic, label, value, detail, tone, link }) => `
+    <a href="#" class="group flex items-start gap-3 rounded-lg border border-border bg-card p-3.5 transition-colors hover:bg-elevated">
+      <span class="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-border bg-card text-subtle transition-colors group-hover:text-brand-500">${icon(ic)}</span>
+      <span class="min-w-0 flex-1">
+        <span class="flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-muted"><span class="sq" style="background:${MARK[tone]}"></span><span class="truncate">${label}</span></span>
+        <span class="num mt-1.5 block text-[1.3rem] leading-tight">${value}</span>
+        <span class="mt-0.5 block text-[12px] ${link ? "font-medium text-brand-600" : "text-subtle"}">${detail}</span>
+      </span>
+      ${icon("arrow-right", 14, "mt-1 shrink-0 text-brand-500 opacity-0 transition-all group-hover:translate-x-0.5 group-hover:opacity-100")}
+    </a>`;
+  document.getElementById("status").innerHTML = [
+    { ic: "monitor", label: "Devices online", value: "13 of 14", detail: "1 not seen for 7+ days", tone: "warn" },
+    { ic: "users", label: "Employee coverage", value: "78%", detail: "4 people without a protected device", tone: "warn" },
+    { ic: "shield-check", label: "Laptops secured", value: "0 of 14", detail: "Firewall, updates or screen lock off", tone: "bad" },
+    { ic: "file-text", label: "Policies on", value: "2 of 3", detail: "Data loss policy is off →", tone: "warn", link: true },
+  ].map(metric).join("");
+
+  // Controls: icons from lib/controls.ts, colours from chart-theme LIGHT.categorical (+ neutral for device health)
+  const CTRL = [
+    { k: "Data protection", ic: "file-warning", c: "#2a78d6", n: 435, b: 0, trend: [8, 4, 30, 230, 50, 20, 93] },
+    { k: "Web filtering", ic: "globe", c: "#eb6834", n: 1670, b: 477, trend: [40, 30, 380, 480, 200, 25, 300] },
+    { k: "App control", ic: "app-window", c: "#1baf7a", n: 62, b: 62, trend: [2, 1, 8, 20, 10, 3, 18] },
+    { k: "VPN & bypass", ic: "shield-off", c: "#eda100", n: 12, b: 12, trend: [0, 1, 2, 3, 2, 1, 3] },
+    { k: "Malware & threats", ic: "bug", c: "#e87ba4", n: 330, b: 0, trend: [0, 0, 18, 270, 12, 2, 28] },
+    { k: "Device health", ic: "monitor-check", c: "#6b7280", n: 48, b: 0, trend: [3, 2, 6, 10, 9, 4, 14] },
+  ];
+  document.getElementById("controls").innerHTML = CTRL.map(x => {
+    const empty = !x.n;
+    return `<a href="#" class="group flex items-start gap-3 rounded-lg border border-border bg-card p-3.5 transition-colors hover:bg-elevated ${empty ? "opacity-70" : ""}">
+      <span class="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-border bg-card text-subtle transition-colors group-hover:text-brand-500">${icon(x.ic)}</span>
+      <span class="min-w-0 flex-1">
+        <span class="flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-[0.08em] text-muted"><span class="sq" style="background:${empty ? "rgb(11 11 13 / .3)" : x.c}"></span><span class="truncate">${x.k}</span></span>
+        <span class="num mt-1.5 block text-[1.3rem] leading-tight">${fmt(x.n)}</span>
+        <span class="mt-0.5 block text-[12px] text-subtle">${empty ? "None this week" : `${fmt(x.b)} blocked · ${fmt(x.n - x.b)} flagged`}</span>
+      </span>
+    </a>`;
+  }).join("");
+
+  // Trend chart
+  const DAYS = ["10 Nov", "11 Nov", "12 Nov", "13 Nov", "14 Nov", "15 Nov", "16 Nov"];
+  const SERIES = CTRL.filter(c => c.n);
+  const totals = DAYS.map((_, i) => SERIES.reduce((s, c) => s + c.trend[i], 0));
+  document.getElementById("chart").innerHTML = DAYS.map((d, i) => `
+    <div class="group relative flex h-full max-w-[52px] flex-1 flex-col items-center justify-end">
+      <div class="flex w-full flex-col-reverse overflow-hidden rounded-t-[3px]" style="height:${totals[i] / 1200 * 100}%">
+        ${SERIES.map(c => `<div style="height:${c.trend[i] / totals[i] * 100}%;background:${c.c}"></div>`).join("")}
+      </div>
+      <span class="absolute -bottom-6 whitespace-nowrap text-[11px] text-[#6b7280]">${d}</span>
+      <div class="absolute bottom-full z-10 mb-2 hidden w-44 rounded-lg border border-[#e5e7eb] bg-white p-2.5 text-[11.5px] text-[#111827] shadow-lg group-hover:block">
+        <p class="mb-1 font-medium">${d} · ${fmt(totals[i])}</p>
+        ${SERIES.map(c => `<p class="flex justify-between"><span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full" style="background:${c.c}"></span>${c.k}</span><span>${fmt(c.trend[i])}</span></p>`).join("")}
+      </div>
+    </div>`).join("");
+  document.getElementById("legend").innerHTML = SERIES.map(c => `<span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full" style="background:${c.c}"></span>${c.k}</span>`).join("");
+
+  // Needs attention (console list style: bordered rows with a circle-alert)
+  const ATT = [
+    ["bad", "96 high-severity data leaks", "93 went to Claude, mostly PAN numbers and API keys.", "Review leaks"],
+    ["bad", "330 malware and threat detections", "On 9 devices. Shivangi Sosa's laptop has 25.", "Review threats"],
+    ["bad", "14 laptops have security settings off", '<span class="mt-1.5 flex flex-wrap gap-1.5"><span class="chip">OS updates 12</span><span class="chip">Firewall 9</span><span class="chip">Screen lock 7</span></span>', "See laptops and fixes"],
+    ["warn", "Data loss policy is off", "Sensitive data is only flagged, not blocked.", "Turn it on", true],
+    ["warn", "4 people have no protected device", "Aisha, Rohan and 2 more.", "Send enrollment links"],
+    ["warn", "1 device silent for 7+ days", "DESKTOP-03, last seen 9 Nov.", "View device"],
+  ];
+  document.getElementById("attention").innerHTML = ATT.map(([t, title, body, cta, primary]) => `
+    <li class="flex gap-3 rounded-lg border border-border p-3 transition-colors hover:bg-elevated">
+      ${icon("circle-alert", 16, `mt-0.5 shrink-0 ${t === "bad" ? "text-danger" : "text-warning"}`)}
+      <div class="min-w-0 flex-1">
+        <p class="text-[13.5px] font-medium leading-snug">${title}</p>
+        <div class="mt-0.5 text-[12px] leading-snug text-muted">${body}</div>
+        ${primary ? `<a class="btn-primary mt-2" href="#">${cta}</a>` : `<a class="head-link mt-2" href="#">${cta} ${icon("arrow-right", 12)}</a>`}
+      </div>
+    </li>`).join("");
+
+  // Ranked lists: no bars. A mono rank, the name and detail, any high-severity
+  // pill, then the count with its share of the total underneath. Hairline rows.
+  const ranked = (rows, total) => rows.map(({ name, detail, high, tag, count }, i) => `
+    <li class="flex items-center gap-3 py-2.5 ${i ? "border-t border-border" : ""}">
+      <span class="w-6 shrink-0 font-mono text-[11px] text-faint">${String(i + 1).padStart(2, "0")}</span>
+      <span class="min-w-0 flex-1">
+        <span class="block truncate text-[13.5px] font-medium">${name}</span>
+        ${detail ? `<span class="block truncate text-[12px] text-subtle">${detail}</span>` : ""}
+      </span>
+      ${high ? `<span class="whitespace-nowrap rounded-[4px] bg-red-500/10 px-1.5 py-0.5 text-[11px] font-medium text-danger">${high} high-severity</span>` : ""}
+      ${tag ? `<span class="whitespace-nowrap rounded-[4px] border border-border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.06em] text-muted">${tag}</span>` : ""}
+      <span class="w-14 shrink-0 text-right">
+        <span class="num block text-[15px] leading-tight">${fmt(count)}</span>
+        <span class="block font-mono text-[10.5px] text-faint">${Math.round(count / total * 100)}%</span>
+      </span>
+    </li>`).join("");
+
+  const DLP = [["Claude", 399, 93, "Mostly AI-detected text and PAN"], ["ChatGPT", 66, 1, "AI-detected text"], ["Google", 7, 0, "Docs and Drive uploads"], ["Discord", 5, 2, "Messages"], ["Facebook", 2, 0, "Messages"]];
+  const dlpTotal = DLP.reduce((s, r) => s + r[1], 0);
+  document.getElementById("dlp").outerHTML = `<ul id="dlp">${ranked(DLP.map(([name, count, high, detail]) => ({ name, count, high, detail })), dlpTotal)}</ul>`;
+
+  const PEOPLE = [["Het Shingala", 941, 0, [["Web filtering", 920], ["Malware", 16]]], ["Darshan Unagar", 318, 0, [["Web filtering", 314], ["Device health", 4]]], ["Jeel Narola", 203, 40, [["Data protection", 167], ["Web filtering", 22]]], ["Nisha Savaliya", 159, 39, [["Data protection", 129], ["Web filtering", 18]]], ["Shivangi Sosa", 113, 15, [["Web filtering", 48], ["Data protection", 34]]], ["Aniket Kamble", 101, 2, [["Data protection", 73], ["Web filtering", 20]]]];
+  // Blocked websites: real policy blocks (dummy)
+  const SITES = [
+    ["chat.deepseek.com", 214, "AI tools · Starter web policy", "11 people"],
+    ["instagram.com", 156, "Social media · Starter web policy", "9 people"],
+    ["bet365.com", 48, "Gambling · Starter web policy", "2 people"],
+    ["wetransfer.com", 37, "File sharing · Sales team policy", "4 people"],
+    ["web.whatsapp.com", 22, "Personal messaging · Starter web policy", "6 people"],
+  ];
+  const sitesTotal = SITES.reduce((s, r) => s + r[1], 0);
+  document.getElementById("sites").outerHTML = `<ul id="sites">${ranked(SITES.map(([name, count, detail, tag]) => ({ name, count, detail, tag })), sitesTotal)}</ul>`;
+
+  // Blocked applications (dummy)
+  const APPS = [
+    ["AnyDesk", 31, "Remote access · closed on open", "5 people"],
+    ["Telegram Desktop", 18, "Messaging · internet cut", "3 people"],
+    ["Proton VPN", 12, "VPN · blocked by default", "2 people"],
+    ["TeamViewer", 9, "Remote access · closed on open", "1 person"],
+    ["qBittorrent", 4, "Peer-to-peer · internet cut", "1 person"],
+  ];
+  const appsTotal = APPS.reduce((s, r) => s + r[1], 0);
+  document.getElementById("apps").outerHTML = `<ul id="apps">${ranked(APPS.map(([name, count, detail, tag]) => ({ name, count, detail, tag })), appsTotal)}</ul>`;
+
+  document.getElementById("people").outerHTML =`<ul id="people">${ranked(PEOPLE.map(([name, count, high, top]) => ({ name, count, high, detail: top.map(([a, v]) => `${a} ${fmt(v)}`).join(" · ") })), 2507)}</ul>`;
+
+  lucide.createIcons();
+</script>
+</body>
+</html>

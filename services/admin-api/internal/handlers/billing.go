@@ -200,6 +200,9 @@ func applyPaymentLinkStatus(db *gorm.DB, record *models.BillingRecord, rzStatus 
 	}
 	db.Model(record).Updates(updates)
 	record.Status = status
+	if status == models.BillingStatusPaid {
+		applySelfServePayment(db, record)
+	}
 }
 
 // Cancel handles DELETE /superadmin/billing/:id — voids a still-pending

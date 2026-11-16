@@ -635,13 +635,14 @@ func DemoRequestConfirmation(to, name string) {
 	})
 }
 
-// DemoBookedConfirmation confirms a demo booked for a specific time from the
-// company console. when is already formatted in the customer's time zone.
-func DemoBookedConfirmation(to, name, when string) {
+// DemoBookedConfirmation confirms a demo booked (or moved) from the company
+// console, with a calendar invite that adds it to the customer's calendar or
+// moves the event already there. when is formatted in the customer's zone.
+func DemoBookedConfirmation(to, name, when string, invite DemoInvite) {
 	body := fmt.Sprintf(`<p style="margin:0;">Your 30-minute Aavishield demo is booked for <strong>%s</strong>.</p>
-	<p style="margin:16px 0 0 0;">We'll send a meeting link before the call. We'll walk through your own console and
-	the controls you picked, and answer questions about rolling it out to your team.</p>
-	<p style="margin:16px 0 0 0;">Need a different time? Just reply to this email.</p>`, html.EscapeString(when))
+	<p style="margin:16px 0 0 0;">It's on your calendar with this email. We'll send a meeting link before the call.
+	We'll walk through your own console and the controls you picked, and answer questions about rolling it out to your team.</p>
+	<p style="margin:16px 0 0 0;">Need a different time? Use Book a demo in your console again.</p>`, html.EscapeString(when))
 
 	Send(Message{
 		To:      []string{to},
@@ -651,6 +652,7 @@ func DemoBookedConfirmation(to, name, when string) {
 			"Your demo with the Aavishield team is booked.",
 			body, "", "",
 			"You're receiving this because you booked a demo from your Aavishield console."),
+		Calendar: invite.part(),
 	})
 }
 

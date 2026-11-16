@@ -60,6 +60,8 @@ export default function MyScreenshotsPage() {
     queryKey: ["portal-screenshots", date, tz],
     queryFn: () => portalApi.screenshots({ date, tz, day_reset: 0 }).then((r) => r.data),
     staleTime: 30_000,
+    // A hidden page stays hidden; don't retry into the same answer.
+    retry: (n, e: any) => e?.response?.data?.code !== "SCREENSHOTS_HIDDEN" && n < 3,
   });
 
   const sessions: any[] = data?.sessions ?? [];
@@ -480,6 +482,17 @@ function ReasonEditor({ shot, onDone }: { shot: any; onDone: () => void }) {
 
 function LoadError({ error }: { error: unknown }) {
   const res = (error as any)?.response;
+  if (res?.data?.code === "SCREENSHOTS_HIDDEN") {
+    return (
+      <div className="flex flex-col items-center rounded-xl border border-dashed border-border bg-card px-6 py-14 text-center">
+        <EyeOff className="h-6 w-6 text-subtle" />
+        <p className="mt-3 text-sm font-medium text-foreground">Screenshots aren&apos;t shown in the portal</p>
+        <p className="mt-1 max-w-md text-sm text-muted-foreground">
+          Your company has turned this page off. Ask your IT administrator if you have questions about monitoring.
+        </p>
+      </div>
+    );
+  }
   const msg = res?.status === 503
     ? "Your company's screenshot data can't be reached right now. Please try again in a few minutes."
     : res?.data?.error || "We couldn't load your screenshots. Please try again.";

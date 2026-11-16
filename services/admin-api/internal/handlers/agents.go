@@ -249,6 +249,13 @@ func (h *AgentHandler) Enroll(c *gin.Context) {
 	device.LastSeenAt = &now
 
 	if isNewDevice {
+		if orgExpired(h.db, enrollToken.OrgID) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "This company's Aavishield trial has ended. An admin needs to choose a plan in the console before new devices can be added.",
+				"code":  "trial_expired",
+			})
+			return
+		}
 		if reached, limit := trialDeviceLimitReached(h.db, enrollToken.OrgID); reached {
 			msg := "This free trial covers your own laptop. Choose a plan in the Aavishield console to add your team's devices."
 			if limit > selfServeSoloDevices {

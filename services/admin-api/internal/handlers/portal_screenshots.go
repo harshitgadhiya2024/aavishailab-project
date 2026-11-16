@@ -48,6 +48,10 @@ func (h *PortalHandler) Screenshots(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 
 	settings := screenshotSettingsFor(h.db, emp.OrgID)
+	if settings.PortalHidden {
+		screenshotsHidden(c)
+		return
+	}
 	day, ok := screenshotDay(c, emp.OrgID, emp.ID)
 	if !ok {
 		return
@@ -71,6 +75,10 @@ func (h *PortalHandler) Screenshots(c *gin.Context) {
 func (h *PortalHandler) SetScreenshotReason(c *gin.Context) {
 	emp, ok := h.activePortalEmployee(c)
 	if !ok {
+		return
+	}
+	if screenshotSettingsFor(h.db, emp.OrgID).PortalHidden {
+		screenshotsHidden(c)
 		return
 	}
 	id, err := uuid.Parse(c.Param("id"))
@@ -115,6 +123,15 @@ func (h *PortalHandler) SetScreenshotReason(c *gin.Context) {
 		"employee_id": emp.ID, "length": len([]rune(reason)),
 	})
 	c.JSON(http.StatusOK, gin.H{"id": id, "employee_note": reason, "employee_note_at": now})
+}
+
+// screenshotsHidden is the portal's answer while the company has taken "My
+// Screenshots" out of the portal. The code lets the page explain it.
+func screenshotsHidden(c *gin.Context) {
+	c.JSON(http.StatusForbidden, gin.H{
+		"error": "Your company has turned off screenshots in the portal.",
+		"code":  "SCREENSHOTS_HIDDEN",
+	})
 }
 
 // cleanReason trims the text and drops control characters (keeping ordinary

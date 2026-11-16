@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -125,6 +126,7 @@ func (h *DemoBookingHandler) Book(c *gin.Context) {
 	if !exists {
 		b = &models.DemoRequest{OrgID: &orgID, Status: models.DemoRequestNew}
 	}
+	moved := exists && (b.PreferredAt == nil || !b.PreferredAt.Equal(slot))
 	b.Name = clip(user.FullName(), 200)
 	b.Email = strings.ToLower(user.Email)
 	b.Company = clip(org.Name, 200)
@@ -137,12 +139,23 @@ func (h *DemoBookingHandler) Book(c *gin.Context) {
 	b.Timezone = loc.String()
 	b.IPAddress = clip(c.ClientIP(), 64)
 	b.UserAgent = clip(c.Request.UserAgent(), 500)
+	if moved {
+		// A new time gets fresh reminders, and the invite already on the
+		// customer's calendar is updated rather than duplicated.
+		b.Reminder24hSentAt, b.Reminder1hSentAt = nil, nil
+		b.CalendarSeq++
+	}
 	if err := h.db.Save(b).Error; err != nil {
+		if isUniqueViolation(err) {
+			// Another company took the slot between our clash check and the save.
+			c.JSON(http.StatusConflict, gin.H{"error": "That time was just taken. Please pick another slot."})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not save your booking"})
 		return
 	}
 
-	when := slot.In(loc).Format("Monday, 2 January 2006 at 3:04 PM") + " (" + loc.String() + ")"
+	when := demoWhen(slot, loc.String())
 	teamLoc, _ := time.LoadLocation(demoTeamZone)
 	teamWhen := slot.In(teamLoc).Format("Mon 2 Jan, 3:04 PM") + " IST"
 	note := fmt.Sprintf("Booked for %s (customer's time: %s).", teamWhen, when)
@@ -159,10 +172,90 @@ func (h *DemoBookingHandler) Book(c *gin.Context) {
 		note += "\n\n" + b.Message
 	}
 	mailer.DemoRequestReceived(teamRecipients(h.db, "LEADS_NOTIFY_EMAIL"), b.Name, b.Email, b.Company, b.Devices, note, "Console booking")
-	mailer.DemoBookedConfirmation(b.Email, user.FirstName, when)
+	mailer.DemoBookedConfirmation(b.Email, user.FirstName, when, demoInvite(b))
 
 	writeAudit(h.db, c, &orgID, "create", "demo_request", &b.ID, map[string]any{"preferred_at": slot, "rescheduled": exists})
 	c.JSON(http.StatusCreated, gin.H{"booking": b, "when": when})
+}
+
+// Cancel handles DELETE /demo-booking: cancels this organization's upcoming
+// demo, which frees the slot, and tells the team and the customer.
+func (h *DemoBookingHandler) Cancel(c *gin.Context) {
+	orgID, err := uuid.Parse(c.GetString("scoped_org_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No organization in scope"})
+		return
+	}
+	b, ok := h.upcoming(orgID)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "You don't have a demo booked"})
+		return
+	}
+	now := time.Now()
+	seq := b.CalendarSeq + 1
+	note := strings.TrimSpace(b.Notes + "\nCancelled from the console " + now.UTC().Format("2 Jan 2006 15:04 MST") + ".")
+	if err := h.db.Model(b).Updates(map[string]any{
+		"status": models.DemoRequestClosed, "cancelled_at": now, "notes": note, "calendar_seq": seq,
+	}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not cancel your demo"})
+		return
+	}
+	b.CalendarSeq = seq
+
+	when := demoWhen(*b.PreferredAt, b.Timezone)
+	first := b.Name
+	if uid := currentUserID(c); uid != nil {
+		var user models.User
+		if h.db.First(&user, "id = ?", *uid).Error == nil && user.FirstName != "" {
+			first = user.FirstName
+		}
+	}
+	mailer.DemoBookingCancelled(teamRecipients(h.db, "LEADS_NOTIFY_EMAIL"), b.Name, b.Email, b.Company, when)
+	mailer.DemoCancelledConfirmation(b.Email, first, when, demoInvite(b))
+	writeAudit(h.db, c, &orgID, "cancel", "demo_request", &b.ID, map[string]any{"preferred_at": b.PreferredAt})
+	c.JSON(http.StatusOK, gin.H{"cancelled": true})
+}
+
+// demoInvite is the calendar event for a booking, at its current sequence.
+// The UID is the booking's id, so every email about it edits one event.
+func demoInvite(b *models.DemoRequest) mailer.DemoInvite {
+	inv := mailer.DemoInvite{
+		UID: b.ID.String() + "@aavishield.com", Seq: b.CalendarSeq, Minutes: 30,
+		MeetingURL: b.MeetingURL, AttendeeName: b.Name, Attendee: b.Email,
+	}
+	if b.PreferredAt != nil {
+		inv.Start = *b.PreferredAt
+	}
+	return inv
+}
+
+// demoWhen formats a slot the way the customer saw it when booking.
+func demoWhen(slot time.Time, zone string) string {
+	loc, err := time.LoadLocation(zone)
+	if err != nil || zone == "" {
+		loc, _ = time.LoadLocation(demoTeamZone)
+	}
+	return slot.In(loc).Format("Monday, 2 January 2006 at 3:04 PM") + " (" + loc.String() + ")"
+}
+
+// firstWord is a greeting name from a full name.
+func firstWord(full string) string {
+	if f := strings.Fields(full); len(f) > 0 {
+		return f[0]
+	}
+	return full
+}
+
+// isUniqueViolation reports a Postgres unique-constraint error (SQLSTATE 23505).
+func isUniqueViolation(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return true
+	}
+	s := err.Error()
+	return strings.Contains(s, "23505") || strings.Contains(s, "duplicate key value")
 }
 
 // checkDemoSlot explains why a slot can't be booked, or returns "".

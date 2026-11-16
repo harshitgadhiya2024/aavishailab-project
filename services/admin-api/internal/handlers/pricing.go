@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/aavishield/admin-api/internal/models"
+	"github.com/aavishield/admin-api/internal/subscription"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -34,14 +35,7 @@ func (h *PricingHandler) settings() models.PricingSettings {
 // field added later still has a value on an old row. The free pilot here is
 // also the self-serve trial: its length and device count.
 func pricingSettings(db *gorm.DB) models.PricingSettings {
-	s := models.DefaultPricingSettings
-	var row models.PlatformSetting
-	if err := db.Where("key = ?", models.PricingSettingsKey).First(&row).Error; err == nil {
-		if raw, err := json.Marshal(row.Value); err == nil {
-			_ = json.Unmarshal(raw, &s)
-		}
-	}
-	return s
+	return subscription.Settings(db)
 }
 
 // trialDays is how long a self-serve trial runs: the pilot length set on the
