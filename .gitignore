@@ -180,5 +180,5 @@ scripts/loadtest/tokens*.json
 *password*.txt
 *password*.md
 
-# Marketing videos are large; keep them out of git.
-docs/social/*.mp4
+# Social / marketing assets stay local only — never commit or push them.
+docs/social/
