@@ -42,7 +42,7 @@ const faq = [
   { q: "Is the demo really 30 minutes?", a: "Yes. If you want to go deeper we can schedule a technical session afterwards." },
   { q: "Do I need to prepare anything?", a: "No. If you would like to see the agent on your own device, have a test laptop handy." },
   { q: "Can my IT and security team join?", a: "Please bring them. Their questions usually make the demo more useful." },
-  { q: "Will you share pricing?", a: "Yes. We send a quote for your fleet size within a day of the demo." },
+  { q: "Will you share pricing?", a: "Yes. Prices for every plan are on the pricing page, in rupees for India and US dollars elsewhere. For larger fleets we send an Enterprise quote within a day of the demo." },
 ];
 
 export default function ContactPage() {

@@ -1,5 +1,7 @@
 import { listPosts } from "@/lib/cms";
 import { modules } from "@/lib/content";
+import { formatPrice, minDevices } from "@/lib/pricing";
+import { getPricing } from "@/lib/pricing-data";
 import { SITE_URL, SOCIAL } from "@/lib/seo";
 import { industries, solutionsList } from "@/lib/solutions";
 
@@ -11,7 +13,14 @@ export const revalidate = 300;
 const link = (title: string, path: string, note?: string) => `- [${title}](${SITE_URL}${path})${note ? `: ${note}` : ""}`;
 
 export async function GET() {
-  const [guides, blog] = await Promise.all([listPosts("guide"), listPosts("blog")]);
+  const [guides, blog, { plans, settings }] = await Promise.all([listPosts("guide"), listPosts("blog"), getPricing()]);
+  const priceNote = [
+    `per device per year: ${plans.map((p) => `${p.name} ${p.from ? "from " : ""}${formatPrice(p.price.INR, "INR")} / ${formatPrice(p.price.USD, "USD")}`).join(", ")} (INR in India plus ${settings.gstPercent}% GST, USD elsewhere)`,
+    `minimum ${minDevices(plans)} devices`,
+    settings.pilotDays > 0 ? `free ${settings.pilotDays}-day pilot` : "",
+  ]
+    .filter(Boolean)
+    .join("; ");
   const body = [
     "# Aavishield",
     "",
@@ -21,7 +30,7 @@ export async function GET() {
     link("Platform overview", "/platform"),
     ...modules.map((m) => link(m.name, `/platform/${m.slug}`, m.short)),
     link("How it works", "/how-it-works", "install, set policy, see every decision"),
-    link("Pricing", "/pricing", "per device, custom quote"),
+    link("Pricing", "/pricing", priceNote),
     link("Security and data protection", "/security"),
     link("Why Aavishield", "/why-aavishield"),
     link("Product tour", "/product-tour"),

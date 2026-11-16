@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Building2, Activity, Settings, PanelLeftClose, PanelLeftOpen, Download, AppWindow,
-  HeartPulse, ClipboardList, Users2, CreditCard, ShieldAlert, Megaphone, Flag, LifeBuoy, Inbox, Newspaper, BookOpen, Hourglass,
+  HeartPulse, ClipboardList, Users2, CreditCard, Tags, ShieldAlert, Megaphone, Flag, LifeBuoy, Inbox, Newspaper, BookOpen, Hourglass,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { overviewApi } from "@/lib/api";
@@ -28,7 +28,13 @@ export const NAV: { section: string; items: Item[] }[] = [
       { href: "/dashboard/tickets", icon: LifeBuoy, label: "Support", badge: "tickets" },
     ],
   },
-  { section: "Revenue", items: [{ href: "/dashboard/billing", icon: CreditCard, label: "Billing & Revenue" }] },
+  {
+    section: "Revenue",
+    items: [
+      { href: "/dashboard/billing", icon: CreditCard, label: "Billing & Revenue" },
+      { href: "/dashboard/pricing", icon: Tags, label: "Pricing Plans" },
+    ],
+  },
   {
     section: "Product",
     items: [

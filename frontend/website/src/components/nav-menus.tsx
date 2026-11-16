@@ -275,7 +275,7 @@ const RESOURCE_TITLE: Record<string, string> = {
 };
 
 const RESOURCE_BODY: Record<string, string> = {
-  "/pricing": "Essentials and Business cover up to 50 devices. Enterprise is for larger fleets. Every plan includes macOS, Windows and Linux.",
+  "/pricing": "Per device, billed annually: rupees in India, US dollars everywhere else. Every plan starts with a free pilot.",
 };
 
 function resourcesVisual(href: string) {

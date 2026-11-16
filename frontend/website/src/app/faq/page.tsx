@@ -82,7 +82,7 @@ const groups: { id: string; title: string; items: { q: string; a: string }[] }[]
     id: "billing",
     title: "Pricing and billing",
     items: [
-      { q: "How is Aavishield priced?", a: "Per enrolled device, billed annually. Essentials and Business cover up to 50 devices; more than 50 devices is Enterprise. Book a demo for a quote." },
+      { q: "How is Aavishield priced?", a: "Per enrolled device, billed annually, in rupees plus GST in India and in US dollars everywhere else. Current prices for every plan are on the pricing page, and every plan starts with a free pilot." },
       { q: "Can we start with a pilot?", a: "Yes, and we recommend it: start with a small pilot group, then roll out to everyone." },
       { q: "Can we cancel?", a: "Yes. Cancellation stops renewal and the service continues to the end of the paid term. See our refund and cancellation policy." },
     ],

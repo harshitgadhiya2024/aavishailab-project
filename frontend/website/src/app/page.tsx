@@ -32,6 +32,11 @@ import { Enter } from "@/components/motion/enter";
 import { Reveal, Stagger, StaggerItem } from "@/components/motion/reveal";
 import { CTA, modules } from "@/lib/content";
 import { JsonLd, SITE_URL, faqLd } from "@/lib/seo";
+import { cheapest, formatPrice, offersLd } from "@/lib/pricing";
+import { getPricing } from "@/lib/pricing-data";
+
+// Prices are edited in the superadmin panel; re-render every few minutes to pick them up.
+export const revalidate = 300;
 import { shots } from "@/lib/shots";
 
 export const metadata: Metadata = { alternates: { canonical: "/" } };
@@ -113,7 +118,9 @@ const steps = [
   { title: "See Every Decision", body: "Blocked sites, flagged uploads, stopped downloads and posture gaps arrive live, tied to the person and device." },
 ];
 
-export default function Home() {
+export default async function Home() {
+  const { plans, settings } = await getPricing();
+  const entry = cheapest(plans);
   return (
     <>
       <JsonLd
@@ -128,8 +135,7 @@ export default function Home() {
           screenshot: `${SITE_URL}${shots.overview.src}`,
           description: "Endpoint security agent with web gateway, data loss prevention, application control, VPN control, malware scanning, device posture and activity monitoring.",
           featureList: modules.map((m) => m.name),
-          // No Offer: pricing is a custom quote, and an Offer without a price
-          // (marked InStock) contradicted the page. Add one when prices are public.
+          offers: offersLd(SITE_URL, plans),
           publisher: { "@id": `${SITE_URL}/#org` },
         }}
       />
@@ -357,7 +363,10 @@ export default function Home() {
                     <GridButton href="/pricing" variant="ghost">See pricing</GridButton>
                   </div>
                   <Reassurance className="mt-5" />
-                  <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.08em] text-muted">Priced per device, billed annually</p>
+                  <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.08em] text-muted">
+                    From {formatPrice(entry.price.INR, "INR")} or {formatPrice(entry.price.USD, "USD")} per device per year
+                    {settings.pilotDays > 0 ? ` · free ${settings.pilotDays}-day pilot` : ""}
+                  </p>
                 </Reveal>
               </div>
             </div>
