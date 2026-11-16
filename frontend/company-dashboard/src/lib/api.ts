@@ -94,11 +94,26 @@ export const otpApi = {
     last_name: string;
     email: string;
     password: string;
+    accept_terms: boolean;
+    plan_interest?: string;
   }) => api.post("/api/v1/auth/register/start", data),
   resendRegistration: (email: string) =>
     api.post("/api/v1/auth/register/resend", { email }),
   verifyRegistration: (email: string, code: string) =>
     api.post("/api/v1/auth/register/verify", { email, code }),
+};
+
+// ─── Onboarding (self-serve trial wizard) ────────────────────────────────────
+export const onboardingApi = {
+  get: () => api.get("/api/v1/onboarding"),
+  saveAnswers: (data: { team_size: string; goals: string[]; heard_from: string }) =>
+    api.put("/api/v1/onboarding/answers", data),
+  starterPolicy: (categories: string[]) => api.post("/api/v1/onboarding/starter-policy", { categories }),
+  teamTrial: (data: { plan: "essentials" | "business"; seats: number }) =>
+    api.post("/api/v1/onboarding/team-trial", data),
+  complete: () => api.post("/api/v1/onboarding/complete"),
+  // The website's plans and prices, as superadmin set them.
+  pricing: () => api.get("/public/pricing"),
 };
 
 // ─── Employees ───────────────────────────────────────────────────────────────

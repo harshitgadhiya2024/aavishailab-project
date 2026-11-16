@@ -4,6 +4,7 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { Header } from "@/components/layout/Header";
 import { AnnouncementBanner } from "@/components/layout/AnnouncementBanner";
 import { DataStoreBanner } from "@/components/layout/DataStoreBanner";
+import { SetupBanner } from "@/components/layout/SetupBanner";
 import { authOptions } from "@/lib/auth";
 import { AssistantWidget } from "@/components/assistant/AssistantWidget";
 import { isDemo } from "@/lib/demo";
@@ -20,6 +21,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <Header />
         <AnnouncementBanner />
+        <SetupBanner />
         <DataStoreBanner />
         <main className="dash flex-1 overflow-y-auto p-6">
           {children}

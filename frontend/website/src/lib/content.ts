@@ -230,7 +230,14 @@ export const resources = [
 ];
 
 // One label per intent across the whole site.
-export const CTA = { demo: "Book a demo", explore: "Explore platform" };
+export const CTA = { demo: "Book a demo", explore: "Explore platform", trial: "Start free trial", signIn: "Sign in" };
+
+// The company console, where companies sign up and sign in.
+export const CONSOLE_URL =
+  process.env.NEXT_PUBLIC_CONSOLE_URL || (process.env.NODE_ENV === "development" ? "http://localhost:1002" : "https://app.aavishield.com");
+
+/** Sign-up link, optionally with the plan chosen on the pricing page. */
+export const trialHref = (plan?: "essentials" | "business") => `${CONSOLE_URL}/register${plan ? `?plan=${plan}` : ""}`;
 
 // Per-feature page extras: search copy, use cases and FAQs.
 export type ModuleExtra = {

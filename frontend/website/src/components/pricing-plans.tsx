@@ -5,6 +5,7 @@ import { type CSSProperties, useState } from "react";
 import { GridButton } from "./landing/grid-button";
 import { Label } from "./landing/grid";
 
+import { trialHref } from "@/lib/content";
 import { CURRENCIES, type Currency, type Pricing, TAX_NOTE, formatPrice, minDevices, monthlyPrice, rangeLabel } from "@/lib/pricing";
 
 const SLIDER_MAX = 100;
@@ -169,9 +170,16 @@ export function PricingPlans({ pricing, currency: initial }: { pricing: Pricing;
               {/* 6. Action, pinned to the bottom */}
               <div className="mt-auto lg:self-end">
                 {fits ? (
-                  <GridButton href="/contact" variant={chosen ? "solid" : "ghost"} className="w-full justify-center">
-                    {p.from ? `Get a quote for ${label} devices` : settings.pilotDays > 0 ? `Start a free ${settings.pilotDays}-day pilot` : "Get started"}
-                  </GridButton>
+                  // Essentials and Business sign up on their own; Enterprise talks to sales.
+                  p.key === "starter" || p.key === "professional" ? (
+                    <GridButton href={trialHref(p.key === "starter" ? "essentials" : "business")} variant={chosen ? "solid" : "ghost"} className="w-full justify-center">
+                      Start 14-day free trial
+                    </GridButton>
+                  ) : (
+                    <GridButton href="/contact" variant={chosen ? "solid" : "ghost"} className="w-full justify-center">
+                      {p.from ? `Get a quote for ${label} devices` : settings.pilotDays > 0 ? `Start a free ${settings.pilotDays}-day pilot` : "Get started"}
+                    </GridButton>
+                  )
                 ) : (
                   <p className="flex items-start gap-2 rounded-[4px] border border-dashed border-line-strong px-3 py-2.5 text-[13px] text-muted">
                     <Info size={15} className="mt-0.5 shrink-0" />

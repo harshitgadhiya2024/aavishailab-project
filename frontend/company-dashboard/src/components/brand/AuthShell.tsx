@@ -15,12 +15,15 @@ export function AuthShell({
   topRight,
   headline,
   lead,
+  wide = false,
   children,
 }: {
   /** The prompt at the top right, e.g. "New to Aavishield? Register". */
   topRight?: React.ReactNode;
   headline?: string;
   lead?: string;
+  /** A wider form column, for steps with cards side by side. */
+  wide?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -36,7 +39,7 @@ export function AuthShell({
         </div>
 
         <div className="flex flex-1 items-center justify-center px-6 py-8 sm:px-10 [@media(max-height:800px)]:py-4">
-          <div className="w-full max-w-[400px]">{children}</div>
+          <div className={`w-full ${wide ? "max-w-[560px]" : "max-w-[400px]"}`}>{children}</div>
         </div>
 
         <div className="flex items-center justify-between gap-4 px-6 pb-6 font-mono text-[10.5px] uppercase tracking-[0.1em] text-[#71717a] sm:px-10 sm:pb-7 [@media(max-height:800px)]:sm:pb-5">

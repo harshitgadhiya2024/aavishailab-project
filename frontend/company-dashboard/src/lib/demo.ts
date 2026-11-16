@@ -584,6 +584,24 @@ export function resolveDemo(config: { method?: string; url?: string; params?: an
   const params = config.params ?? {};
   const body = config.data ?? {};
 
+  // Setup wizard: a fresh self-serve trial, so /onboarding can be previewed.
+  if (path.endsWith("/onboarding") && method === "get") {
+    return {
+      self_serve: true, onboarded: false, org_name: "Northwind Labs", plan_interest: "business",
+      trial_ends_at: new Date(Date.now() + 14 * 86400000).toISOString(), trial_device_limit: 1, team_trial: false,
+      answers: {}, starter_categories: [], progress: { policies: 2, devices: 1, online_devices: 1 },
+    };
+  }
+  if (path.includes("/onboarding/")) return { ok: true };
+  if (path.endsWith("/public/pricing")) {
+    return {
+      plans: [
+        { key: "starter", name: "Essentials", price_inr: 1788, price_usd_cents: 4800, popular: false, features: ["Web gateway, 27 categories", "VPN and proxy blocking", "Malware scanning", "Device posture"] },
+        { key: "professional", name: "Business", price_inr: 4188, price_usd_cents: 10800, popular: true, features: ["Everything in Essentials", "DLP with patterns, OCR and AI", "Application control", "Per-team policies"] },
+      ],
+    };
+  }
+
   if (path.includes("/reports/overview")) return overview();
   if (path.includes("/reports/catalog")) return { reports: REPORT_CATALOG };
   if (path.match(/\/reports\/[a-z-]+$/)) {

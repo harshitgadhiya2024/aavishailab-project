@@ -224,11 +224,13 @@ func (h *OTPHandler) cooldownRemaining(email string, purpose models.OTPPurpose) 
 // entirely, rather than needing a cleanup job for them later.
 func (h *OTPHandler) StartRegistration(c *gin.Context) {
 	var req struct {
-		CompanyName string `json:"company_name" binding:"required"`
-		FirstName   string `json:"first_name" binding:"required"`
-		LastName    string `json:"last_name"`
-		Email       string `json:"email" binding:"required,email"`
-		Password    string `json:"password" binding:"required,min=8"`
+		CompanyName  string `json:"company_name" binding:"required"`
+		FirstName    string `json:"first_name" binding:"required"`
+		LastName     string `json:"last_name"`
+		Email        string `json:"email" binding:"required,email"`
+		Password     string `json:"password" binding:"required,min=8"`
+		AcceptTerms  bool   `json:"accept_terms"` // the Terms and Acceptable Use Policy tick box
+		PlanInterest string `json:"plan_interest"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -236,6 +238,18 @@ func (h *OTPHandler) StartRegistration(c *gin.Context) {
 	}
 
 	email := strings.ToLower(strings.TrimSpace(req.Email))
+	if isPersonalEmail(email) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Please use your work email. Personal and temporary email addresses can't start a company trial."})
+		return
+	}
+	if !req.AcceptTerms {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Please accept the Terms and the Acceptable Use Policy to continue."})
+		return
+	}
+	planInterest := strings.ToLower(strings.TrimSpace(req.PlanInterest))
+	if planInterest != "essentials" && planInterest != "business" {
+		planInterest = ""
+	}
 
 	var existing int64
 	h.db.Model(&models.User{}).Where("LOWER(email) = ?", email).Count(&existing)
@@ -262,6 +276,8 @@ func (h *OTPHandler) StartRegistration(c *gin.Context) {
 		"first_name":    strings.TrimSpace(req.FirstName),
 		"last_name":     strings.TrimSpace(req.LastName),
 		"password_hash": string(hashed),
+		"plan_interest": planInterest,
+		"terms_at":      time.Now().UTC().Format(time.RFC3339),
 	}, c.ClientIP())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not start registration"})
@@ -356,6 +372,14 @@ func (h *OTPHandler) VerifyRegistration(c *gin.Context) {
 		return
 	}
 
+	planInterest, _ := otp.Payload["plan_interest"].(string)
+	termsAt := time.Now()
+	if s, _ := otp.Payload["terms_at"].(string); s != "" {
+		if t, err := time.Parse(time.RFC3339, s); err == nil {
+			termsAt = t
+		}
+	}
+
 	trialEnd := time.Now().AddDate(0, 0, 14)
 	var user models.User
 	err = h.db.Transaction(func(tx *gorm.DB) error {
@@ -367,6 +391,13 @@ func (h *OTPHandler) VerifyRegistration(c *gin.Context) {
 			MaxUsers:    50,
 			TrialEndsAt: &trialEnd,
 		}
+		org.ContactEmail = otp.Email
+		org.ContactName = strings.TrimSpace(firstName + " " + lastName)
+		// Self-serve: the trial starts on the admin's own laptop only.
+		org.SelfServe = true
+		org.TermsAcceptedAt = &termsAt
+		org.PlanInterest = planInterest
+		org.TrialDeviceLimit = selfServeSoloDevices
 		if err := tx.Create(&org).Error; err != nil {
 			return err
 		}
@@ -379,7 +410,24 @@ func (h *OTPHandler) VerifyRegistration(c *gin.Context) {
 			Role:         models.RoleOrgAdmin,
 			Status:       models.StatusActive,
 		}
-		return tx.Create(&user).Error
+		if err := tx.Create(&user).Error; err != nil {
+			return err
+		}
+		// The admin is also the first employee, with the same password on the
+		// employee portal, so they can install the agent on their own laptop.
+		lastNameForEmp := lastName
+		if lastNameForEmp == "" {
+			lastNameForEmp = "-"
+		}
+		return tx.Create(&models.Employee{
+			OrgID:              org.ID,
+			UserID:             &user.ID,
+			FirstName:          firstName,
+			LastName:           lastNameForEmp,
+			Email:              otp.Email,
+			Status:             models.StatusActive,
+			PortalPasswordHash: passwordHash,
+		}).Error
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create the organization"})

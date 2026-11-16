@@ -419,6 +419,10 @@ func (h *MonitoringHandler) UpdateSettings(c *gin.Context) {
 		return
 	}
 
+	if in.Enabled != nil && *in.Enabled && screenshotsLockedForTrial(h.db, orgID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Screenshots switch on once your company moves to a paid plan. They stay off during the free trial."})
+		return
+	}
 	s := screenshotSettingsFor(h.db, orgID)
 	if in.Enabled != nil {
 		s.Enabled = *in.Enabled

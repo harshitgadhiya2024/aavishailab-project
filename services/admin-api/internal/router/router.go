@@ -510,6 +510,17 @@ func Setup(db *gorm.DB, rdb *redis.Client) *gin.Engine {
 		aiChat.POST("/sessions/:id/messages", aiH.AddMessage)
 	}
 
+	// First-run wizard for companies that signed up on their own.
+	onboardingH := handlers.NewOnboardingHandler(db)
+	onboarding := company.Group("/onboarding")
+	{
+		onboarding.GET("", middleware.RequirePermission(models.PermSettingsRead), onboardingH.Get)
+		onboarding.PUT("/answers", middleware.RequirePermission(models.PermSettingsWrite), onboardingH.SaveAnswers)
+		onboarding.POST("/starter-policy", middleware.RequirePermission(models.PermSettingsWrite), onboardingH.StarterPolicy)
+		onboarding.POST("/team-trial", middleware.RequirePermission(models.PermSettingsWrite), onboardingH.TeamTrial)
+		onboarding.POST("/complete", middleware.RequirePermission(models.PermSettingsWrite), onboardingH.Complete)
+	}
+
 	// The organization's own profile and preferences.
 	organization := company.Group("/organization")
 	{

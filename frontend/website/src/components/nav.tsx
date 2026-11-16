@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import { useRef, useState } from "react";
-import { CTA, nav, resources } from "@/lib/content";
+import { CONSOLE_URL, CTA, nav, resources, trialHref } from "@/lib/content";
 import { HydratedLink } from "./hydrated-link";
 import { GridButton } from "./landing/grid-button";
 import { Wordmark } from "./wordmark";
@@ -104,8 +104,14 @@ export function Nav() {
         </ul>
 
         <div className="flex items-center gap-2">
+          <a href={`${CONSOLE_URL}/login`} className="hidden px-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-2 transition-colors hover:text-fg md:block">
+            {CTA.signIn}
+          </a>
+          <div className="hidden lg:block">
+            <GridButton href="/contact" variant="ghost" className="h-10">{CTA.demo}</GridButton>
+          </div>
           <div className="hidden sm:block">
-            <GridButton href="/contact" className="h-10">{CTA.demo}</GridButton>
+            <GridButton href={trialHref()} className="h-10">{CTA.trial}</GridButton>
           </div>
           <button
             type="button"

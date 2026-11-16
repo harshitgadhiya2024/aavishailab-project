@@ -13,7 +13,7 @@ import { ArrowRight, CaretDown } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
 import { useState } from "react";
-import { CTA, modules, resources, type ModuleSlug } from "@/lib/content";
+import { CONSOLE_URL, CTA, modules, resources, trialHref, type ModuleSlug } from "@/lib/content";
 import { industries, solutionsList } from "@/lib/solutions";
 import { GridButton } from "./landing/grid-button";
 import {
@@ -446,8 +446,10 @@ export function MobileMenu() {
           </li>
         ))}
       </ul>
-      <div className="p-5 sm:hidden">
-        <GridButton href="/contact" className="w-full justify-center">{CTA.demo}</GridButton>
+      <div className="grid gap-2 p-5">
+        <GridButton href={trialHref()} className="w-full justify-center sm:hidden">{CTA.trial}</GridButton>
+        <GridButton href="/contact" variant="ghost" className="w-full justify-center">{CTA.demo}</GridButton>
+        <GridButton href={`${CONSOLE_URL}/login`} variant="ghost" className="w-full justify-center">{CTA.signIn}</GridButton>
       </div>
     </motion.div>
   );

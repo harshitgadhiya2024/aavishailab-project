@@ -81,6 +81,18 @@ type Organization struct {
 	TrialEndsAt        *time.Time     `json:"trial_ends_at"`
 	Settings           map[string]any `gorm:"type:jsonb;serializer:json" json:"settings"`
 
+	// ─── Self-serve trial ───
+	// Set for organizations that signed up on their own from the website.
+	// A self-serve trial starts on the admin's own laptop (TrialDeviceLimit 1)
+	// and opens up to the team only once they choose a plan (TeamTrialAt).
+	SelfServe        bool           `gorm:"default:false" json:"self_serve"`
+	TermsAcceptedAt  *time.Time     `json:"terms_accepted_at"`
+	PlanInterest     string         `json:"plan_interest"`
+	TrialDeviceLimit int            `gorm:"default:0" json:"trial_device_limit"`
+	TeamTrialAt      *time.Time     `json:"team_trial_at"`
+	OnboardedAt      *time.Time     `json:"onboarded_at"`
+	Onboarding       map[string]any `gorm:"type:jsonb;serializer:json" json:"onboarding"`
+
 	// Relations
 	Users     []User     `gorm:"foreignKey:OrgID" json:"-"`
 	Teams     []Team     `gorm:"foreignKey:OrgID" json:"-"`
