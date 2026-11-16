@@ -77,6 +77,9 @@ export async function POST(req: Request) {
     source: pick("source") || "/waitlist",
     ip_address: ip,
     user_agent: (req.headers.get("user-agent") || "").slice(0, 500),
+    // Cloudflare adds the visitor's country to every request; no cookie needed.
+    country: (req.headers.get("cf-ipcountry") || "").slice(0, 2),
+    referrer: pick("referrer"),
   };
 
   if (!entry.name || !entry.company || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(entry.email)) {

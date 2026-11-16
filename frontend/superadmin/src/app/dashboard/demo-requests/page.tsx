@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { demoRequestApi } from "@/lib/api";
 import { Inbox, Search, X, Loader2, Mail, Building2, Monitor, Globe, Reply } from "lucide-react";
-import { cn, formatDateTime } from "@/lib/utils";
+import { cn, countryName, formatDateTime } from "@/lib/utils";
 import { toast } from "sonner";
 
 const STATUSES = [
@@ -32,6 +32,8 @@ type DemoRequest = {
   source: string;
   ip_address: string;
   user_agent: string;
+  country?: string;
+  referrer?: string;
   status: string;
   notes: string;
   created_at: string;
@@ -170,6 +172,8 @@ function DemoDrawer({ item, onClose }: { item: DemoRequest; onClose: () => void 
             <Row icon={Building2} label="Company">{item.company}</Row>
             <Row icon={Monitor} label="Devices">{item.devices || "Not given"}</Row>
             <Row icon={Globe} label="Source">{item.source || "/contact"}</Row>
+            <Row icon={Globe} label="Country">{countryName(item.country)}</Row>
+            {item.referrer && <Row icon={Globe} label="Came from">{item.referrer}</Row>}
           </dl>
 
           <div>

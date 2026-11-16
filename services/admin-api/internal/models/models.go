@@ -999,8 +999,11 @@ type DemoRequest struct {
 	Source    string            `json:"source"`
 	IPAddress string            `json:"ip_address"`
 	UserAgent string            `json:"user_agent"`
-	Status    DemoRequestStatus `gorm:"type:varchar(20);default:'new';index" json:"status"`
-	Notes     string            `gorm:"type:text" json:"notes"`
+	// Country from Cloudflare (CF-IPCountry) and the referring page; see WaitlistEntry.
+	Country  string            `gorm:"size:2;index" json:"country"`
+	Referrer string            `json:"referrer"`
+	Status   DemoRequestStatus `gorm:"type:varchar(20);default:'new';index" json:"status"`
+	Notes    string            `gorm:"type:text" json:"notes"`
 
 	// Booked from the company console: the organization, the slot the
 	// customer picked (UTC) and the time zone they picked it in.
