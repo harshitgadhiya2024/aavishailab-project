@@ -79,6 +79,8 @@ export default function OnboardingPage() {
   const qc = useQueryClient();
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
+  // The console session keeps first_name on the user; next-auth's name is a fallback.
+  const firstName = ((session?.user as { first_name?: string } | undefined)?.first_name || session?.user?.name?.split(" ")[0] || "").trim();
 
   const { data: ob, isLoading } = useQuery({
     queryKey: ["onboarding"],
@@ -161,7 +163,7 @@ export default function OnboardingPage() {
 
       {step === 0 && (
         <>
-          <AuthHeading eyebrow="Step 1 · About you" title={`Hi${session?.user?.name ? ` ${session.user.name.split(" ")[0]}` : ""}, a couple of questions`}>
+          <AuthHeading eyebrow="Step 1 · About you" title={`Hi${firstName ? ` ${firstName}` : ""}, a couple of questions`}>
             This shapes your starter policy. You can change everything later.
           </AuthHeading>
           <div className="mt-6 space-y-5">
