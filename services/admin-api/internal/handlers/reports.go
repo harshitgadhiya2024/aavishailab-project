@@ -491,18 +491,21 @@ func (h *ReportHandler) Overview(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"period":       w.meta(),
-		"health":       hl,
-		"attention":    attention(d, hl, stats),
-		"controls":     stats,
-		"totals":       gin.H{"incidents": total, "prev": prevTotal, "delta": delta(total, prevTotal), "affected_employees": len(affected)},
-		"trend":        trend(d, w, nil),
-		"top_apps":     topApps(d, 6),
-		"top_sites":    topSites(d, 6),
-		"dlp_services": dlpServices(d, 6),
-		"dlp_types":    dlpTypes(d, 6),
-		"top_users":    h.topUsers(d, 6),
-		"truncated":    d.truncated,
+		"period":    w.meta(),
+		"health":    hl,
+		"attention": attention(d, hl, stats),
+		"controls":  stats,
+		"totals":    gin.H{"incidents": total, "prev": prevTotal, "delta": delta(total, prevTotal), "affected_employees": len(affected)},
+		"trend":     trend(d, w, nil),
+		// The dashboard's "Blocked …" lists hold real blocks only; sites that
+		// were only flagged are summarised separately.
+		"top_apps":      topAppsWhere(d, 6, blockedOnly),
+		"top_sites":     topSitesWhere(d, 6, blockedOnly),
+		"flagged_sites": flaggedSites(d),
+		"dlp_services":  dlpServices(d, 6),
+		"dlp_types":     dlpTypes(d, 6),
+		"top_users":     h.topUsers(d, 6),
+		"truncated":     d.truncated,
 	})
 }
 
@@ -516,14 +519,20 @@ type appRow struct {
 	Last      time.Time `json:"last"`
 }
 
-func topApps(d *reportData, limit int) []appRow {
+func topApps(d *reportData, limit int) []appRow { return topAppsWhere(d, limit, nil) }
+
+// blockedOnly keeps events a policy actually stopped, for lists titled
+// "Blocked …" — a flagged-only event appearing there reads as a block.
+func blockedOnly(e *reportEvent) bool { return e.Action == string(models.EventActionBlocked) }
+
+func topAppsWhere(d *reportData, limit int, keep func(*reportEvent) bool) []appRow {
 	type agg struct {
 		row  appRow
 		emps employeeSet
 	}
 	groups := map[string]*agg{}
 	for _, e := range d.incidents(func(e *reportEvent) bool {
-		return e.Category == "application_control" && e.Target != ""
+		return e.Category == "application_control" && e.Target != "" && (keep == nil || keep(e))
 	}) {
 		k := e.Target + "\x00" + e.Control
 		g := groups[k]
@@ -557,14 +566,39 @@ type siteRow struct {
 	Last      time.Time `json:"last"`
 }
 
-func topSites(d *reportData, limit int) []siteRow {
+func topSites(d *reportData, limit int) []siteRow { return topSitesWhere(d, limit, nil) }
+
+// flaggedSites counts web incidents on sites that were only flagged in the
+// period (never blocked) — shown on the dashboard as its own line rather than
+// mixed into "Blocked websites".
+func flaggedSites(d *reportData) gin.H {
+	blocked := map[string]bool{}
+	flagged := map[string]int{}
+	for _, e := range d.incidents(func(e *reportEvent) bool { return e.Control == "web" && e.Domain != "" }) {
+		if blockedOnly(e) {
+			blocked[e.Domain] = true
+		} else {
+			flagged[e.Domain]++
+		}
+	}
+	domains, events := 0, 0
+	for dom, n := range flagged {
+		if !blocked[dom] {
+			domains++
+			events += n
+		}
+	}
+	return gin.H{"domains": domains, "events": events}
+}
+
+func topSitesWhere(d *reportData, limit int, keep func(*reportEvent) bool) []siteRow {
 	type agg struct {
 		row               siteRow
 		emps              employeeSet
 		maxPolicy, maxCat string
 	}
 	groups := map[string]*agg{}
-	for _, e := range d.incidents(func(e *reportEvent) bool { return e.Control == "web" && e.Domain != "" }) {
+	for _, e := range d.incidents(func(e *reportEvent) bool { return e.Control == "web" && e.Domain != "" && (keep == nil || keep(e)) }) {
 		g := groups[e.Domain]
 		if g == nil {
 			g = &agg{row: siteRow{Domain: e.Domain}, emps: employeeSet{}}

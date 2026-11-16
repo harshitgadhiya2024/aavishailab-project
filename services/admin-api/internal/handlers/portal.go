@@ -446,6 +446,10 @@ func (h *PortalHandler) Me(c *gin.Context) {
 		"stats_7d": gin.H{
 			"blocked": blockedCount,
 		},
+		// Which portal sections the company shows, so the menu can match.
+		"features": gin.H{
+			"screenshots": !screenshotSettingsFor(h.db, emp.OrgID).PortalHidden,
+		},
 	})
 }
 

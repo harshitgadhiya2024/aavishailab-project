@@ -259,7 +259,7 @@ func protectionSummary(devices []overviewDevice) gin.H {
 // company doesn't monitor work time.
 func (h *PortalHandler) overviewWork(c *gin.Context, emp *models.Employee, w reportWindow) (gin.H, error) {
 	settings := screenshotSettingsFor(h.db, emp.OrgID)
-	out := gin.H{"enabled": settings.Enabled, "screenshots_blurred": settings.Blur}
+	out := gin.H{"enabled": settings.Enabled, "screenshots_blurred": settings.Blur, "screenshots_hidden": settings.PortalHidden}
 	if !settings.Enabled {
 		return out, nil
 	}
@@ -312,7 +312,9 @@ func (h *PortalHandler) overviewWork(c *gin.Context, emp *models.Employee, w rep
 	out["days_worked"] = len(perDay)
 	out["avg_per_day_seconds"] = avgPerDay
 	out["sessions"] = len(sessions)
-	out["screenshots"] = shots
+	if !settings.PortalHidden {
+		out["screenshots"] = shots
+	}
 	out["by_day"] = byDay
 	out["recent_sessions"] = recent
 	return out, nil

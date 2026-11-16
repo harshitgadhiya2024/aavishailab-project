@@ -29,7 +29,7 @@ export function openBookDemo() {
   window.dispatchEvent(new Event(OPEN_EVENT));
 }
 
-type Booking = { id: string; preferred_at: string; topics?: string[] } | null;
+type Booking = { id: string; preferred_at: string; topics?: string[]; calendar_seq?: number; meeting_url?: string } | null;
 
 /** The next business days in India time, as {y, m, d} of the India calendar date. */
 function businessDays(now: Date) {
@@ -58,13 +58,40 @@ const fmtDay = (day: { y: number; m: number; d: number }) =>
 const fmtTime = (t: Date) => t.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 const fmtWhen = (t: Date) => t.toLocaleString(undefined, { weekday: "long", day: "numeric", month: "long", hour: "numeric", minute: "2-digit" });
 
-function downloadIcs(start: Date) {
-  const stamp = (t: Date) => t.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+const icsStamp = (t: Date) => t.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+
+function demoDetails(meetingUrl?: string) {
+  return "30-minute walkthrough of your Aavishield console with our team." +
+    (meetingUrl ? `\n\nJoin: ${meetingUrl}` : "\n\nWe'll email the meeting link before the call.");
+}
+
+/** Opens Google Calendar with the demo filled in; the customer clicks Save. */
+function openGoogleCalendar(start: Date, meetingUrl?: string) {
   const end = new Date(start.getTime() + 30 * 60000);
+  const params = new URLSearchParams({
+    action: "TEMPLATE",
+    text: "Aavishield demo",
+    dates: `${icsStamp(start)}/${icsStamp(end)}`,
+    details: demoDetails(meetingUrl),
+  });
+  if (meetingUrl) params.set("location", meetingUrl);
+  window.open(`https://calendar.google.com/calendar/render?${params.toString()}`, "_blank", "noopener,noreferrer");
+}
+
+/**
+ * An .ics file for Outlook / Apple Calendar. With the booking's id it has the
+ * same UID as the invite we email, so the two don't become two events.
+ */
+function downloadIcs(start: Date, booking?: Booking) {
+  const end = new Date(start.getTime() + 30 * 60000);
+  const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
+  const uid = booking?.id ? `${booking.id}@aavishield.com` : `${icsStamp(start)}-demo@aavishield.com`;
   const ics = [
-    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Aavishield//Demo//EN", "BEGIN:VEVENT",
-    `UID:${stamp(start)}-demo@aavishield.com`, `DTSTAMP:${stamp(new Date())}`, `DTSTART:${stamp(start)}`, `DTEND:${stamp(end)}`,
-    "SUMMARY:Aavishield demo", "DESCRIPTION:30-minute walkthrough with the Aavishield team. We'll email the meeting link before the call.",
+    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Aavishield//Demo booking//EN", "BEGIN:VEVENT",
+    `UID:${uid}`, `SEQUENCE:${booking?.calendar_seq ?? 0}`, `DTSTAMP:${icsStamp(new Date())}`, `DTSTART:${icsStamp(start)}`, `DTEND:${icsStamp(end)}`,
+    "SUMMARY:Aavishield demo", `DESCRIPTION:${esc(demoDetails(booking?.meeting_url))}`,
+    ...(booking?.meeting_url ? [`LOCATION:${esc(booking.meeting_url)}`] : []),
+    "BEGIN:VALARM", "ACTION:DISPLAY", "DESCRIPTION:Aavishield demo in 15 minutes", "TRIGGER:-PT15M", "END:VALARM",
     "END:VEVENT", "END:VCALENDAR",
   ].join("\r\n");
   const url = URL.createObjectURL(new Blob([ics], { type: "text/calendar" }));
@@ -168,6 +195,26 @@ export function BookDemo() {
     }
   }
 
+  async function cancel() {
+    if (!window.confirm("Cancel your demo? We'll remove it from your calendar too.")) return;
+    setBusy(true);
+    try {
+      if (!isDemo) {
+        await demoApi.cancel();
+        await qc.invalidateQueries({ queryKey: ["demo-booking"] });
+        await qc.invalidateQueries({ queryKey: ["onboarding"] });
+      }
+      toast.success("Your demo is cancelled.");
+      setSlot(null);
+      setStep("time");
+      setOpen(false);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || "Could not cancel the demo.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (!open) return null;
   const booked = data?.booking ? new Date(data.booking.preferred_at) : null;
   const primary = "group inline-flex h-10 items-center justify-center gap-2 rounded-md bg-brand-500 px-5 text-sm font-medium text-white transition-colors hover:bg-brand-600 disabled:opacity-50";
@@ -199,12 +246,18 @@ export function BookDemo() {
                 <CalendarCheck className="mt-0.5 h-5 w-5 text-brand-500" />
                 <div>
                   <p className="font-medium text-foreground">{fmtWhen(booked)}</p>
-                  <p className="text-sm text-muted-foreground">Your time zone: {tz}. We&apos;ll email the meeting link to {user.email}.</p>
+                  <p className="text-sm text-muted-foreground">
+                    Your time zone: {tz}. The calendar invite went to {user.email}
+                    {data?.booking?.meeting_url ? <>; <a href={data.booking.meeting_url} target="_blank" rel="noreferrer" className="text-brand-600 hover:underline dark:text-brand-300">join link</a>.</> : <>, and the meeting link follows before the call.</>}
+                  </p>
                 </div>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <button type="button" onClick={() => downloadIcs(booked)} className={ghost}><CalendarPlus className="h-4 w-4" />Add to calendar</button>
+              <CalendarButtons start={booked} booking={data?.booking ?? null} ghost={ghost} />
+              <div className="flex flex-wrap gap-2 border-t border-border pt-4">
                 <button type="button" onClick={() => setStep("time")} className={ghost}><Clock className="h-4 w-4" />Pick a new time</button>
+                <button type="button" disabled={busy} onClick={cancel} className="inline-flex h-10 items-center justify-center gap-2 rounded-md px-4 text-sm text-red-600 transition-colors hover:bg-red-500/10 disabled:opacity-50 dark:text-red-400">
+                  <X className="h-4 w-4" />Cancel demo
+                </button>
               </div>
             </div>
           )}
@@ -287,9 +340,11 @@ export function BookDemo() {
               <div className="mx-auto grid size-12 place-items-center rounded-full bg-brand-tint text-brand-500"><CalendarCheck className="h-6 w-6" /></div>
               <p className="mt-4 text-base font-medium text-foreground">{fmtWhen(slot)}</p>
               <p className="mx-auto mt-1 max-w-[42ch] text-sm text-muted-foreground">
-                We&apos;ve sent a confirmation to {user.email}. The meeting link follows before the call. Need to change it? Use Book a demo again.
+                We&apos;ve emailed a calendar invite to {user.email}; Gmail and Outlook add it to your calendar. The meeting link follows before the call.
               </p>
-              <button type="button" onClick={() => downloadIcs(slot)} className={`${ghost} mt-5`}><CalendarPlus className="h-4 w-4" />Add to calendar</button>
+              <div className="mt-5 flex justify-center">
+                <CalendarButtons start={slot} booking={data?.booking && new Date(data.booking.preferred_at).getTime() === slot.getTime() ? data.booking : null} ghost={ghost} />
+              </div>
             </div>
           )}
         </div>
@@ -317,6 +372,19 @@ export function BookDemo() {
   );
 }
 
+function CalendarButtons({ start, booking, ghost }: { start: Date; booking: Booking; ghost: string }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <button type="button" onClick={() => openGoogleCalendar(start, booking?.meeting_url)} className={ghost}>
+        <CalendarPlus className="h-4 w-4" />Add to Google Calendar
+      </button>
+      <button type="button" onClick={() => downloadIcs(start, booking)} className="h-10 px-2 text-sm text-muted-foreground hover:text-foreground hover:underline">
+        Outlook / Apple (.ics)
+      </button>
+    </div>
+  );
+}
+
 function Field({ label, value }: { label: string; value: string }) {
   return (
     <div>
@@ -327,15 +395,28 @@ function Field({ label, value }: { label: string; value: string }) {
 }
 
 /** Header shortcut, shown to companies on a self-serve trial. */
-export function BookDemoButton() {
+/**
+ * "Book a demo" for self-serve companies. Lives in the profile menu
+ * (variant "menu"); `onPick` lets the menu close itself first.
+ */
+export function BookDemoButton({ variant = "button", onPick }: { variant?: "button" | "menu"; onPick?: () => void }) {
   const { data } = useQuery({
     queryKey: ["onboarding"],
-    queryFn: async () => (await onboardingApi.get()).data as { self_serve: boolean },
+    queryFn: async () => (await onboardingApi.get()).data as { self_serve: boolean; demo_booked?: boolean },
     staleTime: 60_000,
   });
   if (!data?.self_serve) return null;
+  const open = () => { onPick?.(); openBookDemo(); };
+  if (variant === "menu") {
+    return (
+      <button type="button" onClick={open} className="flex w-full items-center gap-2 px-4 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground">
+        <CalendarDays className="h-4 w-4" />
+        {data.demo_booked ? "Your demo" : "Book a demo"}
+      </button>
+    );
+  }
   return (
-    <button type="button" onClick={openBookDemo} className="hidden h-9 items-center gap-1.5 rounded-md border border-border px-3 text-sm text-foreground transition-colors hover:bg-elevated md:inline-flex">
+    <button type="button" onClick={open} className="hidden h-9 items-center gap-1.5 rounded-md border border-border px-3 text-sm text-foreground transition-colors hover:bg-elevated md:inline-flex">
       <CalendarDays className="h-4 w-4 text-brand-500" />
       Book a demo
     </button>

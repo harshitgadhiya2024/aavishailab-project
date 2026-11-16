@@ -214,6 +214,14 @@ input:-webkit-autofill:focus {
   .auth-tag-float { animation: none; }
 }
 
+/* Full-screen overlays (modal backdrops, click-catchers) must cover the whole
+   window. Pages render them inside `space-y-*` containers, whose sibling margin
+   (margin-top: 1.5rem on every child after the first) pushed the backdrop down
+   and left an unblurred strip along the top. */
+.fixed.inset-0 {
+  margin: 0 !important;
+}
+
 /* ---------------------------------------------------------------------------
    Dashboard pages in the website's style. Scoped to the dashboard's main area
    (.dash, app/dashboard/layout.tsx); each rule is one class more specific than
@@ -253,6 +261,24 @@ input:-webkit-autofill:focus {
 .dash h3 {
   font-weight: 500;
   letter-spacing: -0.01em;
+}
+
+/* Dropdowns: the browser's own arrow sits flush against the edge and differs
+   per OS, so draw one chevron with room on the right. Unlayered and with
+   element+attribute specificity so it wins over px-* utilities. */
+select:not([multiple]):not([size]) {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%238a8a90' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.625rem center;
+  background-size: 14px 14px;
+  padding-right: 2rem;
+  cursor: pointer;
+}
+select:not([multiple]):not([size]):disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 /* Inputs: hairline border, orange focus with a soft ring, as on the website. */

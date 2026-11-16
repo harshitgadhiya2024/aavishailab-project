@@ -1,7 +1,8 @@
 "use client";
 
 import { useSession, signOut } from "next-auth/react";
-import { LogOut, Settings, ChevronDown, Building2, LifeBuoy } from "lucide-react";
+import { LogOut, Settings, ChevronDown, Building2, LifeBuoy, Menu } from "lucide-react";
+import { openSidebar } from "@/components/layout/Sidebar";
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -38,8 +39,16 @@ export function Header({ title }: { title?: string }) {
   const user = (session as any)?.user;
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center justify-between border-b border-border bg-card px-6">
-      <div className="min-w-0">
+    <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center justify-between gap-2 border-b border-border bg-card px-3 md:px-6">
+      <div className="flex min-w-0 items-center gap-1.5">
+        <button
+          type="button"
+          onClick={openSidebar}
+          aria-label="Open menu"
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-elevated hover:text-foreground md:hidden"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
         <h1 className="truncate text-[19px] font-medium tracking-[-0.02em] text-foreground">{pageTitle}</h1>
       </div>
 
@@ -51,8 +60,8 @@ export function Header({ title }: { title?: string }) {
         </div>
 
         {/* Help & support: every role can ask for help, so it lives in the
-            header rather than in a permission-gated sidebar group. */}
-        <BookDemoButton />
+            header rather than in a permission-gated sidebar group. Book a
+            demo lives in the profile menu below. */}
         <SupportButton />
 
         {/* Notifications */}
@@ -108,6 +117,7 @@ export function Header({ title }: { title?: string }) {
                 >
                   <LifeBuoy className="w-4 h-4" /> Help &amp; support
                 </Link>
+                <BookDemoButton variant="menu" onPick={() => setOpen(false)} />
 
                 {/* Theme lives here rather than in the header bar. */}
                 <ThemeMenuItem />

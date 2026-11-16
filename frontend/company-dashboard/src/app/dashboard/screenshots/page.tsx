@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { monitoringApi } from "@/lib/api";
 import {
-  Camera, RefreshCw, Loader2, Trash2, X, ChevronDown, Clock,
+  Camera, RefreshCw, Loader2, Trash2, X, Clock,
   Keyboard, MousePointer2, MoveVertical, CalendarDays, AlertTriangle, AppWindow, MessageSquareText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -117,7 +117,6 @@ export default function ScreenshotsPage() {
                   </option>
                 ))}
               </select>
-              <ChevronDown className="w-4 h-4 text-muted-foreground absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
           </Field>
           <Field label="Date">
@@ -139,7 +138,6 @@ export default function ScreenshotsPage() {
                   <option key={h} value={h}>{String(h).padStart(2, "0")}:00</option>
                 ))}
               </select>
-              <ChevronDown className="w-4 h-4 text-muted-foreground absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
           </Field>
           <Field label="Timezone">
@@ -151,7 +149,6 @@ export default function ScreenshotsPage() {
               >
                 {[...new Set([tz, ...TIMEZONES])].map(z => <option key={z} value={z}>{z}</option>)}
               </select>
-              <ChevronDown className="w-4 h-4 text-muted-foreground absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
           </Field>
           <button

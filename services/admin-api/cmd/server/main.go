@@ -15,7 +15,9 @@ import (
 	"github.com/aavishield/admin-api/internal/database"
 	"github.com/aavishield/admin-api/internal/dataplane"
 	"github.com/aavishield/admin-api/internal/handlers"
+	"github.com/aavishield/admin-api/internal/lifecycle"
 	"github.com/aavishield/admin-api/internal/mailer"
+	"github.com/aavishield/admin-api/internal/middleware"
 	"github.com/aavishield/admin-api/internal/mitm"
 	"github.com/aavishield/admin-api/internal/notifier"
 	"github.com/aavishield/admin-api/internal/retention"
@@ -110,6 +112,11 @@ func main() {
 	// the scheduled ones (incident digests, inactivity notices, weekly summary).
 	mailer.Init()
 	notifier.New(db).Start(1 * time.Hour)
+	// Self-serve funnel clock: demo reminders, trial reminders and expiry,
+	// renewal invoices. Runs even without email, since expiry changes state.
+	funnel := lifecycle.New(db)
+	funnel.OnExpire = middleware.ForgetOrgStatus
+	funnel.Start(5 * time.Minute)
 	// Replies to ticket emails come back into the support mailbox; this reads
 	// them over IMAP and adds them to the right ticket.
 	handlers.StartTicketMailPoller(db)
@@ -149,6 +156,11 @@ func connectStores() (*gorm.DB, *redis.Client, error) {
 	if err := database.MigrateUserRoles(db); err != nil {
 		return nil, nil, fmt.Errorf("failed to migrate user roles: %w", err)
 	}
+
+	if err := database.MigrateOrgStatuses(db); err != nil {
+		return nil, nil, fmt.Errorf("failed to migrate organization statuses: %w", err)
+	}
+	database.MigrateDemoSlotIndex(db)
 
 	if err := database.MigrateEventTypes(db); err != nil {
 		return nil, nil, fmt.Errorf("failed to migrate event types: %w", err)

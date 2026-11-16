@@ -41,7 +41,7 @@ type Overview = {
   top_apps: { name: string; control: string; count: number; last: string }[];
   sensitive_data: { count: number; high: number; services: { service: string; count: number; high: number }[]; types: { label: string; count: number }[] };
   work: {
-    enabled: boolean; screenshots_blurred?: boolean; tracked_seconds?: number; active_seconds?: number; active_percent?: number;
+    enabled: boolean; screenshots_blurred?: boolean; screenshots_hidden?: boolean; tracked_seconds?: number; active_seconds?: number; active_percent?: number;
     days_worked?: number; avg_per_day_seconds?: number; sessions?: number; screenshots?: number;
     by_day?: { date: string; tracked_seconds: number }[];
     recent_sessions?: { started_at: string; ended_at: string | null; tracked_seconds: number; avg_activity: number }[];
@@ -516,8 +516,9 @@ function WorkTime({ o, singleDay }: { o: Overview; singleDay: boolean }) {
         </>
       ) : <p className="mt-4 text-sm text-muted-foreground">No tracked time in this period.</p>}
       <p className="mt-4 text-xs text-subtle">
-        {w.days_worked ?? 0} {w.days_worked === 1 ? "day" : "days"} worked · {w.screenshots ?? 0} screenshots
-        {w.screenshots_blurred ? " (blurred)" : ""}. Monitoring follows your company&apos;s working hours.
+        {w.days_worked ?? 0} {w.days_worked === 1 ? "day" : "days"} worked
+        {!w.screenshots_hidden && <> · {w.screenshots ?? 0} screenshots{w.screenshots_blurred ? " (blurred)" : ""}</>}
+        . Monitoring follows your company&apos;s working hours.
       </p>
     </Card>
   );

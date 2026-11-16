@@ -11,6 +11,9 @@ RUN npm ci
 FROM node:22-alpine AS builder
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
+# Microsoft Clarity project ID (empty = Clarity off). Baked in at build time.
+ARG NEXT_PUBLIC_CLARITY_ID=""
+ENV NEXT_PUBLIC_CLARITY_ID=$NEXT_PUBLIC_CLARITY_ID
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build

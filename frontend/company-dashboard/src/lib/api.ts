@@ -112,6 +112,9 @@ export const onboardingApi = {
   teamTrial: (data: { plan: "essentials" | "business"; seats: number; billing_cycle?: "monthly" | "yearly"; currency?: "INR" | "USD" }) =>
     api.post("/api/v1/onboarding/team-trial", data),
   complete: () => api.post("/api/v1/onboarding/complete"),
+  // How this user answered a console prompt; any answer stops it showing again.
+  setPrompt: (prompt: "welcome" | "tour" | "demo", state: "seen" | "dismissed" | "done") =>
+    api.put("/api/v1/me/prompts", { prompt, state }),
   // The website's plans and prices, as superadmin set them.
   pricing: () => api.get("/public/pricing"),
 };
@@ -121,6 +124,7 @@ export const demoApi = {
   get: () => api.get("/api/v1/demo-booking"),
   book: (data: { preferred_at: string; timezone: string; phone?: string; devices?: string; topics?: string[]; message?: string }) =>
     api.post("/api/v1/demo-booking", data),
+  cancel: () => api.delete("/api/v1/demo-booking"),
 };
 
 // ─── Employees ───────────────────────────────────────────────────────────────
@@ -207,6 +211,8 @@ export const deviceApi = {
   list: (params?: Record<string, any>) => api.get("/api/v1/devices", { params }),
   get: (id: string) => api.get(`/api/v1/devices/${id}`),
   revoke: (id: string) => api.delete(`/api/v1/devices/${id}`),
+  // Emails the employee to reconnect a revoked device (and notifies them in the portal).
+  reconnectLink: (id: string) => api.post(`/api/v1/devices/${id}/reconnect-link`),
   setOwnership: (id: string, ownership: "company" | "personal") =>
     api.patch(`/api/v1/devices/${id}`, { ownership }),
   enforcement: (id: string) => api.get(`/api/v1/devices/${id}/enforcement`),
@@ -250,6 +256,8 @@ export const appControlApi = {
     enabled?: boolean;
     block_network?: boolean;
     block_process?: boolean;
+    // {"scope":"all"} | {"scope":"team","team_ids":[...]} | {"scope":"employee","employee_ids":[...]}
+    targets?: { scope?: string; team_ids?: string[]; employee_ids?: string[] };
   }) => api.post("/api/v1/applications/rules", data),
   updateRule: (id: string, data: Record<string, any>) =>
     api.patch(`/api/v1/applications/rules/${id}`, data),

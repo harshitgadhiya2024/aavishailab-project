@@ -1,18 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Pagination } from "@/components/ui/Pagination";
 
-import { Monitor, Laptop, Smartphone, Shield, AlertCircle, Loader2, Trash2, Clock } from "lucide-react";
+import { Monitor, Laptop, Smartphone, Shield, AlertCircle, Loader2, Trash2, Clock, Ban, Send, HelpCircle } from "lucide-react";
 import { deviceApi } from "@/lib/api";
 import { EnforcementBadge } from "@/components/enforcement/ScheduleEditor";
 import { DeviceScheduleModal } from "@/components/enforcement/DeviceScheduleModal";
 import { toast } from "sonner";
+import { MetricCard, MetricRow, type MetricTone } from "@/components/ui/MetricCard";
 
 const STATUS_COLORS: Record<string, string> = {
   online: "bg-green-500/10 text-success",
   offline: "bg-elevated text-body",
   warning: "bg-yellow-500/10 text-warning",
+  revoked: "bg-red-500/10 text-danger",
 };
 
 /** One connect / disconnect / uninstall, as the company sees it. */
@@ -121,6 +123,8 @@ export default function DevicesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [sendingId, setSendingId] = useState<string | null>(null);
+  const [helpFor, setHelpFor] = useState<string | null>(null);
   const [scheduleFor, setScheduleFor] = useState<Device | null>(null);
   const [lifecycle, setLifecycle] = useState<LifecycleEvent[]>([]);
 
@@ -159,13 +163,14 @@ export default function DevicesPage() {
 
   const stats = useMemo(() => {
     const online = devices.filter((d) => d.status === "online").length;
-    const offline = devices.filter((d) => d.status !== "online").length;
-    const current = devices.filter((d) => (d.agent_version || "").startsWith("1.0")).length;
+    const revoked = devices.filter((d) => d.status === "revoked").length;
+    const offline = devices.length - online - revoked;
+    const pct = (n: number) => (devices.length ? `${Math.round((n / devices.length) * 100)}% of devices` : "no devices yet");
     return [
-      { label: "Total Devices", value: devices.length, icon: Monitor, color: "bg-brand-500/10 text-brand-500" },
-      { label: "Online", value: online, icon: Shield, color: "bg-green-500/10 text-success" },
-      { label: "Offline", value: offline, icon: AlertCircle, color: "bg-elevated text-body" },
-      { label: "Agent v1.0+", value: current, icon: Laptop, color: "bg-purple-500/10 text-accent-purple" },
+      { label: "Devices", value: devices.length, icon: Monitor, tone: "neutral" as MetricTone, detail: "enrolled in Aavishield" },
+      { label: "Online", value: online, icon: Shield, tone: (online ? "good" : "neutral") as MetricTone, detail: pct(online) },
+      { label: "Offline", value: offline, icon: AlertCircle, tone: (offline ? "warn" : "neutral") as MetricTone, detail: offline ? "not checked in recently" : "all checking in" },
+      { label: "Revoked", value: revoked, icon: Ban, tone: (revoked ? "bad" : "neutral") as MetricTone, detail: revoked ? "not protected" : "none revoked" },
     ];
   }, [devices]);
 
@@ -182,6 +187,18 @@ export default function DevicesPage() {
     }
   }
 
+  async function sendReconnectLink(device: Device) {
+    setSendingId(device.id);
+    try {
+      const res = await deviceApi.reconnectLink(device.id);
+      toast.success(`Reconnect instructions sent to ${res.data?.email || "the employee"}`);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || "Could not send the reconnect link.");
+    } finally {
+      setSendingId(null);
+    }
+  }
+
   const pagedDevices = useMemo(
     () => devices.slice((page - 1) * limit, page * limit),
     [devices, page]
@@ -195,17 +212,9 @@ export default function DevicesPage() {
         <p className="text-sm text-muted-foreground mt-1">Endpoint agent status and management</p>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {stats.map(s => (
-          <div key={s.label} className="bg-card rounded-xl p-4 border border-border shadow-sm flex items-center gap-3">
-            <div className={`p-2 rounded-lg ${s.color}`}><s.icon className="w-4 h-4" /></div>
-            <div>
-              <p className="text-xs text-muted-foreground">{s.label}</p>
-              <p className="[font-family:Satoshi,var(--font-inter),sans-serif] text-[1.5rem] font-medium leading-tight tracking-[-0.02em] text-foreground">{s.value}</p>
-            </div>
-          </div>
-        ))}
-      </div>
+      <MetricRow>
+        {stats.map(s => <MetricCard key={s.label} label={s.label} value={s.value} detail={s.detail} icon={s.icon} tone={s.tone} />)}
+      </MetricRow>
 
       {error && (
         <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-sm text-danger">{error}</div>
@@ -256,9 +265,12 @@ export default function DevicesPage() {
                   ? `${d.employee.first_name || ""} ${d.employee.last_name || ""}`.trim() || d.employee.email || "Unassigned"
                   : "Unassigned";
                 const geo = d.metadata?.geo_country_code || d.metadata?.geo_country || "";
+                const isRevoked = d.status === "revoked";
+                const dim = isRevoked ? "opacity-50" : "";
                 return (
-                  <tr key={d.id} className="hover:bg-elevated">
-                    <td className="px-5 py-4">
+                  <Fragment key={d.id}>
+                  <tr className={isRevoked ? "bg-red-500/[0.03]" : "hover:bg-elevated"}>
+                    <td className={`px-5 py-4 ${dim}`}>
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 bg-elevated rounded-lg flex items-center justify-center">
                           <Icon className="w-4 h-4 text-muted-foreground" />
@@ -270,15 +282,18 @@ export default function DevicesPage() {
                       </div>
                     </td>
                     <td className="px-5 py-4 text-body">{employee}</td>
-                    <td className="px-5 py-4 text-muted-foreground text-xs">{[d.os_type, d.os_version].filter(Boolean).join(" ") || "Unknown"}</td>
-                    <td className="px-5 py-4 text-muted-foreground text-xs font-mono">{d.agent_version || "unknown"}</td>
+                    <td className={`px-5 py-4 text-muted-foreground text-xs ${dim}`}>{[d.os_type, d.os_version].filter(Boolean).join(" ") || "Unknown"}</td>
+                    <td className={`px-5 py-4 text-muted-foreground text-xs font-mono ${dim}`}>{d.agent_version || "unknown"}</td>
                     <td className="px-5 py-4">
-                      <span className={`px-2.5 py-1 rounded-[4px] text-xs font-medium ${STATUS_COLORS[d.status] ?? "bg-elevated text-body"}`}>
-                        {d.status}
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-[4px] text-xs font-medium ${STATUS_COLORS[d.status] ?? "bg-elevated text-body"}`}>
+                        {isRevoked && <Ban className="w-3 h-3" />}
+                        {isRevoked ? "Revoked" : d.status}
                       </span>
+                      {isRevoked && <p className="mt-1 text-[11px] text-subtle whitespace-nowrap">Not reporting · not protected</p>}
                     </td>
-                    <td className="px-5 py-4">
+                    <td className={`px-5 py-4 ${dim}`}>
                       <select
+                        disabled={isRevoked}
                         value={d.ownership || "company"}
                         onChange={async e => {
                           const next = e.target.value as "company" | "personal";
@@ -298,6 +313,14 @@ export default function DevicesPage() {
                         <option value="personal">Personal (BYOD)</option>
                       </select>
                     </td>
+                    {isRevoked ? (
+                      <>
+                        <td className="px-5 py-4 text-xs text-subtle">—</td>
+                        <td className="px-5 py-4 text-xs text-subtle">—</td>
+                        <td className="px-5 py-4 text-xs text-subtle">—</td>
+                      </>
+                    ) : (
+                    <>
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-2">
                         <EnforcementBadge state={d.enforcement} />
@@ -317,24 +340,67 @@ export default function DevicesPage() {
                     <td className="px-5 py-4">
                       <PermissionCells device={d} />
                     </td>
-                    <td className="px-5 py-4 text-xs text-muted-foreground">
+                    </>
+                    )}
+                    <td className={`px-5 py-4 text-xs text-muted-foreground ${dim}`}>
                       <div>{d.ip_address || "No IP"}</div>
                       {geo && <div className="text-subtle">{geo}</div>}
                     </td>
                     <td className="px-5 py-4 text-xs text-subtle">{relativeTime(d.last_seen_at)}</td>
                     <td className="px-5 py-4">
                       <div className="flex items-center justify-end gap-3 whitespace-nowrap">
-                        <button
-                          onClick={() => revokeDevice(d)}
-                          disabled={revokingId === d.id}
-                          className="inline-flex items-center gap-1 text-xs text-danger hover:text-danger disabled:opacity-50"
-                        >
-                          {revokingId === d.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
-                          Revoke
-                        </button>
+                        {isRevoked ? (
+                          <>
+                            <button
+                              onClick={() => setHelpFor(helpFor === d.id ? null : d.id)}
+                              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                              aria-expanded={helpFor === d.id}
+                            >
+                              <HelpCircle className="w-3 h-3" /> How to re-add
+                            </button>
+                            <button
+                              onClick={() => sendReconnectLink(d)}
+                              disabled={sendingId === d.id || !d.employee}
+                              title={d.employee ? `Email ${d.employee.email || "the employee"} how to reconnect` : "No employee assigned to this device"}
+                              className="inline-flex items-center gap-1 rounded-md bg-brand-500 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-brand-600 disabled:opacity-50"
+                            >
+                              {sendingId === d.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                              Send reconnect link
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => revokeDevice(d)}
+                            disabled={revokingId === d.id}
+                            className="inline-flex items-center gap-1 text-xs text-danger hover:text-danger disabled:opacity-50"
+                          >
+                            {revokingId === d.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                            Revoke
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
+                  {isRevoked && helpFor === d.id && (
+                    <tr className="bg-red-500/[0.03]">
+                      <td colSpan={12} className="px-5 pb-5 pt-0">
+                        {/* Pinned left: the table scrolls sideways, the steps shouldn't. */}
+                        <div className="sticky left-5 w-[min(640px,calc(100vw-24rem))] min-w-[280px] rounded-lg border border-border bg-card p-4 text-[13px] text-muted-foreground">
+                          <p className="font-medium text-foreground">Bringing {d.hostname || "this device"} back</p>
+                          <ol className="mt-2 list-decimal space-y-1 pl-5">
+                            <li>On that computer, {employee !== "Unassigned" ? employee : "the employee"} opens the <span className="text-foreground">Aavishield</span> app. It now says <span className="text-foreground">Removed by your IT administrator</span>.</li>
+                            <li>They click <span className="text-foreground">Reconnect</span> and sign in to the employee portal in the browser page that opens.</li>
+                            <li>The device returns here as the same entry, with its history, usually within a minute.</li>
+                          </ol>
+                          <p className="mt-2 text-[12px] text-subtle">
+                            <span className="text-foreground">Send reconnect link</span> emails them these steps. If the app was uninstalled, they download it again from the employee portal.
+                            Older agents without a Reconnect button: click Disconnect, reopen the app, then Connect.
+                          </p>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 );
               })}
             </tbody>

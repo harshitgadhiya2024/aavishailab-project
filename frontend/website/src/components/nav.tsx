@@ -1,6 +1,6 @@
 "use client";
 
-import { CaretDown, List, X } from "@phosphor-icons/react";
+import { CaretDown, List, SignIn, X } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "motion/react";
 import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
@@ -104,7 +104,12 @@ export function Nav() {
         </ul>
 
         <div className="flex items-center gap-2">
-          <a href={`${CONSOLE_URL}/login`} className="hidden px-2 font-mono text-[11px] uppercase tracking-[0.1em] text-fg-2 transition-colors hover:text-fg md:block">
+          {/* Secondary to "Start free trial": same height, type and radius, outlined. */}
+          <a
+            href={`${CONSOLE_URL}/login`}
+            className="group/si hidden h-10 items-center gap-2 whitespace-nowrap rounded-[6px] border border-line-strong bg-surface px-3.5 font-mono text-[12px] font-medium uppercase tracking-[0.06em] text-fg transition-[background-color,border-color,transform] duration-200 hover:border-fg/60 hover:bg-bg-2 active:scale-[0.97] md:inline-flex"
+          >
+            <SignIn size={14} weight="bold" className="text-fg-2 transition-colors group-hover/si:text-brand" />
             {CTA.signIn}
           </a>
           <div className="hidden sm:block">

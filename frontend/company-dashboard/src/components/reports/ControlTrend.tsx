@@ -5,7 +5,7 @@ import { useChartTheme } from "@/lib/chart-theme";
 import { CONTROLS, controlColor } from "@/lib/controls";
 
 /** Stacked incidents per day (or hour) by control. `t` is YYYY-MM-DD or YYYY-MM-DDTHH:00. */
-export function ControlTrend({ data, height = 260 }: { data: any[]; height?: number }) {
+export function ControlTrend({ data, height = 260 }: { data: any[]; height?: number | `${number}%` }) {
   const chart = useChartTheme();
   const hourly = (data[0]?.t ?? "").includes("T");
   // Only draw controls that have something in this period, so the legend

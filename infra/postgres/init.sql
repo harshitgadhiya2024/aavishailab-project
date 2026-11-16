@@ -12,7 +12,7 @@ CREATE TYPE policy_action AS ENUM ('block', 'allow', 'alert', 'log');
 CREATE TYPE policy_type AS ENUM ('url_category', 'domain', 'application', 'usb', 'dlp', 'time_based', 'process');
 CREATE TYPE event_action AS ENUM ('blocked', 'allowed', 'alerted', 'logged');
 CREATE TYPE event_type AS ENUM ('web_request', 'dns_query', 'app_launch', 'usb_insert', 'file_op', 'process_start', 'login', 'logout', 'policy_violation');
-CREATE TYPE org_status AS ENUM ('active', 'inactive', 'suspended', 'trial');
+CREATE TYPE org_status AS ENUM ('active', 'inactive', 'suspended', 'trial', 'expired');
 CREATE TYPE plan_type AS ENUM ('trial', 'starter', 'professional', 'enterprise');
 
 -- ─── Organizations (Tenants) ──────────────────────────────────────────────────
