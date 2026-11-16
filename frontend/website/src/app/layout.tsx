@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { DM_Mono, Inter, Sora } from "next/font/google";
+import { Analytics } from "@/components/analytics";
 import { Footer } from "@/components/footer";
 import { Nav } from "@/components/nav";
 import { SiteChrome } from "@/components/site-chrome";
@@ -105,6 +106,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             {children}
           </SiteChrome>
           <div aria-hidden className="grain pointer-events-none fixed inset-0 z-50" />
+          <Analytics />
         </ThemeProvider>
       </body>
     </html>

@@ -1,6 +1,7 @@
 import { ArrowRight } from "@phosphor-icons/react/dist/ssr";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { CookieSettingsButton } from "@/components/analytics";
 import { ArtBand } from "@/components/flow-steps";
 import { DitherField } from "@/components/landing/dither-field";
 import { EarlyArt } from "@/components/landing/early-art";
@@ -265,6 +266,7 @@ function PrelaunchFooter() {
     <footer>
       <div className="frame-w flex flex-col gap-4 border-x border-line px-5 py-8 font-mono text-[10.5px] uppercase tracking-[0.1em] text-muted sm:flex-row sm:items-center sm:justify-between sm:px-8 md:px-12">
         <span>© 2026 Aavishield · An Aavish AI Lab product</span>
+        <CookieSettingsButton className="text-left uppercase hover:text-fg" />
       </div>
     </footer>
   );
