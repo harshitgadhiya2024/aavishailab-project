@@ -8,7 +8,7 @@ import { CtaBand } from "@/components/cta-band";
 import { Reveal, Stagger, StaggerItem } from "@/components/motion/reveal";
 import { PageHero } from "@/components/page-hero";
 import { Section, SectionHead } from "@/components/section";
-import { CTA } from "@/lib/content";
+import { CTA, trialHref } from "@/lib/content";
 import { JsonLd, breadcrumbLd, faqLd } from "@/lib/seo";
 import { shots } from "@/lib/shots";
 
@@ -73,7 +73,7 @@ export default function HowItWorksPage() {
 
       {/* 1. Hero */}
       <PageHero visual={<RolloutHero />} eyebrow="How endpoint security deployment works" accent={["afternoon."]} title="From install to first event in an afternoon." body="No appliances, no network changes, no consultants. Here is exactly how Aavishield goes from sign-up to protecting every device.">
-        <Button href="/contact" size="lg">{CTA.demo}</Button>
+        <Button href={trialHref()} size="lg">{CTA.trial}</Button>
       </PageHero>
 
       {/* 2. Timeline */}

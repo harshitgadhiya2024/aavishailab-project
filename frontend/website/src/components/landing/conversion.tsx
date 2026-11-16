@@ -10,7 +10,7 @@ import {
   UsersThree,
 } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
-import { CTA } from "@/lib/content";
+import { CTA, trialHref } from "@/lib/content";
 import { Reveal } from "../motion/reveal";
 import { EarlyArt } from "./early-art";
 import { GridButton } from "./grid-button";
@@ -47,7 +47,7 @@ export function MidCta({ title, body }: { title: string; body: string }) {
         <p className="mt-2 max-w-[52ch] text-sm leading-relaxed text-muted">{body}</p>
       </div>
       <div className="flex shrink-0 flex-wrap gap-3">
-        <GridButton href="/contact">{CTA.demo}</GridButton>
+        <GridButton href={trialHref()}>{CTA.trial}</GridButton>
         <GridButton href="/pricing" variant="ghost">See pricing</GridButton>
       </div>
     </div>

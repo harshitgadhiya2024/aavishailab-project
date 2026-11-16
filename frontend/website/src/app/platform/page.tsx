@@ -17,7 +17,7 @@ import { PageHero } from "@/components/page-hero";
 import { Spotlight } from "@/components/motion/spotlight";
 import { Reveal, Stagger, StaggerItem } from "@/components/motion/reveal";
 import { Section, SectionHead } from "@/components/section";
-import { CTA, modules } from "@/lib/content";
+import { CTA, modules, trialHref } from "@/lib/content";
 import { JsonLd, SITE_URL, breadcrumbLd, faqLd } from "@/lib/seo";
 import { shots } from "@/lib/shots";
 
@@ -66,7 +66,7 @@ export default function PlatformPage() {
 
       {/* 1. Hero */}
       <PageHero visual={<ControlsHero />} accent={["agent."]} eyebrow="Endpoint security platform" title="Every control your devices need, in one agent." body="Seven security controls share a single lightweight agent and a single console. Turn each one on when you are ready.">
-        <Button href="/contact" size="lg">{CTA.demo}</Button>
+        <Button href={trialHref()} size="lg">{CTA.trial}</Button>
         <Button href="/product-tour" size="lg" variant="ghost">Product tour</Button>
       </PageHero>
 

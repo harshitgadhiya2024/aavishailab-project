@@ -253,7 +253,7 @@ export function SolutionsMenu({ onNavigate }: { onNavigate: () => void }) {
               </li>
             ))}
           </ul>
-          <Callout label="Not sure where to start?" title="Tell us the problem. We will show you the fix." href="/contact" cta={CTA.demo} onNavigate={onNavigate} />
+          <Callout label="Not sure where to start?" title="Try it on your own laptop first. No card needed." href={trialHref()} cta={CTA.trial} onNavigate={onNavigate} />
         </div>
         <Stage>
           <SolutionsFeedHero kind={hover.kind} slug={hover.kind === "all" ? undefined : hover.slug} />
@@ -350,7 +350,7 @@ export function ResourcesMenu({ onNavigate }: { onNavigate: () => void }) {
             <Link href="/pricing" onClick={onNavigate} onPointerEnter={() => setHover("/pricing")} className={hover === "/pricing" ? "text-fg" : "hover:text-fg"}>Pricing</Link>
             <Link href="/security" onClick={onNavigate} onPointerEnter={() => setHover("/security")} className={hover === "/security" ? "text-fg" : "hover:text-fg"}>Security</Link>
           </div>
-          <Callout label="See it on your devices" title="A pilot can be live in an afternoon." href="/contact" cta={CTA.demo} onNavigate={onNavigate} />
+          <Callout label="See it on your devices" title="A pilot can be live in an afternoon." href={trialHref()} cta={CTA.trial} onNavigate={onNavigate} />
         </div>
         <Stage>
           <div key={hover} className="h-full">{resourcesVisual(hover)}</div>

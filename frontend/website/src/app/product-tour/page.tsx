@@ -9,7 +9,7 @@ import { CtaBand } from "@/components/cta-band";
 import { Reveal } from "@/components/motion/reveal";
 import { PageHero } from "@/components/page-hero";
 import { Section, SectionHead } from "@/components/section";
-import { CTA } from "@/lib/content";
+import { CTA, trialHref } from "@/lib/content";
 import { JsonLd, SITE_URL, breadcrumbLd } from "@/lib/seo";
 import { type ShotKey, shots } from "@/lib/shots";
 
@@ -118,7 +118,7 @@ export default function ProductTourPage() {
 
       <PageHero visual={<ModuleVisual slug="web-gateway" />} eyebrow="Endpoint security console tour" accent={["screen."]} title="The whole console, screen by screen." body="No mock-ups and no slides. Every image here is the real Aavishield console, captured with demo data from a fictional company.">
         <Button href="#protect" size="lg">Start the tour</Button>
-        <Button href="/contact" size="lg" variant="ghost">{CTA.demo}</Button>
+        <Button href={trialHref()} size="lg" variant="ghost">{CTA.trial}</Button>
       </PageHero>
 
       <section className="grid-band px-5 py-16 sm:px-8 md:px-12 md:py-24">

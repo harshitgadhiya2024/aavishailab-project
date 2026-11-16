@@ -16,7 +16,7 @@ import { Spotlight } from "@/components/motion/spotlight";
 import { PageHero } from "@/components/page-hero";
 import { Section, SectionHead } from "@/components/section";
 import { SolutionIcon } from "@/components/solution-icon";
-import { CTA, modules } from "@/lib/content";
+import { CTA, modules, trialHref } from "@/lib/content";
 import { JsonLd, SITE_URL, breadcrumbLd } from "@/lib/seo";
 import { shots } from "@/lib/shots";
 import { industries, solutionsList } from "@/lib/solutions";
@@ -63,7 +63,7 @@ export default function SolutionsPage() {
       {/* 1. Hero */}
       <PageHero visual={<FeedHero />} eyebrow="Endpoint security solutions" accent={["today."]} title="Start from the problem you have today." body="Nine problems companies face right now, and exactly how Aavishield solves each one.">
         <Button href="#problems" size="lg">See the problems</Button>
-        <Button href="/contact" size="lg" variant="ghost">{CTA.demo}</Button>
+        <Button href={trialHref()} size="lg" variant="ghost">{CTA.trial}</Button>
       </PageHero>
 
       {/* 2. Problems */}

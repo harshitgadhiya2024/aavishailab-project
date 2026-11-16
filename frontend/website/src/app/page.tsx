@@ -30,7 +30,7 @@ import { AgentTag, AppControlVisual, DlpVisual, FlowDiagram, PixelPanel, Posture
 import { ConsoleShowcase, type ConsoleScreen } from "@/components/landing/console-showcase";
 import { Enter } from "@/components/motion/enter";
 import { Reveal, Stagger, StaggerItem } from "@/components/motion/reveal";
-import { CTA, modules } from "@/lib/content";
+import { CTA, modules, trialHref } from "@/lib/content";
 import { JsonLd, SITE_URL, faqLd } from "@/lib/seo";
 import { cheapest, formatPrice, offersLd } from "@/lib/pricing";
 import { getPricing } from "@/lib/pricing-data";
@@ -164,7 +164,7 @@ export default async function Home() {
                 </Enter>
                 <Enter delay={0.25} className="mt-10">
                   <div id="hero-cta" className="flex flex-wrap gap-3">
-                    <GridButton href="/contact">{CTA.demo}</GridButton>
+                    <GridButton href={trialHref()}>{CTA.trial}</GridButton>
                     <GridButton href="/product-tour" variant="ghost" icon={PlayCircle}>View the tour</GridButton>
                   </div>
                   <Reassurance className="mt-6" />
@@ -359,7 +359,7 @@ export default async function Home() {
                     Install the agent, choose a policy, and see every decision in one console. A pilot can be live in an afternoon.
                   </p>
                   <div className="mt-6 flex flex-wrap gap-3">
-                    <GridButton href="/contact">{CTA.demo}</GridButton>
+                    <GridButton href={trialHref()}>{CTA.trial}</GridButton>
                     <GridButton href="/pricing" variant="ghost">See pricing</GridButton>
                   </div>
                   <Reassurance className="mt-5" />

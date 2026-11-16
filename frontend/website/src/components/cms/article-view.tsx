@@ -4,7 +4,7 @@ import { Breadcrumbs } from "@/components/blocks";
 import { Button } from "@/components/button";
 import { CtaBand } from "@/components/cta-band";
 import { Label } from "@/components/landing/grid";
-import { CTA } from "@/lib/content";
+import { CTA, trialHref } from "@/lib/content";
 import { BASE, categoryId, formatDate, type Post, type PostSummary } from "@/lib/cms";
 import { outline, parseMarkdown } from "@/lib/markdown";
 import { JsonLd, SITE_URL, breadcrumbLd } from "@/lib/seo";
@@ -122,9 +122,9 @@ export function ArticleView({ post, related, siblings = [] }: { post: Post; rela
                 </ul>
                 <div className="mt-8 rounded-[6px] border border-brand/20 bg-brand-soft p-4">
                   <p className="text-sm text-fg">See it on your own devices.</p>
-                  <Link href="/contact" className="mt-3 inline-flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-brand-ink hover:underline">
-                    {CTA.demo} <ArrowUpRight size={12} />
-                  </Link>
+                  <a href={trialHref()} className="mt-3 inline-flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-brand-ink hover:underline">
+                    {CTA.trial} <ArrowUpRight size={12} />
+                  </a>
                 </div>
               </div>
             </aside>
@@ -147,7 +147,7 @@ export function ArticleView({ post, related, siblings = [] }: { post: Post; rela
             </div>
           </div>
           <div className="flex shrink-0 flex-wrap gap-3">
-            <Button href="/contact">{isGuide ? "Ask the team" : CTA.demo}</Button>
+            <Button href={isGuide ? "/contact" : trialHref()}>{isGuide ? "Ask the team" : CTA.trial}</Button>
             <Button href={isGuide ? "/faq" : "/knowledge-hub"} variant="ghost">{isGuide ? "Read the FAQ" : "Knowledge hub"}</Button>
           </div>
         </div>
