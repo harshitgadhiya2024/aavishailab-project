@@ -237,7 +237,13 @@ export const CONSOLE_URL =
   process.env.NEXT_PUBLIC_CONSOLE_URL || (process.env.NODE_ENV === "development" ? "http://localhost:1002" : "https://app.aavishield.com");
 
 /** Sign-up link, optionally with the plan chosen on the pricing page. */
-export const trialHref = (plan?: "essentials" | "business") => `${CONSOLE_URL}/register${plan ? `?plan=${plan}` : ""}`;
+export const trialHref = (plan?: "essentials" | "business", billing?: "monthly" | "yearly") => {
+  const q = new URLSearchParams();
+  if (plan) q.set("plan", plan);
+  if (billing) q.set("billing", billing);
+  const qs = q.toString();
+  return `${CONSOLE_URL}/register${qs ? `?${qs}` : ""}`;
+};
 
 // Per-feature page extras: search copy, use cases and FAQs.
 export type ModuleExtra = {

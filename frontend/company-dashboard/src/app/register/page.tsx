@@ -43,6 +43,10 @@ export default function RegisterPage() {
     const params = new URLSearchParams(window.location.search);
     const p = params.get("plan");
     if (p === "essentials" || p === "business") setPlan(p);
+    const billing = params.get("billing");
+    if (billing === "monthly" || billing === "yearly") {
+      try { sessionStorage.setItem("aavishield-billing", billing); } catch {}
+    }
     const err = params.get("error");
     if (err) {
       const message = err;

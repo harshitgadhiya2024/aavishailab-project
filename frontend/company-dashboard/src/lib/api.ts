@@ -109,7 +109,7 @@ export const onboardingApi = {
   saveAnswers: (data: { team_size: string; goals: string[]; heard_from: string }) =>
     api.put("/api/v1/onboarding/answers", data),
   starterPolicy: (categories: string[]) => api.post("/api/v1/onboarding/starter-policy", { categories }),
-  teamTrial: (data: { plan: "essentials" | "business"; seats: number }) =>
+  teamTrial: (data: { plan: "essentials" | "business"; seats: number; billing_cycle?: "monthly" | "yearly"; currency?: "INR" | "USD" }) =>
     api.post("/api/v1/onboarding/team-trial", data),
   complete: () => api.post("/api/v1/onboarding/complete"),
   // The website's plans and prices, as superadmin set them.

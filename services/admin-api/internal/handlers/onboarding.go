@@ -195,8 +195,10 @@ func (h *OnboardingHandler) TeamTrial(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Plan  string `json:"plan" binding:"required"`
-		Seats int    `json:"seats" binding:"required,min=1,max=250"`
+		Plan         string `json:"plan" binding:"required"`
+		Seats        int    `json:"seats" binding:"required,min=1,max=250"`
+		BillingCycle string `json:"billing_cycle"` // monthly or yearly
+		Currency     string `json:"currency"`      // INR or USD, from the visitor's country
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -218,6 +220,13 @@ func (h *OnboardingHandler) TeamTrial(c *gin.Context) {
 		answers = map[string]any{}
 	}
 	answers["seats"] = req.Seats
+	answers["billing_cycle"] = "yearly"
+	if strings.ToLower(req.BillingCycle) == "monthly" {
+		answers["billing_cycle"] = "monthly"
+	}
+	if c := strings.ToUpper(req.Currency); c == "INR" || c == "USD" {
+		answers["currency"] = c
+	}
 	limit := req.Seats
 	if team := trialTeamDevices(h.db); limit > team {
 		limit = team
@@ -237,7 +246,7 @@ func (h *OnboardingHandler) TeamTrial(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not start the team trial"})
 		return
 	}
-	writeAudit(h.db, c, &org.ID, "update", "organization", &org.ID, map[string]any{"team_trial": true, "plan": plan, "seats": req.Seats})
+	writeAudit(h.db, c, &org.ID, "update", "organization", &org.ID, map[string]any{"team_trial": true, "plan": plan, "seats": req.Seats, "billing_cycle": answers["billing_cycle"]})
 	c.JSON(http.StatusOK, gin.H{"team_trial": true, "trial_device_limit": limit, "trial_ends_at": org.TrialEndsAt})
 }
 

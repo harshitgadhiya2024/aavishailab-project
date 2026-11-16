@@ -1,25 +1,37 @@
 "use client";
 
 import { Check, Info } from "@phosphor-icons/react";
-import { type CSSProperties, useState } from "react";
+import { type CSSProperties, useEffect, useState } from "react";
 import { GridButton } from "./landing/grid-button";
 import { Label } from "./landing/grid";
 
 import { trialHref } from "@/lib/content";
-import { CURRENCIES, type Currency, type Pricing, TAX_NOTE, formatPrice, minDevices, monthlyPrice, rangeLabel } from "@/lib/pricing";
+import { type Currency, type Pricing, TAX_NOTE, formatPrice, minDevices, monthlyPrice, rangeLabel } from "@/lib/pricing";
 
 const SLIDER_MAX = 100;
 
 /**
- * Plan cards with a device picker. `pricing` comes from the superadmin panel;
- * `currency` is chosen on the server from the visitor's country, and the
- * toggle lets anyone switch.
+ * Plan cards with a device picker and a monthly / yearly switch. `pricing`
+ * comes from the superadmin panel. `currency` follows the visitor's country
+ * (Cloudflare's CF-IPCountry); where that header is missing, as in local
+ * development, the browser's time zone decides.
  */
-export function PricingPlans({ pricing, currency: initial }: { pricing: Pricing; currency: Currency }) {
+export function PricingPlans({ pricing, currency: initial, countryKnown = true }: { pricing: Pricing; currency: Currency; countryKnown?: boolean }) {
   const { plans, settings } = pricing;
   const [devices, setDevices] = useState(25);
   const [currency, setCurrency] = useState<Currency>(initial);
+  const [billing, setBilling] = useState<"yearly" | "monthly">("yearly");
   const fmt = (n: number) => formatPrice(n, currency);
+  // Yearly saves the monthly uplift, e.g. 20% more monthly is about 17% off yearly.
+  const yearlySaving = Math.round((settings.monthlyUpliftPercent / (100 + settings.monthlyUpliftPercent)) * 100);
+
+  useEffect(() => {
+    if (countryKnown) return;
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    // The time zone is only known in the browser, so this runs after mount.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (tz === "Asia/Kolkata" || tz === "Asia/Calcutta") setCurrency("INR");
+  }, [countryKnown]);
 
   const minAll = minDevices(plans);
   const limited = plans.filter((p) => p.max);
@@ -50,16 +62,19 @@ export function PricingPlans({ pricing, currency: initial }: { pricing: Pricing;
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-4">
-            <div role="group" aria-label="Currency" className="flex rounded-[6px] border border-line-strong bg-surface p-0.5 font-mono text-[12px]">
-              {CURRENCIES.map((c) => (
+            <div role="group" aria-label="Billing" className="flex rounded-[6px] border border-line-strong bg-surface p-0.5 font-mono text-[12px]">
+              {(["monthly", "yearly"] as const).map((b) => (
                 <button
-                  key={c}
+                  key={b}
                   type="button"
-                  aria-pressed={currency === c}
-                  onClick={() => setCurrency(c)}
-                  className={`rounded-[4px] px-3 py-1.5 transition-colors ${currency === c ? "bg-brand text-on-brand" : "text-muted hover:text-fg"}`}
+                  aria-pressed={billing === b}
+                  onClick={() => setBilling(b)}
+                  className={`flex items-center gap-1.5 rounded-[4px] px-3 py-1.5 transition-colors ${billing === b ? "bg-brand text-on-brand" : "text-muted hover:text-fg"}`}
                 >
-                  {c === "INR" ? "₹ INR" : "$ USD"}
+                  {b === "monthly" ? "Monthly" : "Yearly"}
+                  {b === "yearly" && yearlySaving > 0 && (
+                    <span className={`rounded-[3px] px-1 text-[10px] ${billing === b ? "bg-on-brand/20" : "bg-brand-soft text-brand-ink"}`}>-{yearlySaving}%</span>
+                  )}
                 </button>
               ))}
             </div>
@@ -112,8 +127,11 @@ export function PricingPlans({ pricing, currency: initial }: { pricing: Pricing;
           const fits = fitsPlan(p);
           const chosen = p.key === pick?.key;
           const dim = fits ? "" : "opacity-60";
-          // The yearly estimate uses the nearest device count this plan is sold for.
+          // The estimate uses the nearest device count this plan is sold for.
           const n = Math.min(p.max ?? Infinity, Math.max(p.min, billed));
+          const monthly = billing === "monthly";
+          const unit = monthly ? monthlyPrice(p.price[currency], currency, settings) : p.price[currency];
+          const total = unit * n;
           return (
             <div
               key={p.key}
@@ -140,19 +158,23 @@ export function PricingPlans({ pricing, currency: initial }: { pricing: Pricing;
               <div className={`mt-8 ${dim}`}>
                 <p className="flex items-baseline gap-2 text-fg">
                   {p.from && <span className="text-sm text-muted">From</span>}
-                  <span className="font-display text-4xl tracking-[-0.02em]">{fmt(p.price[currency])}</span>
-                  <span className="text-sm text-muted">/ device / year</span>
+                  <span className="font-display text-4xl tracking-[-0.02em]">{fmt(unit)}</span>
+                  <span className="text-sm text-muted">/ device / {monthly ? "month" : "year"}</span>
                 </p>
-                <p className="mt-1.5 text-sm text-muted">Billed annually, {TAX_NOTE[currency]}</p>
-                <p className="mt-0.5 text-[13px] text-muted">or {fmt(monthlyPrice(p.price[currency], currency, settings))} / device / month, billed monthly</p>
+                <p className="mt-1.5 text-sm text-muted">Billed {monthly ? "monthly" : "annually"}, {TAX_NOTE[currency]}</p>
+                <p className="mt-0.5 text-[13px] text-muted">
+                  {monthly
+                    ? `or ${fmt(p.price[currency])} / device / year, billed annually${yearlySaving > 0 ? ` (save ${yearlySaving}%)` : ""}`
+                    : `or ${fmt(monthlyPrice(p.price[currency], currency, settings))} / device / month, billed monthly`}
+                </p>
               </div>
 
               {/* 4. Yearly estimate, always shown */}
               <p className={`mt-4 rounded-[4px] px-3 py-2.5 text-[13px] leading-relaxed ${fits ? "bg-bg-2 text-fg-2" : "border border-dashed border-line-strong text-muted"}`}>
                 {p.from ? "From " : ""}
-                <span className="font-medium text-fg">{fmt(p.price[currency] * n)}</span> a year for {n} devices
+                <span className="font-medium text-fg">{fmt(total)}</span> a {monthly ? "month" : "year"} for {n} devices
                 <span className="block text-muted">
-                  {currency === "INR" ? `${fmt(p.price.INR * n * (1 + settings.gstPercent / 100))} including ${settings.gstPercent}% GST` : "Before any applicable taxes"}
+                  {currency === "INR" ? `${fmt(total * (1 + settings.gstPercent / 100))} including ${settings.gstPercent}% GST` : "Before any applicable taxes"}
                   {fits && devices < p.min ? ` · minimum ${p.min} devices` : ""}
                 </span>
               </p>
@@ -172,7 +194,7 @@ export function PricingPlans({ pricing, currency: initial }: { pricing: Pricing;
                 {fits ? (
                   // Essentials and Business sign up on their own; Enterprise talks to sales.
                   p.key === "starter" || p.key === "professional" ? (
-                    <GridButton href={trialHref(p.key === "starter" ? "essentials" : "business")} variant={chosen ? "solid" : "ghost"} className="w-full justify-center">
+                    <GridButton href={trialHref(p.key === "starter" ? "essentials" : "business", billing)} variant={chosen ? "solid" : "ghost"} className="w-full justify-center">
                       {`Start ${settings.pilotDays > 0 ? settings.pilotDays : 14}-day free trial`}
                     </GridButton>
                   ) : (

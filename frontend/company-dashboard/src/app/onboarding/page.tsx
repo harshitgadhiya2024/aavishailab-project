@@ -251,6 +251,23 @@ export default function OnboardingPage() {
   );
 }
 
+/**
+ * Rupees for visitors in India, dollars elsewhere. The country comes from
+ * Cloudflare's CF-IPCountry header (via /api/geo); without it, as in local
+ * development, the browser's time zone decides.
+ */
+function useVisitorCurrency(): "INR" | "USD" {
+  const { data } = useQuery({
+    queryKey: ["visitor-country"],
+    queryFn: async () => ((await fetch("/api/geo")).json() as Promise<{ country: string | null }>),
+    staleTime: Infinity,
+  });
+  if (data?.country) return data.country.toUpperCase() === "IN" ? "INR" : "USD";
+  if (typeof window === "undefined") return "INR";
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return tz === "Asia/Kolkata" || tz === "Asia/Calcutta" ? "INR" : "USD";
+}
+
 function Progress({ step }: { step: number }) {
   return (
     <div className="mb-8">
@@ -337,8 +354,20 @@ function TeamStep({ ob, onNext, onSkip }: { ob: Onboarding; onNext: () => void; 
   const qc = useQueryClient();
   const { data } = useQuery({
     queryKey: ["public-pricing"],
-    queryFn: async () => (await onboardingApi.pricing()).data as { plans: Plan[] },
+    queryFn: async () => (await onboardingApi.pricing()).data as { plans: Plan[]; settings?: { monthly_uplift_percent?: number } },
   });
+  // Currency follows the visitor's country; billing defaults to what they picked on the website.
+  const currency = useVisitorCurrency();
+  const [billing, setBilling] = useState<"monthly" | "yearly">(() => {
+    try {
+      return sessionStorage.getItem("aavishield-billing") === "monthly" ? "monthly" : "yearly";
+    } catch {
+      return "yearly";
+    }
+  });
+  const uplift = data?.settings?.monthly_uplift_percent ?? 20;
+  const yearlySaving = Math.round((uplift / (100 + uplift)) * 100);
+  const monthly = billing === "monthly";
   // Self-serve covers the two smaller plans; Enterprise goes through sales.
   const plans = useMemo(() => (data?.plans ?? []).filter(p => p.key === "starter" || p.key === "professional"), [data]);
   // The device range these plans are sold for, e.g. 10–50; more is Enterprise.
@@ -348,19 +377,26 @@ function TeamStep({ ob, onNext, onSkip }: { ob: Onboarding; onNext: () => void; 
   const [choice, setChoice] = useState<"essentials" | "business">(ob.plan_interest === "business" ? "business" : "essentials");
   const [picked, setSeats] = useState<number>(ob.answers.seats || sizeSeats[ob.answers.team_size || ""] || 10);
   const seats = Math.min(maxDevices, Math.max(minDevices, picked));
-  const [currency, setCurrency] = useState<"INR" | "USD">("INR");
   const [busy, setBusy] = useState(false);
 
   const planFor = (c: "essentials" | "business") => plans.find(p => p.key === (c === "essentials" ? "starter" : "professional"));
   const selected = planFor(choice);
-  const yearly = selected ? (currency === "INR" ? selected.price_inr * seats : (selected.price_usd_cents * seats) / 100) : 0;
+  // Per device: the yearly list price, or the monthly price with the monthly uplift.
+  const unitFor = (p: Plan) => {
+    const year = currency === "INR" ? p.price_inr : p.price_usd_cents / 100;
+    if (!monthly) return year;
+    // Rounded per device as on the website: whole rupees, cents for dollars.
+    const m = (year / 12) * (1 + uplift / 100);
+    return currency === "INR" ? Math.round(m) : Math.round(m * 100) / 100;
+  };
+  const total = selected ? unitFor(selected) * seats : 0;
   const money = (n: number) =>
-    currency === "INR" ? `₹${Math.round(n).toLocaleString("en-IN")}` : `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+    currency === "INR" ? `₹${Math.round(n).toLocaleString("en-IN")}` : `${n.toLocaleString("en-US", { maximumFractionDigits: Number.isInteger(n) ? 0 : 2 })}`;
 
   async function start() {
     setBusy(true);
     try {
-      await onboardingApi.teamTrial({ plan: choice, seats });
+      await onboardingApi.teamTrial({ plan: choice, seats, billing_cycle: billing, currency });
       await qc.invalidateQueries({ queryKey: ["onboarding"] });
       toast.success("Your team trial has started");
       onNext();
@@ -379,9 +415,12 @@ function TeamStep({ ob, onNext, onSkip }: { ob: Onboarding; onNext: () => void; 
 
       <div className="mt-6 flex items-center justify-between">
         <p className={`${AUTH_LABEL} mb-0`}>Devices: <span className="font-mono">{seats}</span></p>
-        <div className="flex rounded-[6px] border border-[rgb(11_11_13/0.12)] p-0.5 font-mono text-[11px]">
-          {(["INR", "USD"] as const).map(c => (
-            <button key={c} type="button" onClick={() => setCurrency(c)} className={`rounded-[4px] px-2.5 py-1 ${currency === c ? "bg-[#0b0b0d] text-white" : "text-[#5d5d66]"}`}>{c}</button>
+        <div role="group" aria-label="Billing" className="flex rounded-[6px] border border-[rgb(11_11_13/0.12)] p-0.5 font-mono text-[11px]">
+          {(["monthly", "yearly"] as const).map(b => (
+            <button key={b} type="button" aria-pressed={billing === b} onClick={() => setBilling(b)} className={`flex items-center gap-1 rounded-[4px] px-2.5 py-1 ${billing === b ? "bg-[#0b0b0d] text-white" : "text-[#5d5d66]"}`}>
+              {b === "monthly" ? "Monthly" : "Yearly"}
+              {b === "yearly" && yearlySaving > 0 && <span className={`rounded-[3px] px-1 text-[9.5px] ${billing === b ? "bg-[#ff7000] text-white" : "bg-[#fff1e5] text-[#c2410c]"}`}>-{yearlySaving}%</span>}
+            </button>
           ))}
         </div>
       </div>
@@ -399,8 +438,8 @@ function TeamStep({ ob, onNext, onSkip }: { ob: Onboarding; onNext: () => void; 
                 {p?.popular && <span className="rounded-[4px] bg-[#0b0b0d] px-1.5 py-0.5 font-mono text-[9.5px] uppercase text-white">Popular</span>}
               </div>
               <p className="mt-2 text-[22px] font-medium text-[#0b0b0d]">
-                {p ? money(currency === "INR" ? p.price_inr : p.price_usd_cents / 100) : "—"}
-                <span className="text-[12px] font-normal text-[#71717a]"> / device / year</span>
+                {p ? money(unitFor(p)) : "—"}
+                <span className="text-[12px] font-normal text-[#71717a]"> / device / {monthly ? "month" : "year"}</span>
               </p>
               <ul className="mt-3 space-y-1.5 text-[12.5px] text-[#3f3f46]">
                 {(p?.features ?? []).slice(0, 4).map(f => (
@@ -413,9 +452,12 @@ function TeamStep({ ob, onNext, onSkip }: { ob: Onboarding; onNext: () => void; 
       </div>
 
       <div className="mt-5 rounded-[6px] border border-[rgb(11_11_13/0.1)] bg-[#fafafa] p-4 text-[13px]">
-        <div className="flex justify-between text-[#3f3f46]"><span>After the trial, per year</span><span className="font-medium text-[#0b0b0d]">{selected ? money(yearly) : "—"}</span></div>
+        <div className="flex justify-between text-[#3f3f46]"><span>After the trial, per {monthly ? "month" : "year"}</span><span className="font-medium text-[#0b0b0d]">{selected ? money(total) : "—"}</span></div>
         <div className="mt-1 flex justify-between text-[#3f3f46]"><span>Due today</span><span className="font-medium text-[#0b0b0d]">{currency === "INR" ? "₹0" : "$0"}</span></div>
-        <p className={AUTH_HINT}>Prices before tax. Nothing is charged automatically when the trial ends.</p>
+        <p className={AUTH_HINT}>
+          Billed {monthly ? "monthly" : "yearly"}, before tax. Nothing is charged automatically when the trial ends.
+          {monthly && yearlySaving > 0 ? ` Switch to yearly to save ${yearlySaving}%.` : ""}
+        </p>
       </div>
 
       <div className="mt-6 space-y-3">
