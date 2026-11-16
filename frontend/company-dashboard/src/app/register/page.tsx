@@ -5,6 +5,7 @@ import { signIn } from "next-auth/react";
 import Link from "next/link";
 import { ArrowRight, Building2, Loader2, Mail } from "lucide-react";
 import { onboardingApi, otpApi } from "@/lib/api";
+import { isDemo } from "@/lib/demo";
 import { toast } from "sonner";
 import {
   AUTH_ARROW, AUTH_BUTTON, AUTH_CHECK, AUTH_HINT, AUTH_LABEL, AUTH_LINK,
@@ -109,6 +110,11 @@ export default function RegisterPage() {
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    // Demo previews have no backend to check the code: go straight to setup.
+    if (isDemo) {
+      window.location.href = "/onboarding";
+      return;
+    }
     setLoading("credentials");
     const result = await signIn("credentials", {
       email,
