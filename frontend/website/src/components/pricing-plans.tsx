@@ -144,8 +144,8 @@ export function PricingPlans({ pricing, currency: initial, countryKnown = true }
               {/* 1. Tags (a fixed-height row, empty when there are none) and name */}
               <div>
                 <div className="flex h-6 flex-wrap gap-1.5">
-                  {p.popular && <span className="rounded-[4px] border border-brand/30 px-2 py-1 font-mono text-[10.5px] uppercase leading-none tracking-[0.06em] text-brand-ink">Most popular</span>}
-                  {chosen && <span className="rounded-[4px] bg-brand px-2 py-1 font-mono text-[10.5px] uppercase leading-none tracking-[0.06em] text-on-brand">For {label} devices</span>}
+                  {p.popular && <span className="inline-flex h-6 items-center rounded-[4px] border border-brand/30 px-2 pt-[1.5px] font-mono text-[10.5px] uppercase leading-none tracking-[0.06em] text-brand-ink">Most popular</span>}
+                  {chosen && <span className="inline-flex h-6 items-center rounded-[4px] border border-transparent bg-brand px-2 pt-[1.5px] font-mono text-[10.5px] uppercase leading-none tracking-[0.06em] text-on-brand">For {label} devices</span>}
                 </div>
                 <h2 className={`mt-3 text-2xl font-normal tracking-[-0.02em] text-fg ${dim}`}>{p.name}</h2>
               </div>
