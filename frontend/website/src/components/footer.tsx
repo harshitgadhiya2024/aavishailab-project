@@ -3,6 +3,7 @@ import Link from "next/link";
 import { CTA, modules, resources } from "@/lib/content";
 import { legalPages } from "@/lib/legal";
 import { SOCIAL } from "@/lib/seo";
+import { CookieSettingsButton } from "./analytics";
 import { industries, solutionsList } from "@/lib/solutions";
 import { DitherField } from "./landing/dither-field";
 import { GridButton } from "./landing/grid-button";
@@ -99,6 +100,9 @@ export function Footer() {
                 <Link href={`/${l.slug}`} className="hover:text-fg">{l.short}</Link>
               </li>
             ))}
+            <li>
+              <CookieSettingsButton className="hover:text-fg" />
+            </li>
           </ul>
         </div>
         <div aria-hidden className="h-24 border-t border-line md:h-32">
