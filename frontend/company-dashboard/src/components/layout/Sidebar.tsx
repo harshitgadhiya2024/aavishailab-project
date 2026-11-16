@@ -115,6 +115,7 @@ export function Sidebar() {
       <Link
         key={item.href}
         href={item.href}
+        data-tour={item.href}
         title={collapsed ? item.label : undefined}
         className={cn(
           "relative flex h-9 items-center gap-3 rounded-md px-2.5 text-[13.5px] font-medium transition-colors",

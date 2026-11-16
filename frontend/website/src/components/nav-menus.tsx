@@ -448,7 +448,6 @@ export function MobileMenu() {
       </ul>
       <div className="grid gap-2 p-5">
         <GridButton href={trialHref()} className="w-full justify-center sm:hidden">{CTA.trial}</GridButton>
-        <GridButton href="/contact" variant="ghost" className="w-full justify-center">{CTA.demo}</GridButton>
         <GridButton href={`${CONSOLE_URL}/login`} variant="ghost" className="w-full justify-center">{CTA.signIn}</GridButton>
       </div>
     </motion.div>

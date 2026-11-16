@@ -7,6 +7,7 @@ import { DataStoreBanner } from "@/components/layout/DataStoreBanner";
 import { SetupBanner } from "@/components/layout/SetupBanner";
 import { authOptions } from "@/lib/auth";
 import { AssistantWidget } from "@/components/assistant/AssistantWidget";
+import { WelcomeTour } from "@/components/onboarding/WelcomeTour";
 import { isDemo } from "@/lib/demo";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -29,6 +30,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
       </div>
       {/* The AI assistant floats over every page (bottom right). */}
       <AssistantWidget />
+      {/* Welcome popup and product tour, once, after a company signs up. */}
+      <WelcomeTour />
     </div>
   );
 }
