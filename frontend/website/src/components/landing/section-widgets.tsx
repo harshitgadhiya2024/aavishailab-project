@@ -210,7 +210,7 @@ export function AiLabWidget() {
           <AnimatePresence>
             {answered && (
               <motion.p {...POP} className="mt-3 flex max-w-[92%] items-start gap-2.5 border-l-2 border-brand pl-3 text-[14px] leading-relaxed text-ink-fg/85">
-                <Cpu size={15} className="mt-0.5 shrink-0 text-brand" /> 2 devices: ThinkPad · Rohan, MacBook · Priya
+                <Cpu size={15} className="mt-0.5 shrink-0 text-brand" /> 2 devices: ThinkPad · Soren, MacBook · Ayumi
               </motion.p>
             )}
           </AnimatePresence>

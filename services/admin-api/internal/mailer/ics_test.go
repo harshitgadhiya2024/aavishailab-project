@@ -8,7 +8,7 @@ import (
 
 func TestDemoInviteRequest(t *testing.T) {
 	start := time.Date(2026, 11, 17, 6, 0, 0, 0, time.UTC)
-	inv := DemoInvite{UID: "abc@aavishield.com", Seq: 2, Start: start, AttendeeName: "Priya; Rao", Attendee: "p@acme.co",
+	inv := DemoInvite{UID: "abc@aavishield.com", Seq: 2, Start: start, AttendeeName: "Ines; Faria", Attendee: "ines@corvane.io",
 		MeetingURL: "https://meet.example.com/x?a=1,b=2"}
 	method, ics := inv.ICS(start.Add(-time.Hour))
 	if method != "REQUEST" {
@@ -16,7 +16,7 @@ func TestDemoInviteRequest(t *testing.T) {
 	}
 	for _, want := range []string{
 		"METHOD:REQUEST", "UID:abc@aavishield.com", "SEQUENCE:2", "DTSTART:20261117T060000Z", "DTEND:20261117T063000Z",
-		"STATUS:CONFIRMED", "TRIGGER:-PT15M", `ATTENDEE;CN="Priya  Rao"`, "mailto:p@acme.co",
+		"STATUS:CONFIRMED", "TRIGGER:-PT15M", `ATTENDEE;CN="Ines  Faria"`, "mailto:ines@corvane.io",
 		`LOCATION:https://meet.example.com/x?a=1\,b=2`,
 	} {
 		if !strings.Contains(unfold(ics), want) {
@@ -31,7 +31,7 @@ func TestDemoInviteRequest(t *testing.T) {
 }
 
 func TestDemoInviteCancel(t *testing.T) {
-	inv := DemoInvite{UID: "abc@aavishield.com", Seq: 3, Start: time.Now(), Attendee: "p@acme.co", Cancel: true}
+	inv := DemoInvite{UID: "abc@aavishield.com", Seq: 3, Start: time.Now(), Attendee: "ines@corvane.io", Cancel: true}
 	method, ics := inv.ICS(time.Now())
 	if method != "CANCEL" || !strings.Contains(ics, "METHOD:CANCEL") || !strings.Contains(ics, "STATUS:CANCELLED") || !strings.Contains(ics, "SEQUENCE:3") {
 		t.Fatalf("bad cancel:\n%s", ics)
@@ -55,14 +55,14 @@ func TestICSFoldKeepsRunesWhole(t *testing.T) {
 }
 
 func TestBuildMIMEWithInvite(t *testing.T) {
-	inv := DemoInvite{UID: "u@aavishield.com", Start: time.Now(), Attendee: "p@acme.co"}
-	raw := string(buildMIME(Message{To: []string{"p@acme.co"}, Subject: "s", HTML: "<p>hi</p>", Calendar: inv.part()}))
+	inv := DemoInvite{UID: "u@aavishield.com", Start: time.Now(), Attendee: "ines@corvane.io"}
+	raw := string(buildMIME(Message{To: []string{"ines@corvane.io"}, Subject: "s", HTML: "<p>hi</p>", Calendar: inv.part()}))
 	for _, want := range []string{"multipart/mixed", "multipart/alternative", "text/calendar; charset=UTF-8; method=REQUEST", `filename="invite.ics"`, "BEGIN:VCALENDAR"} {
 		if !strings.Contains(raw, want) {
 			t.Errorf("missing %q", want)
 		}
 	}
-	plain := string(buildMIME(Message{To: []string{"p@acme.co"}, Subject: "s", HTML: "<p>hi</p>"}))
+	plain := string(buildMIME(Message{To: []string{"ines@corvane.io"}, Subject: "s", HTML: "<p>hi</p>"}))
 	if strings.Contains(plain, "multipart/mixed") || strings.Contains(plain, "text/calendar") {
 		t.Error("an email without an invite changed shape")
 	}

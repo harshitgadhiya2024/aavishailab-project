@@ -12,93 +12,14 @@ func logoURL() string {
 	return envOr("MAIL_LOGO_URL", "https://app.aavishield.com/brand/logo-email.png")
 }
 
-// layout wraps content in the branded shell. Table-based and inline-styled on
-// purpose: email clients ignore most modern CSS, and a dark-mode-only design
-// would be unreadable in half of them.
-func layout(heading, intro, body, ctaLabel, ctaURL, footer string) string {
-	cta := ""
-	if ctaLabel != "" && ctaURL != "" {
-		cta = fmt.Sprintf(`
-      <tr><td style="padding:8px 32px 24px 32px;">
-        <a href="%s" style="display:inline-block;background:#FF7000;color:#ffffff;text-decoration:none;
-           font-weight:600;font-size:14px;padding:12px 24px;border-radius:8px;">%s</a>
-      </td></tr>`, ctaURL, html.EscapeString(ctaLabel))
-	}
-	if footer == "" {
-		footer = "You're receiving this because you use Aavishield to protect your organization."
-	}
-
-	return fmt.Sprintf(`<!doctype html>
-<html><body style="margin:0;padding:0;background:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;">
-  <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="background:#f4f5f7;padding:32px 16px;">
-    <tr><td align="center">
-      <table role="presentation" width="600" cellpadding="0" cellspacing="0"
-             style="max-width:600px;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;">
-        <tr><td style="padding:24px 32px;border-bottom:1px solid #e5e7eb;">
-          <img src="%s" width="240" height="80" alt="Aavishield"
-               style="display:block;border:0;outline:none;width:240px;height:80px;font-size:18px;font-weight:700;color:#111827;">
-        </td></tr>
-        <tr><td style="padding:28px 32px 8px 32px;">
-          <h1 style="margin:0 0 12px 0;font-size:20px;color:#111827;">%s</h1>
-          <p style="margin:0;font-size:14px;line-height:22px;color:#4b5563;">%s</p>
-        </td></tr>
-        <tr><td style="padding:16px 32px 0 32px;font-size:14px;line-height:22px;color:#4b5563;">%s</td></tr>
-        %s
-        <tr><td style="padding:20px 32px 28px 32px;border-top:1px solid #e5e7eb;">
-          <p style="margin:0;font-size:12px;line-height:18px;color:#9ca3af;">%s</p>
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body></html>`, html.EscapeString(logoURL()), html.EscapeString(heading), intro, body, cta, footer)
-}
-
-// statRow renders one "label: value" line used by the digest emails.
-func statRow(label, value, color string) string {
-	if color == "" {
-		color = "#111827"
-	}
-	return fmt.Sprintf(`<tr>
-      <td style="padding:6px 0;font-size:13px;color:#6b7280;">%s</td>
-      <td style="padding:6px 0;font-size:15px;font-weight:600;color:%s;text-align:right;">%s</td>
-    </tr>`, html.EscapeString(label), color, html.EscapeString(value))
-}
-
-func statTable(rows ...string) string {
-	return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"
-             style="background:#f9fafb;border-radius:8px;padding:8px 16px;margin:8px 0;">` +
-		strings.Join(rows, "") + `</table>`
-}
-
 // ─── Account & access ─────────────────────────────────────────────────────────
-
-// WelcomeOrg greets the first admin of a brand-new organization.
-func WelcomeOrg(to, firstName, orgName string) {
-	body := statTable(
-		statRow("Organization", orgName, ""),
-		statRow("Your role", "Administrator", ""),
-	) + `<p style="margin:16px 0 0 0;">Next steps: add your employees, enrol their devices, then set the
-	policies that decide what gets blocked.</p>`
-
-	Send(Message{
-		To:      []string{to},
-		Subject: "Welcome to Aavishield — " + orgName + " is ready",
-		HTML: layout(
-			"Welcome, "+html.EscapeString(firstName),
-			"Your organization is set up and your dashboard is live.",
-			body, "Open your dashboard", cfg.AppURL, ""),
-	})
-}
 
 // InviteUser tells a new dashboard user their access is ready. The temporary
 // password is included because it exists nowhere else — it is stored hashed.
 func InviteUser(to, firstName, orgName, roleLabel, tempPassword, invitedBy string) {
 	pw := ""
 	if tempPassword != "" {
-		pw = fmt.Sprintf(`<p style="margin:16px 0 0 0;">Sign in with this temporary password and change it straight away:</p>
-	<p style="margin:8px 0 0 0;font-family:ui-monospace,Menlo,monospace;font-size:15px;background:#f3f4f6;
-	   border:1px solid #e5e7eb;border-radius:6px;padding:10px 14px;display:inline-block;">%s</p>`,
-			html.EscapeString(tempPassword))
+		pw = secretBox("Temporary password — change it after signing in", tempPassword)
 	}
 	body := statTable(
 		statRow("Organization", orgName, ""),
@@ -109,8 +30,8 @@ func InviteUser(to, firstName, orgName, roleLabel, tempPassword, invitedBy strin
 	Send(Message{
 		To:      []string{to},
 		Subject: invitedBy + " added you to " + orgName + " on Aavishield",
-		HTML: layout(
-			"You have access to "+html.EscapeString(orgName),
+		HTML: layout(kTeamAccess,
+			"You have access to ^"+orgName,
 			html.EscapeString(invitedBy)+" gave you access to the Aavishield security dashboard.",
 			body, "Sign in", cfg.AppURL+"/login", ""),
 	})
@@ -130,8 +51,8 @@ func PasswordReset(to, firstName, token string, portal bool) {
 	Send(Message{
 		To:      []string{to},
 		Subject: "Reset your Aavishield password",
-		HTML: layout(
-			"Reset your password",
+		HTML: layout(kAccount,
+			"Reset your ^password",
 			"Hi "+html.EscapeString(firstName)+", use the button below to choose a new password.",
 			body, "Reset password", link, ""),
 	})
@@ -149,8 +70,8 @@ func PasswordChanged(to, firstName string, portal bool) {
 	Send(Message{
 		To:      []string{to},
 		Subject: "Your Aavishield password was changed",
-		HTML: layout(
-			"Password changed",
+		HTML: layout(kAccountWarn,
+			"Your password ^was changed",
 			"Hi "+html.EscapeString(firstName)+", the password on your Aavishield account was just changed.",
 			body, "Go to Aavishield", base, ""),
 	})
@@ -161,10 +82,7 @@ func PasswordChanged(to, firstName string, portal bool) {
 func PortalAccessReady(to, firstName, orgName, tempPassword string) {
 	pw := ""
 	if tempPassword != "" {
-		pw = fmt.Sprintf(`<p style="margin:16px 0 0 0;">Your temporary password:</p>
-	<p style="margin:8px 0 0 0;font-family:ui-monospace,Menlo,monospace;font-size:15px;background:#f3f4f6;
-	   border:1px solid #e5e7eb;border-radius:6px;padding:10px 14px;display:inline-block;">%s</p>`,
-			html.EscapeString(tempPassword))
+		pw = secretBox("Your temporary password", tempPassword)
 	}
 	body := `<p style="margin:0;">From the portal you can see which sites were blocked for you, request access
 	to something you need for work, and install the agent on a new device.</p>` + pw
@@ -172,8 +90,8 @@ func PortalAccessReady(to, firstName, orgName, tempPassword string) {
 	Send(Message{
 		To:      []string{to},
 		Subject: "Your " + orgName + " security portal access is ready",
-		HTML: layout(
-			"Hi "+html.EscapeString(firstName),
+		HTML: layout(kPortal,
+			"Hi "+firstName+". ^Your portal is ready.",
 			html.EscapeString(orgName)+" has set up your employee security portal.",
 			body, "Open the portal", cfg.PortalURL+"/login", ""),
 	})
@@ -202,8 +120,8 @@ func AccessRequestSubmitted(admins []string, employeeName, employeeEmail, kind, 
 	Send(Message{
 		To:      admins,
 		Subject: "Access request: " + employeeName + " wants " + what,
-		HTML: layout(
-			"Access request waiting",
+		HTML: layout(kAccessReq,
+			"An access request is ^waiting",
 			html.EscapeString(employeeName)+" asked for an exception to your security policy.",
 			body, "Review the request", cfg.AppURL+"/dashboard/access-requests", ""),
 	})
@@ -213,17 +131,21 @@ func AccessRequestSubmitted(admins []string, employeeName, employeeEmail, kind, 
 // status: approved, denied or revoked.
 func AccessRequestResolved(to, firstName, kind, what, outcome, note string) {
 	var heading, intro, verdict, after string
+	k := kAccessReq
+	k.tone = toneDanger
 	switch outcome {
 	case "approved":
-		verdict, heading = "approved", "Access approved"
+		k.tone = toneSuccess
+		verdict, heading = "approved", "Access ^approved"
 		intro = "Your company approved your request for " + html.EscapeString(what) + "."
 		after = "It can take up to a minute for your device to pick up the change."
 	case "revoked":
-		verdict, heading = "revoked", "Access revoked"
+		k.tone = toneWarning
+		verdict, heading = "revoked", "Access ^revoked"
 		intro = "Your company took back the access it had given you for " + html.EscapeString(what) + "."
 		after = "Your device will apply the policy again within a minute."
 	default:
-		verdict, heading = "declined", "Access declined"
+		verdict, heading = "declined", "Access ^declined"
 		intro = "Your request for " + html.EscapeString(what) + " was not approved."
 		after = "If you need it for work, talk to your IT team with more detail."
 	}
@@ -236,7 +158,7 @@ func AccessRequestResolved(to, firstName, kind, what, outcome, note string) {
 	Send(Message{
 		To:      []string{to},
 		Subject: "Your access request for " + what + " was " + verdict,
-		HTML:    layout(heading, "Hi "+html.EscapeString(firstName)+". "+intro, body, "Open the portal", cfg.PortalURL, ""),
+		HTML:    layout(k, heading, "Hi "+html.EscapeString(firstName)+". "+intro, body, "Open the portal", cfg.PortalURL, ""),
 	})
 }
 
@@ -246,12 +168,12 @@ func AccessRequestResolved(to, firstName, kind, what, outcome, note string) {
 // data actually blocked on its way out.
 func SecurityAlert(admins []string, orgName, title, employeeName, target, detail string, riskScore int) {
 	rows := []string{
-		statRow("What happened", title, "#b91c1c"),
+		statRow("What happened", title, colorDanger),
 		statRow("Employee", employeeName, ""),
 		statRow("Target", target, ""),
 	}
 	if riskScore > 0 {
-		rows = append(rows, statRow("Risk score", fmt.Sprintf("%d/100", riskScore), "#b91c1c"))
+		rows = append(rows, statRow("Risk score", fmt.Sprintf("%d/100", riskScore), colorDanger))
 	}
 	if detail != "" {
 		rows = append(rows, statRow("Detail", detail, ""))
@@ -260,8 +182,8 @@ func SecurityAlert(admins []string, orgName, title, employeeName, target, detail
 	Send(Message{
 		To:      admins,
 		Subject: "🔴 Security alert — " + title,
-		HTML: layout(
-			"Security alert",
+		HTML: layout(kAlert,
+			"Aavishield ^blocked a threat",
 			"Aavishield blocked something that needs your attention at "+html.EscapeString(orgName)+".",
 			statTable(rows...), "Investigate in the dashboard", cfg.AppURL+"/dashboard/activity", ""),
 	})
@@ -271,14 +193,14 @@ func SecurityAlert(admins []string, orgName, title, employeeName, target, detail
 // one an admin gets when incidents accumulate rather than one mail per event.
 func ActivityDigest(admins []string, orgName string, hours int, blocked, alerted, dlp, malware, pendingRequests int, topDomains []string) {
 	rows := []string{
-		statRow("Blocked", fmt.Sprintf("%d", blocked), "#b91c1c"),
-		statRow("Alerted", fmt.Sprintf("%d", alerted), "#b45309"),
+		statRow("Blocked", fmt.Sprintf("%d", blocked), colorDanger),
+		statRow("Alerted", fmt.Sprintf("%d", alerted), colorWarning),
 	}
 	if dlp > 0 {
-		rows = append(rows, statRow("Sensitive-data incidents", fmt.Sprintf("%d", dlp), "#b45309"))
+		rows = append(rows, statRow("Sensitive-data incidents", fmt.Sprintf("%d", dlp), colorWarning))
 	}
 	if malware > 0 {
-		rows = append(rows, statRow("Malware detections", fmt.Sprintf("%d", malware), "#b91c1c"))
+		rows = append(rows, statRow("Malware detections", fmt.Sprintf("%d", malware), colorDanger))
 	}
 	if pendingRequests > 0 {
 		rows = append(rows, statRow("Access requests waiting", fmt.Sprintf("%d", pendingRequests), ""))
@@ -286,11 +208,7 @@ func ActivityDigest(admins []string, orgName string, hours int, blocked, alerted
 
 	body := statTable(rows...)
 	if len(topDomains) > 0 {
-		body += `<p style="margin:16px 0 4px 0;font-weight:600;color:#111827;">Most-hit destinations</p><ul style="margin:0;padding-left:20px;color:#4b5563;font-size:14px;">`
-		for _, d := range topDomains {
-			body += "<li>" + html.EscapeString(d) + "</li>"
-		}
-		body += "</ul>"
+		body += sectionTitle("Most-hit destinations") + bulletList(escapeAll(topDomains)...)
 	}
 
 	window := fmt.Sprintf("%d hours", hours)
@@ -301,8 +219,8 @@ func ActivityDigest(admins []string, orgName string, hours int, blocked, alerted
 	Send(Message{
 		To:      admins,
 		Subject: fmt.Sprintf("%d security incidents at %s need review", blocked+alerted, orgName),
-		HTML: layout(
-			"Activity worth a look",
+		HTML: layout(kDigest,
+			"Activity ^worth a look",
 			fmt.Sprintf("In the last %s, Aavishield recorded %d incidents at %s.",
 				window, blocked+alerted, html.EscapeString(orgName)),
 			body, "Review in the dashboard", cfg.AppURL+"/dashboard/activity",
@@ -315,23 +233,22 @@ func ActivityDigest(admins []string, orgName string, hours int, blocked, alerted
 // week" on the dashboard — so it's worth saying out loud.
 func NoActivityNotice(admins []string, orgName string, days int, devices, onlineDevices int) {
 	rows := []string{
-		statRow("Days with no activity", fmt.Sprintf("%d", days), "#b45309"),
+		statRow("Days with no activity", fmt.Sprintf("%d", days), colorWarning),
 		statRow("Devices enrolled", fmt.Sprintf("%d", devices), ""),
 		statRow("Devices online", fmt.Sprintf("%d", onlineDevices), ""),
 	}
 	reason := `<p style="margin:16px 0 0 0;">This usually means the agent stopped running, a device is switched
-	off, or nothing was ever enrolled — not that everything is fine. Worth checking:</p>
-	<ul style="margin:8px 0 0 0;padding-left:20px;color:#4b5563;font-size:14px;">
-	  <li>Devices still show as online in the dashboard</li>
-	  <li>The agent is installed on new machines</li>
-	  <li>At least one policy is enabled</li>
-	</ul>`
+	off, or nothing was ever enrolled — not that everything is fine. Worth checking:</p>` + bulletList(
+		"Devices still show as online in the dashboard",
+		"The agent is installed on new machines",
+		"At least one policy is enabled",
+	)
 
 	Send(Message{
 		To:      admins,
 		Subject: "No security activity from " + orgName + " in " + fmt.Sprintf("%d days", days),
-		HTML: layout(
-			"Nothing has been reported",
+		HTML: layout(kCoverage,
+			"Nothing has been ^reported",
 			"Aavishield hasn't received any activity from "+html.EscapeString(orgName)+" recently.",
 			statTable(rows...)+reason, "Check device status", cfg.AppURL+"/dashboard/devices",
 			"You get this when reporting goes quiet, so silence is never mistaken for safety."),
@@ -346,8 +263,8 @@ func EmployeeInactivityNotice(to, firstName, orgName string, days int) {
 	Send(Message{
 		To:      []string{to},
 		Subject: "Your device hasn't reported to " + orgName + " security in " + fmt.Sprintf("%d days", days),
-		HTML: layout(
-			"Your device has gone quiet",
+		HTML: layout(kCoverage,
+			"Your device has ^gone quiet",
 			"Hi "+html.EscapeString(firstName)+", your device hasn't checked in with Aavishield for "+
 				fmt.Sprintf("%d days", days)+".",
 			body, "Open the portal", cfg.PortalURL, ""),
@@ -367,8 +284,8 @@ func DeviceEnrolled(admins []string, orgName, hostname, employeeName, osType str
 	Send(Message{
 		To:      admins,
 		Subject: "New device enrolled at " + orgName + ": " + hostname,
-		HTML: layout(
-			"A device was enrolled",
+		HTML: layout(kDevices,
+			"A new device ^joined",
 			html.EscapeString(hostname)+" just registered with Aavishield.",
 			body, "View devices", cfg.AppURL+"/dashboard/devices", ""),
 	})
@@ -378,18 +295,14 @@ func DeviceEnrolled(admins []string, orgName, hostname, employeeName, osType str
 // always know the system is alive and what it did.
 func WeeklySummary(admins []string, orgName string, blocked, alerted, dlp, employees, devices int, topDomains []string) {
 	body := statTable(
-		statRow("Blocked this week", fmt.Sprintf("%d", blocked), "#b91c1c"),
-		statRow("Alerted this week", fmt.Sprintf("%d", alerted), "#b45309"),
+		statRow("Blocked this week", fmt.Sprintf("%d", blocked), colorDanger),
+		statRow("Alerted this week", fmt.Sprintf("%d", alerted), colorWarning),
 		statRow("Sensitive-data incidents", fmt.Sprintf("%d", dlp), ""),
 		statRow("Employees protected", fmt.Sprintf("%d", employees), ""),
 		statRow("Devices enrolled", fmt.Sprintf("%d", devices), ""),
 	)
 	if len(topDomains) > 0 {
-		body += `<p style="margin:16px 0 4px 0;font-weight:600;color:#111827;">Most-hit destinations</p><ul style="margin:0;padding-left:20px;color:#4b5563;font-size:14px;">`
-		for _, d := range topDomains {
-			body += "<li>" + html.EscapeString(d) + "</li>"
-		}
-		body += "</ul>"
+		body += sectionTitle("Most-hit destinations") + bulletList(escapeAll(topDomains)...)
 	}
 	if blocked+alerted == 0 {
 		body += `<p style="margin:16px 0 0 0;">A quiet week — nothing was blocked or flagged. Your agents are
@@ -399,8 +312,8 @@ func WeeklySummary(admins []string, orgName string, blocked, alerted, dlp, emplo
 	Send(Message{
 		To:      admins,
 		Subject: "Weekly security summary — " + orgName,
-		HTML: layout(
-			"Your week in security",
+		HTML: layout(kWeekly,
+			"Your week ^in security",
 			"Here's what Aavishield did for "+html.EscapeString(orgName)+" over the last seven days.",
 			body, "Open full reports", cfg.AppURL+"/dashboard/reports",
 			"Sent weekly, whether or not anything happened."),
@@ -418,7 +331,7 @@ func MFAEnabled(to, firstName string) {
 	Send(Message{
 		To:      []string{to},
 		Subject: "Two-factor authentication is on for your Aavishield account",
-		HTML: layout("Two-factor authentication enabled",
+		HTML: layout(kMFAOn, "Two-factor is ^on",
 			"Hi "+html.EscapeString(firstName)+", your account is now protected by a second factor.",
 			body, "Review account security", cfg.AppURL+"/dashboard/profile", ""),
 	})
@@ -433,7 +346,7 @@ func MFADisabled(to, firstName string) {
 	Send(Message{
 		To:      []string{to},
 		Subject: "Two-factor authentication was turned off",
-		HTML: layout("Two-factor authentication disabled",
+		HTML: layout(kMFAOff, "Two-factor was ^turned off",
 			"Hi "+html.EscapeString(firstName)+", the second factor on your Aavishield account was removed.",
 			body, "Turn it back on", cfg.AppURL+"/dashboard/profile", ""),
 	})
@@ -443,14 +356,14 @@ func MFADisabled(to, firstName string) {
 func MFARecoveryCodeUsed(to, firstName string, codesLeft int, ip string) {
 	body := statTable(
 		statRow("Signed in from", ip, ""),
-		statRow("Recovery codes left", fmt.Sprintf("%d", codesLeft), map[bool]string{true: "#b91c1c", false: ""}[codesLeft <= 2]),
+		statRow("Recovery codes left", fmt.Sprintf("%d", codesLeft), map[bool]string{true: colorDanger, false: ""}[codesLeft <= 2]),
 	) + `<p style="margin:16px 0 0 0;">If this wasn't you, someone else has both your password and one of your
 	recovery codes — change your password and regenerate your codes now.</p>`
 
 	Send(Message{
 		To:      []string{to},
 		Subject: "A recovery code was used to sign in to your Aavishield account",
-		HTML: layout("Recovery code used",
+		HTML: layout(kSignIn, "A recovery code ^was used",
 			"Hi "+html.EscapeString(firstName)+", someone signed in using one of your backup codes instead of your authenticator app.",
 			body, "Review account security", cfg.AppURL+"/dashboard/profile", ""),
 	})
@@ -465,20 +378,13 @@ func MFARequired(to, firstName, orgName string) {
 	Send(Message{
 		To:      []string{to},
 		Subject: orgName + " now requires two-factor authentication",
-		HTML: layout("Set up two-factor authentication",
+		HTML: layout(kMFA, "Set up ^two-factor",
 			"Hi "+html.EscapeString(firstName)+", "+html.EscapeString(orgName)+" has made a second factor mandatory for the security dashboard.",
 			body, "Set it up now", cfg.AppURL+"/dashboard/profile", ""),
 	})
 }
 
 // ─── One-time codes ───────────────────────────────────────────────────────────
-
-// codeBlock renders the digits large enough to read off a phone at a glance.
-func codeBlock(code string) string {
-	return fmt.Sprintf(`<p style="margin:16px 0;font-family:ui-monospace,Menlo,monospace;font-size:30px;
-	   letter-spacing:8px;font-weight:700;color:#111827;background:#f3f4f6;border:1px solid #e5e7eb;
-	   border-radius:8px;padding:16px 20px;text-align:center;">%s</p>`, html.EscapeString(code))
-}
 
 // LoginCode is the sign-in code for accounts without an authenticator app.
 func LoginCode(to, firstName, code string, validMinutes int) {
@@ -488,7 +394,7 @@ func LoginCode(to, firstName, code string, validMinutes int) {
 	Send(Message{
 		To:      []string{to},
 		Subject: code + " is your Aavishield sign-in code",
-		HTML: layout("Your sign-in code",
+		HTML: layout(kCode, "Your sign-in ^code",
 			"Hi "+html.EscapeString(firstName)+", enter this code to finish signing in.",
 			body, "", "",
 			"Never share this code. Aavishield will never ask you for it."),
@@ -508,7 +414,7 @@ func RegistrationCode(to, firstName, code string, validMinutes int) {
 	Send(Message{
 		To:      []string{to},
 		Subject: code + " is your Aavishield verification code",
-		HTML: layout("Confirm your email",
+		HTML: layout(kVerify, "Confirm your ^email",
 			greeting+", enter this code to finish creating your Aavishield account.",
 			body, "", "",
 			"If you didn't sign up for Aavishield, you can ignore this email."),
@@ -536,7 +442,7 @@ func DeviceDisconnected(admins []string, orgName, employeeName, hostname, when s
 	Send(Message{
 		To:      admins,
 		Subject: "Device disconnected — " + employeeName,
-		HTML: layout("A device was disconnected",
+		HTML: layout(kDevicesWarn, "A device ^disconnected",
 			employeeName+" disconnected on "+when+".",
 			body, "View devices", cfg.AppURL+"/dashboard/devices", ""),
 	})
@@ -559,7 +465,7 @@ func DeviceUninstalled(admins []string, orgName, employeeName, hostname, approve
 	Send(Message{
 		To:      admins,
 		Subject: "Connector uninstalled — " + hostname,
-		HTML: layout("A connector was uninstalled",
+		HTML: layout(kDevicesBad, "A connector was ^uninstalled",
 			"Removed on "+when+", approved by "+approvedBy+".",
 			body, "View devices", cfg.AppURL+"/dashboard/devices", ""),
 	})
@@ -578,7 +484,7 @@ func DeviceConnected(admins []string, orgName, employeeName, hostname, when stri
 	Send(Message{
 		To:      admins,
 		Subject: "Device connected — " + employeeName,
-		HTML: layout("A device was connected",
+		HTML: layout(kDevicesOK, "A device is ^protected again",
 			employeeName+" connected on "+when+".",
 			body, "View devices", cfg.AppURL+"/dashboard/devices", ""),
 	})
@@ -589,12 +495,12 @@ func DeviceConnected(admins []string, orgName, employeeName, hostname, when stri
 // DemoRequestReceived tells the team a new "Book a demo" form came in from
 // the marketing site. Reply-worthy details are in the body so it can be
 // actioned straight from the inbox.
-func DemoRequestReceived(to []string, name, email, company, devices, message, source string) {
+func DemoRequestReceived(to []string, name, email, company, devices, note, source string) {
 	if devices == "" {
 		devices = "Not given"
 	}
-	if message == "" {
-		message = "No message"
+	if note == "" {
+		note = "No message"
 	}
 	body := statTable(
 		statRow("Name", name, ""),
@@ -602,16 +508,16 @@ func DemoRequestReceived(to []string, name, email, company, devices, message, so
 		statRow("Company", company, ""),
 		statRow("Devices", devices, ""),
 		statRow("Submitted from", source, ""),
-	) + fmt.Sprintf(`<p style="margin:16px 0 4px 0;font-weight:600;color:#111827;">What they want to see</p>
-	<p style="margin:0;white-space:pre-wrap;">%s</p>
-	<p style="margin:16px 0 0 0;">Reply to <a href="mailto:%s" style="color:#FF7000;">%s</a> to schedule the demo.</p>`,
-		html.EscapeString(message), html.EscapeString(email), html.EscapeString(email))
+	) + sectionTitle("What they want to see") +
+		messageCard(message{author: name, role: "Demo request · " + company, body: note}) +
+		fmt.Sprintf(`<p style="margin:16px 0 0 0;">Reply to <a href="mailto:%s" style="color:#c2410c;">%s</a> to schedule the demo.</p>`,
+			html.EscapeString(email), html.EscapeString(email))
 
 	Send(Message{
 		To:      to,
 		Subject: "New demo request: " + company + " (" + name + ")",
-		HTML: layout(
-			"New demo request",
+		HTML: layout(kLead,
+			"New demo ^request",
 			html.EscapeString(name)+" from "+html.EscapeString(company)+" booked a demo on the website.",
 			body, "Open in superadmin", cfg.SuperadminURL+"/dashboard/demo-requests",
 			"Sent to the Aavishield team for every demo request from the website."),
@@ -627,8 +533,8 @@ func DemoRequestConfirmation(to, name string) {
 	Send(Message{
 		To:      []string{to},
 		Subject: "We received your Aavishield demo request",
-		HTML: layout(
-			"Thanks, "+html.EscapeString(name),
+		HTML: layout(kDemo,
+			"Thanks, "+name+". ^We'll be in touch.",
 			"Your demo request reached the Aavishield team.",
 			body, "", "",
 			"You're receiving this because you booked a demo on aavishield.com."),
@@ -647,8 +553,8 @@ func DemoBookedConfirmation(to, name, when string, invite DemoInvite) {
 	Send(Message{
 		To:      []string{to},
 		Subject: "Your Aavishield demo: " + when,
-		HTML: layout(
-			"See you soon, "+html.EscapeString(name),
+		HTML: layout(kDemoBooked,
+			"See you soon, ^"+name+".",
 			"Your demo with the Aavishield team is booked.",
 			body, "", "",
 			"You're receiving this because you booked a demo from your Aavishield console."),
@@ -678,8 +584,8 @@ func WaitlistJoined(to []string, name, email, company, teamSize, role, source st
 	Send(Message{
 		To:      to,
 		Subject: "New waitlist sign-up: " + company + " (" + name + ")",
-		HTML: layout(
-			"New waitlist sign-up",
+		HTML: layout(kWaitlist,
+			"New waitlist ^sign-up",
 			html.EscapeString(name)+" from "+html.EscapeString(company)+" joined the Aavishield waitlist.",
 			body, "Open the waitlist", cfg.SuperadminURL+"/dashboard/waitlist",
 			"Sent to the Aavishield team for every waitlist sign-up."),
@@ -695,8 +601,8 @@ func WaitlistConfirmation(to, name string) {
 	Send(Message{
 		To:      []string{to},
 		Subject: "You're on the Aavishield waitlist",
-		HTML: layout(
-			"You're on the list, "+html.EscapeString(name),
+		HTML: layout(kEarly,
+			"You're on the list, ^"+name+".",
 			"Thanks for joining the Aavishield early access waitlist.",
 			body, "", "",
 			"You're receiving this because you joined the waitlist on aavishield.com."),
@@ -713,8 +619,8 @@ func WaitlistInvite(to, name string) {
 	Send(Message{
 		To:      []string{to},
 		Subject: "Your Aavishield early access is ready",
-		HTML: layout(
-			"You're in, "+html.EscapeString(name),
+		HTML: layout(kEarlyOpen,
+			"You're in, ^"+name+".",
 			"Your spot on the Aavishield early access program is ready.",
 			body, "Create your organization", cfg.AppURL+"/register",
 			"You're receiving this because you joined the Aavishield waitlist."),
@@ -726,18 +632,16 @@ func WaitlistInvite(to, name string) {
 // DataStoreUnreachable tells admins their own database or bucket stopped
 // answering. what is "database" or "file storage".
 func DataStoreUnreachable(admins []string, orgName, what, detail string) {
-	body := `<p style="margin:0;">While it is unreachable:</p>
-	<ul style="margin:8px 0 0 0;padding-left:20px;color:#4b5563;font-size:14px;">
-	  <li>The dashboard can't show activity, reports or screenshots.</li>
-	  <li>New security events are held encrypted for up to 72 hours and delivered automatically once it is back. Screenshots taken meanwhile are not kept.</li>
-	  <li>Nothing is written to Aavishield's own storage instead.</li>
-	</ul>
-	<p style="margin:16px 0 0 0;font-size:13px;color:#6b7280;">Last error: ` + html.EscapeString(detail) + `</p>`
+	body := `<p style="margin:0;">While it is unreachable:</p>` + bulletList(
+		"The dashboard can't show activity, reports or screenshots.",
+		"New security events are held encrypted for up to 72 hours and delivered automatically once it is back. Screenshots taken meanwhile are not kept.",
+		"Nothing is written to Aavishield's own storage instead.",
+	) + `<p style="margin:16px 0 0 0;font-size:13px;color:#5d5d66;">Last error: ` + html.EscapeString(detail) + `</p>`
 	Send(Message{
 		To:      admins,
 		Subject: "Action needed: Aavishield can't reach your " + what,
-		HTML: layout(
-			"Your "+html.EscapeString(what)+" is unreachable",
+		HTML: layout(kResidency,
+			"Your "+what+" is ^unreachable",
 			html.EscapeString(orgName)+" keeps employee data in its own "+html.EscapeString(what)+", and Aavishield could not connect to it.",
 			body, "Check the connection", cfg.AppURL+"/dashboard/settings#data-residency",
 			"You get this because your organization stores its data on its own infrastructure."),
@@ -749,8 +653,8 @@ func DataStoreRecovered(admins []string, orgName, what string) {
 	Send(Message{
 		To:      admins,
 		Subject: "Resolved: Aavishield is connected to your " + what + " again",
-		HTML: layout(
-			"Your "+html.EscapeString(what)+" is back",
+		HTML: layout(kResidencyOK,
+			"Your "+what+" is ^back online",
 			"Aavishield can reach "+html.EscapeString(orgName)+"'s "+html.EscapeString(what)+" again. Any held security events are being delivered to it now.",
 			"", "Open settings", cfg.AppURL+"/dashboard/settings#data-residency", ""),
 	})

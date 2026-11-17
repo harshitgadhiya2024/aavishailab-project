@@ -314,7 +314,7 @@ export function ActivityVisual() {
   return (
     <div ref={ref} className="h-full">
       <Stage tag={<AgentTag tone="ink" className="left-6 top-1">Only where you choose</AgentTag>}>
-        <UiCard title="Activity timeline" meta={<span className="flex items-center gap-1.5 text-[11px] text-muted"><Laptop size={13} /> MacBook · Ananya</span>} className="w-full max-w-[400px]">
+        <UiCard title="Activity timeline" meta={<span className="flex items-center gap-1.5 text-[11px] text-muted"><Laptop size={13} /> MacBook · Anouk</span>} className="w-full max-w-[400px]">
           <div className="flex h-7 overflow-hidden rounded-[4px] bg-bg-2">
             {BLOCKS.map((b, i) => (
               <motion.span key={i} className={`h-full ${b.c} border-r border-surface last:border-r-0`} initial={false} animate={{ width: i < shown ? `${b.w}%` : "0%" }} transition={{ duration: 0.4, ease: "easeOut" }} />

@@ -24,7 +24,7 @@ func DemoBookingCancelled(to []string, name, email, company, when string) {
 	Send(Message{
 		To:      to,
 		Subject: "Demo cancelled: " + company,
-		HTML: layout("Demo cancelled",
+		HTML: layout(kDemoWarn, "Demo ^cancelled",
 			html.EscapeString(company)+" cancelled their demo from the console. The slot is free again.",
 			body, "Open in superadmin", cfg.SuperadminURL+"/dashboard/demo-requests",
 			"Sent to the Aavishield team when a console booking changes."),
@@ -40,7 +40,7 @@ func DemoCancelledConfirmation(to, name, when string, invite DemoInvite) {
 	Send(Message{
 		To:      []string{to},
 		Subject: "Your Aavishield demo is cancelled",
-		HTML: layout("Demo cancelled", "Hi "+html.EscapeString(name)+", we've cancelled your demo.",
+		HTML: layout(kDemo, "Demo ^cancelled", "Hi "+html.EscapeString(name)+", we've cancelled your demo.",
 			body, "Open your console", cfg.AppURL+"/dashboard", consoleFooter),
 		Calendar: invite.part(),
 	})
@@ -51,12 +51,12 @@ func DemoCancelledConfirmation(to, name, when string, invite DemoInvite) {
 func DemoMeetingLink(to, name, when, meetingURL string, invite DemoInvite) {
 	invite.MeetingURL = meetingURL
 	body := fmt.Sprintf(`<p style="margin:0;">Here's the link for your Aavishield demo on <strong>%s</strong>.</p>
-	<p style="margin:16px 0 0 0;word-break:break-all;"><a href="%s" style="color:#FF7000;">%s</a></p>`,
+	<p style="margin:16px 0 0 0;word-break:break-all;"><a href="%s" style="color:#c2410c;">%s</a></p>`,
 		html.EscapeString(when), html.EscapeString(meetingURL), html.EscapeString(meetingURL))
 	Send(Message{
 		To:      []string{to},
 		Subject: "Meeting link for your Aavishield demo",
-		HTML: layout("Your demo link", "Hi "+html.EscapeString(name)+", you're all set.",
+		HTML: layout(kDemo, "Your demo ^link", "Hi "+html.EscapeString(name)+", you're all set.",
 			body, "Join the call", meetingURL,
 			"You're receiving this because you booked a demo from your Aavishield console."),
 		Calendar: invite.part(),
@@ -68,7 +68,7 @@ func DemoMeetingLink(to, name, when, meetingURL string, invite DemoInvite) {
 func DemoReminder(to, name, when, lead, meetingURL string) {
 	link := `<p style="margin:16px 0 0 0;">We'll email the meeting link before the call.</p>`
 	if meetingURL != "" {
-		link = fmt.Sprintf(`<p style="margin:16px 0 0 0;word-break:break-all;">Join here: <a href="%s" style="color:#FF7000;">%s</a></p>`,
+		link = fmt.Sprintf(`<p style="margin:16px 0 0 0;word-break:break-all;">Join here: <a href="%s" style="color:#c2410c;">%s</a></p>`,
 			html.EscapeString(meetingURL), html.EscapeString(meetingURL))
 	}
 	body := fmt.Sprintf(`<p style="margin:0;">Your 30-minute Aavishield demo is <strong>%s</strong>: %s.</p>%s`,
@@ -76,7 +76,7 @@ func DemoReminder(to, name, when, lead, meetingURL string) {
 	Send(Message{
 		To:      []string{to},
 		Subject: "Reminder: your Aavishield demo is " + lead,
-		HTML: layout("See you "+html.EscapeString(lead), "Hi "+html.EscapeString(name)+", a quick reminder.",
+		HTML: layout(kDemo, "See you ^"+lead, "Hi "+html.EscapeString(name)+", a quick reminder.",
 			body, "", "",
 			"You're receiving this because you booked a demo from your Aavishield console."),
 	})
@@ -87,18 +87,18 @@ func DemoReminder(to, name, when, lead, meetingURL string) {
 // DeviceReconnect asks an employee to reconnect a device their administrator
 // revoked: the agent on it shows Reconnect, and signing in brings it back.
 func DeviceReconnect(to, firstName, orgName, hostname string) {
-	body := fmt.Sprintf(`<p style="margin:0;">%s asked you to reconnect <strong>%s</strong> to Aavishield.</p>
-	<ol style="margin:16px 0 0 0;padding-left:20px;">
-	  <li style="margin-bottom:6px;">On that computer, open the <strong>Aavishield</strong> app (from the menu bar or system tray, or the Start menu).</li>
-	  <li style="margin-bottom:6px;">Click <strong>Reconnect</strong>. If the app shows Connect instead, click that.</li>
-	  <li>A browser page opens: sign in with your employee portal account. The device reconnects on its own.</li>
-	</ol>
-	<p style="margin:16px 0 0 0;">If Aavishield isn't installed on it any more, sign in to the portal below and download it again.</p>`,
-		html.EscapeString(orgName), html.EscapeString(hostname))
+	body := fmt.Sprintf(`<p style="margin:0;">%s asked you to reconnect <strong>%s</strong> to Aavishield.</p>`,
+		html.EscapeString(orgName), html.EscapeString(hostname)) +
+		stepList(
+			"On that computer, open the <strong>Aavishield</strong> app (from the menu bar or system tray, or the Start menu).",
+			"Click <strong>Reconnect</strong>. If the app shows Connect instead, click that.",
+			"A browser page opens: sign in with your employee portal account. The device reconnects on its own.",
+		) +
+		`<p style="margin:2px 0 0 0;">If Aavishield isn't installed on it any more, sign in to the portal below and download it again.</p>`
 	Send(Message{
 		To:      []string{to},
 		Subject: "Please reconnect " + hostname + " to Aavishield",
-		HTML: layout("Reconnect your device", "Hi "+html.EscapeString(firstName)+", your IT team needs this device back on Aavishield.",
+		HTML: layout(kDevicesWarn, "Reconnect ^your device", "Hi "+html.EscapeString(firstName)+", your IT team needs this device back on Aavishield.",
 			body, "Open the employee portal", cfg.PortalURL+"/login",
 			"You're receiving this because your company uses Aavishield to protect its devices."),
 	})
@@ -119,16 +119,16 @@ func TrialEndingSoon(to []string, orgName string, daysLeft int, endsOn string) {
 	Send(Message{
 		To:      to,
 		Subject: "Your Aavishield trial ends " + when,
-		HTML:    layout("Your trial ends "+when, "Keep your team covered without a gap.", body, "Choose a plan", billingURL(), consoleFooter),
+		HTML:    layout(kBillingWarn, "Your trial ends ^"+when, "Keep your team covered without a gap.", body, "Choose a plan", billingURL(), consoleFooter),
 	})
 }
 
 // TrialEnded tells admins the org is now read-only. lapsed is true when a paid
 // period ran out (rather than a trial).
 func TrialEnded(to []string, orgName string, lapsed bool) {
-	heading, subject := "Your free trial has ended", "Your Aavishield trial has ended"
+	heading, subject := "Your free trial ^has ended", "Your Aavishield trial has ended"
 	if lapsed {
-		heading, subject = "Your subscription has lapsed", "Your Aavishield subscription has lapsed"
+		heading, subject = "Your subscription ^has lapsed", "Your Aavishield subscription has lapsed"
 	}
 	body := fmt.Sprintf(`<p style="margin:0;">Devices at <strong>%s</strong> are still protected with your current policies,
 	but the console is now read-only and new devices can't be added.</p>
@@ -136,7 +136,7 @@ func TrialEnded(to []string, orgName string, lapsed bool) {
 	Send(Message{
 		To:      to,
 		Subject: subject,
-		HTML:    layout(heading, "Nothing has been switched off on your devices.", body, "Choose a plan", billingURL(), consoleFooter),
+		HTML:    layout(kBillingWarn, heading, "Nothing has been switched off on your devices.", body, "Choose a plan", billingURL(), consoleFooter),
 	})
 }
 
@@ -145,9 +145,9 @@ func TrialEnded(to []string, orgName string, lapsed bool) {
 // InvoiceRaised sends a self-serve invoice with its payment link. renewal is
 // true for the automatic renewal a week before the paid period ends.
 func InvoiceRaised(to []string, orgName, planName string, seats int, cycle, amount, payURL string, renewal bool) {
-	heading, subject := "Complete your Aavishield purchase", "Your Aavishield invoice: "+amount
+	heading, subject := "Complete your ^purchase", "Your Aavishield invoice: "+amount
 	if renewal {
-		heading, subject = "Time to renew Aavishield", "Renew Aavishield: "+amount
+		heading, subject = "Time to ^renew", "Renew Aavishield: "+amount
 	}
 	body := statTable(
 		statRow("Company", orgName, ""),
@@ -164,7 +164,7 @@ func InvoiceRaised(to []string, orgName, planName string, seats int, cycle, amou
 	Send(Message{
 		To:      to,
 		Subject: subject,
-		HTML:    layout(heading, "Pay securely through Razorpay.", body, ctaLabel, ctaURL, consoleFooter),
+		HTML:    layout(kInvoice, heading, "Pay securely through Razorpay.", body, ctaLabel, ctaURL, consoleFooter),
 	})
 }
 
@@ -178,7 +178,7 @@ func PlanActivated(to []string, orgName, planName string, seats int, paidThrough
 	Send(Message{
 		To:      to,
 		Subject: "Payment received: " + orgName + " is on " + planName,
-		HTML:    layout("You're all set", html.EscapeString(orgName)+" is now on "+html.EscapeString(planName)+".", body, "Open your console", cfg.AppURL+"/dashboard", consoleFooter),
+		HTML:    layout(kBillingOK, "You're ^all set", html.EscapeString(orgName)+" is now on "+html.EscapeString(planName)+".", body, "Open your console", cfg.AppURL+"/dashboard", consoleFooter),
 	})
 }
 
@@ -196,7 +196,7 @@ func CheckoutAwaitingInvoice(to []string, orgName, planName string, seats int, c
 	Send(Message{
 		To:      to,
 		Subject: "Plan chosen, invoice needed: " + orgName,
-		HTML: layout("A company wants to pay", html.EscapeString(orgName)+" chose a plan in the console.", body,
+		HTML: layout(kBilling, "A company ^wants to pay", html.EscapeString(orgName)+" chose a plan in the console.", body,
 			"Open in superadmin", cfg.SuperadminURL+"/dashboard/billing", "Sent to the Aavishield team when a self-serve checkout needs a manual invoice."),
 	})
 }
@@ -212,7 +212,7 @@ func PaymentReceivedTeam(to []string, orgName, planName string, seats int, amoun
 	Send(Message{
 		To:      to,
 		Subject: "Self-serve payment: " + orgName + " (" + amount + ")",
-		HTML: layout("New self-serve payment", html.EscapeString(orgName)+" paid online.", body,
+		HTML: layout(kPayment, "New ^payment received", html.EscapeString(orgName)+" paid online.", body,
 			"Open in superadmin", cfg.SuperadminURL+"/dashboard/billing", "Sent to the Aavishield team for every self-serve payment."),
 	})
 }
