@@ -170,7 +170,7 @@ export function WaitlistForm({ id = "join" }: { id?: string }) {
                   aria-invalid={!!errors.name}
                   aria-describedby={errors.name ? "wl-name-err" : undefined}
                   className={`${field} ${errors.name ? fieldBad : fieldOk}`}
-                  placeholder="Ananya Iyer"
+                  placeholder="Anouk Verbeek"
                 />
               </Field>
               <Field id="wl-email" label="Work email" error={errors.email}>
@@ -197,7 +197,7 @@ export function WaitlistForm({ id = "join" }: { id?: string }) {
                 aria-invalid={!!errors.company}
                 aria-describedby={errors.company ? "wl-company-err" : undefined}
                 className={`${field} ${errors.company ? fieldBad : fieldOk}`}
-                placeholder="Acme Inc."
+                placeholder="Corvane Inc."
               />
             </Field>
             <div className="grid gap-4 sm:grid-cols-2">

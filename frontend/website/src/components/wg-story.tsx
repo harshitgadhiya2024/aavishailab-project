@@ -15,10 +15,10 @@ import { MARK } from "./wordmark";
  */
 
 const REQUESTS = [
-  { d: "instagram.com", blocked: true, cat: "Social media", who: "Rohan" },
-  { d: "docs.google.com", blocked: false, cat: "Productivity", who: "Priya" },
-  { d: "chat.deepseek.com", blocked: true, cat: "AI tools", who: "Arjun" },
-  { d: "github.com", blocked: false, cat: "Developer", who: "Meera" },
+  { d: "instagram.com", blocked: true, cat: "Social media", who: "Soren" },
+  { d: "docs.google.com", blocked: false, cat: "Productivity", who: "Ayumi" },
+  { d: "chat.deepseek.com", blocked: true, cat: "AI tools", who: "Idris" },
+  { d: "github.com", blocked: false, cat: "Developer", who: "Ines" },
 ];
 const at = (t: number) => {
   const n = Math.floor(t / CYCLE);

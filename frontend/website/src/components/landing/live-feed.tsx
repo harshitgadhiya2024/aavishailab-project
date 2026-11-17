@@ -15,7 +15,7 @@ const FEED: LiveFeedItem[] = [
   { label: "invoice_0932.zip", detail: "Trojan in download", control: "Malware", state: "blocked" },
   { label: "prod.env in Teams", detail: "API key detected", control: "DLP", state: "flagged" },
   { label: "AnyDesk", detail: "Remote access tool", control: "Apps", state: "blocked" },
-  { label: "ThinkPad · Rohan", detail: "Firewall turned off", control: "Posture", state: "flagged" },
+  { label: "ThinkPad · Soren", detail: "Firewall turned off", control: "Posture", state: "flagged" },
 ];
 const VISIBLE = 4;
 

@@ -170,10 +170,10 @@ const appEnforce: Scene = (t) => {
 /* ── VPN Control: Recognise, Block, Surface ───────────────────────────── */
 
 const VPNS = [
-  { v: "NordVPN", kind: "VPN CLIENT", match: true, who: "Rohan" },
-  { v: "Zoom", kind: "", match: false, who: "Priya" },
-  { v: "proxy extension", kind: "EXTENSION", match: true, who: "Arjun" },
-  { v: "protonvpn-setup.exe", kind: "INSTALLER", match: true, who: "Meera" },
+  { v: "NordVPN", kind: "VPN CLIENT", match: true, who: "Soren" },
+  { v: "Zoom", kind: "", match: false, who: "Ayumi" },
+  { v: "proxy extension", kind: "EXTENSION", match: true, who: "Idris" },
+  { v: "protonvpn-setup.exe", kind: "INSTALLER", match: true, who: "Ines" },
 ];
 
 const vpnRecognise: Scene = (t) => {
@@ -312,10 +312,10 @@ const malRelease: Scene = (t) => {
 /* ── Device Posture: Check, Compare, Highlight ────────────────────────── */
 
 const DEVICES = [
-  { d: "ThinkPad · Rohan", off: "FIREWALL" },
-  { d: "MacBook · Priya", off: "" },
-  { d: "Dell XPS · Meera", off: "ENCRYPTION" },
-  { d: "HP EliteBook · Arjun", off: "" },
+  { d: "ThinkPad · Soren", off: "FIREWALL" },
+  { d: "MacBook · Ayumi", off: "" },
+  { d: "Dell XPS · Ines", off: "ENCRYPTION" },
+  { d: "HP EliteBook · Idris", off: "" },
 ];
 const SIGNALS = ["ENCRYPTION", "FIREWALL", "OS UPDATES", "ANTIVIRUS"];
 
@@ -379,10 +379,10 @@ const postHighlight: Scene = (t) => {
 /* ── Activity Monitoring: Enable, Capture, Review ─────────────────────── */
 
 const PEOPLE = [
-  { who: "Priya", at: "10:42" },
-  { who: "Rohan", at: "11:06" },
-  { who: "Meera", at: "11:30" },
-  { who: "Arjun", at: "11:54" },
+  { who: "Ayumi", at: "10:42" },
+  { who: "Soren", at: "11:06" },
+  { who: "Ines", at: "11:30" },
+  { who: "Idris", at: "11:54" },
 ];
 
 const actEnable: Scene = (t) => {

@@ -10,6 +10,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"fmt"
+	"html"
 	"log"
 	"net"
 	"net/smtp"
@@ -291,12 +292,16 @@ func base64Lines(s string) string {
 	return out.String()
 }
 
-func stripHTML(html string) string {
+func stripHTML(page string) string {
+	// The <head> holds CSS and the preheader repeats the intro; neither
+	// belongs in the plain-text version.
+	page = cutBetween(page, "<head>", "</head>")
+	page = cutBetween(page, "<!--preheader-->", "<!--/preheader-->")
 	replacer := strings.NewReplacer(
 		"<br>", "\n", "<br/>", "\n", "<br />", "\n",
 		"</p>", "\n\n", "</div>", "\n", "</tr>", "\n", "</h1>", "\n\n", "</h2>", "\n\n",
 	)
-	s := replacer.Replace(html)
+	s := replacer.Replace(page)
 	var out strings.Builder
 	inTag := false
 	for _, r := range s {
@@ -312,9 +317,22 @@ func stripHTML(html string) string {
 	lines := strings.Split(out.String(), "\n")
 	cleaned := make([]string, 0, len(lines))
 	for _, l := range lines {
-		if t := strings.TrimSpace(l); t != "" {
-			cleaned = append(cleaned, t)
+		if t := strings.TrimSpace(html.UnescapeString(l)); t != "" {
+			cleaned = append(cleaned, strings.Join(strings.Fields(t), " "))
 		}
 	}
 	return strings.Join(cleaned, "\n")
+}
+
+// cutBetween removes the first start…end span (inclusive) from s.
+func cutBetween(s, start, end string) string {
+	i := strings.Index(s, start)
+	if i < 0 {
+		return s
+	}
+	j := strings.Index(s[i:], end)
+	if j < 0 {
+		return s
+	}
+	return s[:i] + s[i+j+len(end):]
 }

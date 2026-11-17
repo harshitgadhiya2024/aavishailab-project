@@ -177,8 +177,8 @@ export const modules: Module[] = [
       { verb: "Highlight", body: "Non-compliant devices are listed with what needs fixing." },
     ],
     events: [
-      { label: "MacBook Pro · Ananya", detail: "FileVault on", state: "allowed" },
-      { label: "ThinkPad · Rohan", detail: "Firewall off", state: "flagged" },
+      { label: "MacBook Pro · Anouk", detail: "FileVault on", state: "allowed" },
+      { label: "ThinkPad · Soren", detail: "Firewall off", state: "flagged" },
       { label: "Ubuntu · build-02", detail: "34 days unpatched", state: "flagged" },
     ],
   },

@@ -216,7 +216,7 @@ export function DlpVisual() {
           </span>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-medium text-fg">Q3-salaries.xlsx</span>
-            <span className="block text-[11.5px] text-muted">Ananya Rao · MacBook Pro</span>
+            <span className="block text-[11.5px] text-muted">Anouk Verbeek · MacBook Pro</span>
           </span>
           {/* The file travels along the arrow to its destination. */}
           <span className="relative h-4 w-8">
@@ -273,7 +273,7 @@ export function AppControlVisual() {
   ];
   const alert = t >= 28 && t < 52 ? 0 : t >= 58 && t < 84 ? 1 : -1;
   const alerts = [
-    { app: "AnyDesk", text: "Launch stopped on Rohan's ThinkPad" },
+    { app: "AnyDesk", text: "Launch stopped on Soren's ThinkPad" },
     { app: "NordVPN", text: "Connection blocked on build-02" },
   ];
   return (
@@ -344,7 +344,7 @@ export function PostureVisual() {
   return (
     <PixelPanel ref={ref} className={WIDGET_STAGE}>
       <div className="grid w-full max-w-[380px] gap-3">
-        <UiCard title="Device posture" meta={<span className="flex items-center gap-1.5 text-[11px] text-muted"><Laptop size={13} /> ThinkPad · Rohan</span>}>
+        <UiCard title="Device posture" meta={<span className="flex items-center gap-1.5 text-[11px] text-muted"><Laptop size={13} /> ThinkPad · Soren</span>}>
           <div className="flex items-center gap-5">
             <svg viewBox="0 0 124 70" className="w-[124px] shrink-0" aria-hidden>
               <path d={`M 10 64 A ${r} ${r} 0 0 1 114 64`} fill="none" stroke="var(--bg-2)" strokeWidth="10" strokeLinecap="round" />
@@ -410,7 +410,7 @@ type Scenario = {
 const SCENARIOS: Scenario[] = [
   {
     chip: "Gambling site",
-    device: "ThinkPad · Rohan",
+    device: "ThinkPad · Soren",
     verb: "Opens",
     target: "bet365.com",
     checks: [["Policy signature", "Verified"], ["Web category", "Gambling"], ["Rule", "Block gambling"]],
@@ -419,7 +419,7 @@ const SCENARIOS: Scenario[] = [
   },
   {
     chip: "Salary sheet to ChatGPT",
-    device: "MacBook Pro · Ananya",
+    device: "MacBook Pro · Anouk",
     verb: "Uploads",
     target: "Q3-salaries.xlsx",
     checks: [["Policy signature", "Verified"], ["DLP scan", "Salary data, PAN × 12"], ["Mode", "Monitor only"]],
@@ -428,7 +428,7 @@ const SCENARIOS: Scenario[] = [
   },
   {
     chip: "Approved site",
-    device: "MacBook Air · Meera",
+    device: "MacBook Air · Ines",
     verb: "Opens",
     target: "docs.google.com",
     checks: [["Policy signature", "Verified"], ["Web category", "Productivity"], ["Rule", "Allowed"]],

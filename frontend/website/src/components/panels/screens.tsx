@@ -34,7 +34,7 @@ export function OverviewPanel() {
   const counting = p >= 1;
   const counts = BY_CONTROL.map((r, i) => r.n + (counting ? Math.floor(live / RATE[i]) : 0));
   const total = counts.reduce((a, b) => a + b, 0);
-  const fixed = counting && loop >= 35 && loop < 70; // Rohan's firewall is back on
+  const fixed = counting && loop >= 35 && loop < 70; // Soren's firewall is back on
   const online = counting && loop >= 50 && loop < 80 ? 40 : 39;
   return (
     <div ref={ref} className="w-full">
@@ -62,8 +62,8 @@ export function OverviewPanel() {
               <p className="mt-4 text-[13px] text-muted">Needs attention</p>
               <ul className="mt-1">
                 {[
-                  { t: "ThinkPad · Rohan", s: fixed ? "Firewall turned back on" : "Firewall turned off", ok: fixed },
-                  { t: "MacBook · Priya", s: "Disk encryption off", ok: false },
+                  { t: "ThinkPad · Soren", s: fixed ? "Firewall turned back on" : "Firewall turned off", ok: fixed },
+                  { t: "MacBook · Ayumi", s: "Disk encryption off", ok: false },
                 ].map((r) => (
                   <li key={r.t} className="flex items-center justify-between gap-3 border-b border-line py-2.5 last:border-b-0">
                     <span className="min-w-0">
@@ -111,9 +111,9 @@ export function OverviewPanel() {
 
 /* DLP: one incident at a time, with who, where, what was found and the risk. */
 const INCIDENTS = [
-  { file: "Q3-salaries.xlsx", who: "Priya · Finance", to: "ChatGPT", found: ["Salary data", "PAN × 12"], risk: 86 },
-  { file: "deploy.env", who: "Rohan · Engineering", to: "Microsoft Teams", found: ["API key", "Database URL"], risk: 92 },
-  { file: "IMG_2041.jpg", who: "Arjun · Sales", to: "WhatsApp Web", found: ["Aadhaar (OCR)"], risk: 74 },
+  { file: "Q3-salaries.xlsx", who: "Ayumi · Finance", to: "ChatGPT", found: ["Salary data", "PAN × 12"], risk: 86 },
+  { file: "deploy.env", who: "Soren · Engineering", to: "Microsoft Teams", found: ["API key", "Database URL"], risk: 92 },
+  { file: "IMG_2041.jpg", who: "Idris · Sales", to: "WhatsApp Web", found: ["Aadhaar (OCR)"], risk: 74 },
 ];
 
 export function DlpIncidentPanel() {
@@ -257,10 +257,10 @@ export function ReportsPanel() {
 
 /* Device compliance report: who is out of baseline, and why. */
 const NONCOMPLIANT = [
-  { d: "ThinkPad · Rohan", issue: "Firewall off" },
-  { d: "Dell XPS · Meera", issue: "Firewall off" },
-  { d: "MacBook · Priya", issue: "Encryption off" },
-  { d: "HP EliteBook · Arjun", issue: "Updates pending" },
+  { d: "ThinkPad · Soren", issue: "Firewall off" },
+  { d: "Dell XPS · Ines", issue: "Firewall off" },
+  { d: "MacBook · Ayumi", issue: "Encryption off" },
+  { d: "HP EliteBook · Idris", issue: "Updates pending" },
 ];
 
 export function CompliancePanel() {
@@ -298,10 +298,10 @@ export function CompliancePanel() {
 
 /* Employee risk report: who needs a conversation. */
 const RISK = [
-  { n: "Rohan · Engineering", c: 41 },
-  { n: "Priya · Finance", c: 28 },
-  { n: "Arjun · Sales", c: 19 },
-  { n: "Meera · Support", c: 11 },
+  { n: "Soren · Engineering", c: 41 },
+  { n: "Ayumi · Finance", c: 28 },
+  { n: "Idris · Sales", c: 19 },
+  { n: "Ines · Support", c: 11 },
 ];
 
 export function RiskPanel() {
@@ -336,10 +336,10 @@ export function RiskPanel() {
 
 /* Devices: the inventory with OS, agent version and posture score. */
 const DEVICES = [
-  { d: "MacBook Pro · Priya", os: "macOS 15", score: 96, on: true },
-  { d: "ThinkPad · Rohan", os: "Windows 11", score: 71, on: true },
-  { d: "Dell XPS · Meera", os: "Ubuntu 24.04", score: 88, on: true },
-  { d: "HP EliteBook · Arjun", os: "Windows 10", score: 79, on: false },
+  { d: "MacBook Pro · Ayumi", os: "macOS 15", score: 96, on: true },
+  { d: "ThinkPad · Soren", os: "Windows 11", score: 71, on: true },
+  { d: "Dell XPS · Ines", os: "Ubuntu 24.04", score: 88, on: true },
+  { d: "HP EliteBook · Idris", os: "Windows 10", score: 79, on: false },
 ];
 
 export function DevicesPanel() {
@@ -446,7 +446,7 @@ export function DownloadPanel() {
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-[13px] text-muted">This device</p>
-              <p className="mt-1 text-[14px] text-fg">MacBook Pro · Priya</p>
+              <p className="mt-1 text-[14px] text-fg">MacBook Pro · Ayumi</p>
             </div>
             <AnimatePresence mode="wait">
               {enrolled ? (
@@ -502,7 +502,7 @@ export function SettingsPanel() {
 
 /* The assistant: questions answered from live data. */
 const QA = [
-  { q: "Which laptops have their firewall off?", a: "2 devices: ThinkPad · Rohan and Dell XPS · Meera. Both reported it today." },
+  { q: "Which laptops have their firewall off?", a: "2 devices: ThinkPad · Soren and Dell XPS · Ines. Both reported it today." },
   { q: "What did DLP flag this week?", a: "86 findings, 9 high risk. Most were salary data sent to AI tools." },
 ];
 
@@ -548,7 +548,7 @@ export function MonitoringPanel() {
   const { ref, p } = useProgress(1600);
   return (
     <div ref={ref} className="w-full">
-      <Panel context="Activity · Priya · today">
+      <Panel context="Activity · Ayumi · today">
         <PanelCard>
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -595,11 +595,11 @@ export const ActivityPanel = () => (
     base={318}
     aside="Every control, one feed"
     rows={[
-      { title: "bet365.com", sub: "Web Gateway · Gambling · Rohan", state: "blocked" },
-      { title: "Q3-salaries.xlsx → ChatGPT", sub: "DLP · Salary data · Priya", state: "flagged" },
-      { title: "AnyDesk", sub: "Application Control · Arjun", state: "blocked" },
-      { title: "invoice_0932.zip", sub: "Malware Scanning · Risk 94 · Meera", state: "blocked" },
-      { title: "NordVPN", sub: "VPN Control · Rohan", state: "blocked" },
+      { title: "bet365.com", sub: "Web Gateway · Gambling · Soren", state: "blocked" },
+      { title: "Q3-salaries.xlsx → ChatGPT", sub: "DLP · Salary data · Ayumi", state: "flagged" },
+      { title: "AnyDesk", sub: "Application Control · Idris", state: "blocked" },
+      { title: "invoice_0932.zip", sub: "Malware Scanning · Risk 94 · Ines", state: "blocked" },
+      { title: "NordVPN", sub: "VPN Control · Soren", state: "blocked" },
     ]}
   />
 );
@@ -611,11 +611,11 @@ export const ActivityDlpPanel = () => (
     base={81}
     aside="Recorded, never blocked"
     rows={[
-      { title: "Q3-salaries.xlsx → ChatGPT", sub: "Salary data · Priya", state: "flagged" },
-      { title: "deploy.env → Teams", sub: "API key · Rohan", state: "flagged" },
-      { title: "IMG_2041.jpg → WhatsApp Web", sub: "Aadhaar via OCR · Arjun", state: "flagged" },
-      { title: "contract-acme.pdf → Gmail", sub: "Contract · Meera", state: "flagged" },
-      { title: "customers.csv → OneDrive", sub: "Card numbers · Priya", state: "flagged" },
+      { title: "Q3-salaries.xlsx → ChatGPT", sub: "Salary data · Ayumi", state: "flagged" },
+      { title: "deploy.env → Teams", sub: "API key · Soren", state: "flagged" },
+      { title: "IMG_2041.jpg → WhatsApp Web", sub: "Aadhaar via OCR · Idris", state: "flagged" },
+      { title: "contract-corvane.pdf → Gmail", sub: "Contract · Ines", state: "flagged" },
+      { title: "customers.csv → OneDrive", sub: "Card numbers · Ayumi", state: "flagged" },
     ]}
   />
 );
@@ -627,11 +627,11 @@ export const ActivityDownloadsPanel = () => (
     base={18}
     aside="Stopped before reaching disk"
     rows={[
-      { title: "invoice_0932.zip", sub: "Trojan downloader · Meera", right: "94" },
-      { title: "crack-setup.exe", sub: "Bundled malware · Rohan", right: "91" },
-      { title: "Q4-report.xlsm", sub: "Macro dropper · Arjun", right: "82" },
-      { title: "free-pdf-tool.dmg", sub: "Adware · Priya", right: "77" },
-      { title: "scan_0412.html", sub: "Credential phishing · Meera", right: "88" },
+      { title: "invoice_0932.zip", sub: "Trojan downloader · Ines", right: "94" },
+      { title: "crack-setup.exe", sub: "Bundled malware · Soren", right: "91" },
+      { title: "Q4-report.xlsm", sub: "Macro dropper · Idris", right: "82" },
+      { title: "free-pdf-tool.dmg", sub: "Adware · Ayumi", right: "77" },
+      { title: "scan_0412.html", sub: "Credential phishing · Ines", right: "88" },
     ]}
   />
 );
@@ -643,10 +643,10 @@ export const ActivityPosturePanel = () => (
     base={5}
     aside="With the fix for each OS"
     rows={[
-      { title: "Firewall turned off", sub: "ThinkPad · Rohan · Windows 11", state: "flagged" },
-      { title: "OS updates pending", sub: "HP EliteBook · Arjun · Windows 10", state: "flagged" },
-      { title: "Disk encryption off", sub: "MacBook · Priya · macOS 15", state: "flagged" },
-      { title: "Firewall turned off", sub: "Dell XPS · Meera · Ubuntu", state: "flagged" },
+      { title: "Firewall turned off", sub: "ThinkPad · Soren · Windows 11", state: "flagged" },
+      { title: "OS updates pending", sub: "HP EliteBook · Idris · Windows 10", state: "flagged" },
+      { title: "Disk encryption off", sub: "MacBook · Ayumi · macOS 15", state: "flagged" },
+      { title: "Firewall turned off", sub: "Dell XPS · Ines · Ubuntu", state: "flagged" },
     ]}
   />
 );
@@ -658,10 +658,10 @@ export const AccessRequestsPanel = () => (
     base={0}
     aside="Each with the employee's reason"
     rows={[
-      { title: "figma.com", sub: "Meera · “Design review with a client”", state: "allowed" },
-      { title: "reddit.com", sub: "Rohan · “Debugging thread”", state: "allowed" },
-      { title: "1337x.to", sub: "Arjun · “Need a movie for a pitch”", state: "blocked" },
-      { title: "canva.com", sub: "Priya · “Social posts for launch”", state: "allowed" },
+      { title: "figma.com", sub: "Ines · “Design review with a client”", state: "allowed" },
+      { title: "reddit.com", sub: "Soren · “Debugging thread”", state: "allowed" },
+      { title: "1337x.to", sub: "Idris · “Need a movie for a pitch”", state: "blocked" },
+      { title: "canva.com", sub: "Ayumi · “Social posts for launch”", state: "allowed" },
     ]}
   />
 );
@@ -688,10 +688,10 @@ export const EmployeesPanel = () => (
     base={36}
     aside="Add by hand or import a CSV"
     rows={[
-      { title: "Priya Shah", sub: "Finance · Controller", right: "Active" },
-      { title: "Rohan Mehta", sub: "Engineering · Backend", right: "Active" },
-      { title: "Arjun Rao", sub: "Sales · Account exec", right: "Invited" },
-      { title: "Meera Iyer", sub: "Support · Team lead", right: "Active" },
+      { title: "Ayumi Tanabe", sub: "Finance · Controller", right: "Active" },
+      { title: "Soren Lindqvist", sub: "Engineering · Backend", right: "Active" },
+      { title: "Idris Okafor", sub: "Sales · Account exec", right: "Invited" },
+      { title: "Ines Faria", sub: "Support · Team lead", right: "Active" },
     ]}
   />
 );
@@ -704,10 +704,10 @@ export const InventoryPanel = () => (
     base={208}
     aside="macOS, Windows and Linux"
     rows={[
-      { title: "AnyDesk 8.1", sub: "ThinkPad · Rohan · installed 3 Oct", right: "High risk" },
-      { title: "uTorrent 3.6", sub: "HP EliteBook · Arjun · installed 9 Oct", right: "High risk" },
-      { title: "Dropbox 205", sub: "MacBook · Priya · installed 12 Sep", right: "Medium" },
-      { title: "Figma 124", sub: "Dell XPS · Meera · installed 1 Aug", right: "Low" },
+      { title: "AnyDesk 8.1", sub: "ThinkPad · Soren · installed 3 Oct", right: "High risk" },
+      { title: "uTorrent 3.6", sub: "HP EliteBook · Idris · installed 9 Oct", right: "High risk" },
+      { title: "Dropbox 205", sub: "MacBook · Ayumi · installed 12 Sep", right: "Medium" },
+      { title: "Figma 124", sub: "Dell XPS · Ines · installed 1 Aug", right: "Low" },
     ]}
   />
 );
@@ -719,10 +719,10 @@ export const AppAttemptsPanel = () => (
     base={17}
     aside="Tied to the person and device"
     rows={[
-      { title: "AnyDesk", sub: "App block · ThinkPad · Rohan · 14:22", state: "blocked" },
-      { title: "uTorrent", sub: "App block · HP EliteBook · Arjun · 15:03", state: "blocked" },
-      { title: "Dropbox", sub: "Network block · MacBook · Priya · 15:41", state: "blocked" },
-      { title: "AnyDesk", sub: "App block · ThinkPad · Rohan · 16:08", state: "blocked" },
+      { title: "AnyDesk", sub: "App block · ThinkPad · Soren · 14:22", state: "blocked" },
+      { title: "uTorrent", sub: "App block · HP EliteBook · Idris · 15:03", state: "blocked" },
+      { title: "Dropbox", sub: "Network block · MacBook · Ayumi · 15:41", state: "blocked" },
+      { title: "AnyDesk", sub: "App block · ThinkPad · Soren · 16:08", state: "blocked" },
     ]}
   />
 );
@@ -734,10 +734,10 @@ export const VpnAttemptsPanel = () => (
     base={6}
     aside="Blocked by default, no setup"
     rows={[
-      { title: "NordVPN", sub: "VPN app · ThinkPad · Rohan", state: "blocked" },
-      { title: "Proxy extension", sub: "Chrome extension · Arjun", state: "blocked" },
-      { title: "protonvpn-setup.exe", sub: "VPN installer · Meera", state: "blocked" },
-      { title: "hidemy.name", sub: "Proxy site · Priya", state: "blocked" },
+      { title: "NordVPN", sub: "VPN app · ThinkPad · Soren", state: "blocked" },
+      { title: "Proxy extension", sub: "Chrome extension · Idris", state: "blocked" },
+      { title: "protonvpn-setup.exe", sub: "VPN installer · Ines", state: "blocked" },
+      { title: "hidemy.name", sub: "Proxy site · Ayumi", state: "blocked" },
     ]}
   />
 );
@@ -749,10 +749,10 @@ export const MaliciousSitesPanel = () => (
     base={37}
     aside="Phishing and malware domains"
     rows={[
-      { title: "micros0ft-login.com", sub: "Phishing · Meera", state: "blocked" },
-      { title: "free-crack-tools.net", sub: "Malware · Rohan", state: "blocked" },
-      { title: "docusign-review.co", sub: "Phishing · Priya", state: "blocked" },
-      { title: "pdf-convert-now.io", sub: "Malware · Arjun", state: "blocked" },
+      { title: "micros0ft-login.com", sub: "Phishing · Ines", state: "blocked" },
+      { title: "free-crack-tools.net", sub: "Malware · Soren", state: "blocked" },
+      { title: "docusign-review.co", sub: "Phishing · Ayumi", state: "blocked" },
+      { title: "pdf-convert-now.io", sub: "Malware · Idris", state: "blocked" },
     ]}
   />
 );
@@ -763,7 +763,7 @@ export function ScreenshotGridPanel() {
   const times = ["10:12", "10:22", "10:32", "10:42", "10:52", "11:02"];
   return (
     <div ref={ref} className="w-full">
-      <Panel context="Screenshots · Priya · today">
+      <Panel context="Screenshots · Ayumi · today">
         <PanelCard>
           <div className="flex items-end justify-between gap-4">
             <div>
@@ -882,7 +882,7 @@ export function PostureRingPanel() {
   const score = 71;
   return (
     <div ref={ref} className="w-full">
-      <Panel context="Device Posture · ThinkPad · Rohan">
+      <Panel context="Device Posture · ThinkPad · Soren">
         <PanelCard>
           <div className="flex items-center gap-6">
             <div className="relative size-28 shrink-0">
